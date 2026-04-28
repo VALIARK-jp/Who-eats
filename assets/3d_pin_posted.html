@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Who eats - Jumbo Icon Pin</title>
+    <script src="three.min.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        canvas { display: block; width: 100%; height: 100%; background: transparent; }
+    </style>
+</head>
+<body>
+    <script>
+        let scene, camera, renderer, pinGroup, foodGroup, iconMesh, iconFrame, pulseRing;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        const textureLoader = new THREE.TextureLoader();
+
+        const headY = 4.5;
+        const headRadius = 2.4;
+
+        window.__targetFps = 30;
+        window.setTargetFps = function (fps) {
+            var n = parseInt(fps, 10);
+            if (isNaN(n) || n < 1) n = 30;
+            window.__targetFps = n;
+        };
+        let _lastFrameTs = 0;
+
+        window.onload = function () {
+            init();
+            requestAnimationFrame(animate);
+        };
+
+        window.updateIcon = function (urlOrBase64) {
+            if (!urlOrBase64) return;
+            textureLoader.load(urlOrBase64, (texture) => {
+                const image = texture.image;
+                const aspect = image.width / image.height;
+                texture.center.set(0.5, 0.5);
+                if (aspect > 1) {
+                    texture.repeat.set(1 / aspect, 1);
+                    texture.offset.set((1 - 1 / aspect) / 2, 0);
+                } else {
+                    texture.repeat.set(1, aspect);
+                    texture.offset.set(0, (1 - aspect) / 2);
+                }
+
+                iconMesh.material.map = texture;
+                iconMesh.material.needsUpdate = true;
+                iconMesh.visible = true;
+                iconFrame.visible = true;
+            });
+        };
+
+        function createDeliciousCurry() {
+            const curryGroup = new THREE.Group();
+            const plateMat = new THREE.MeshStandardMaterial({ color: 0xeeeecc, roughness: 0.2 });
+            const riceMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
+            const sauceMat = new THREE.MeshStandardMaterial({ color: 0x3d1a05, roughness: 0.4, metalness: 0.0 });
+            const beefMat = new THREE.MeshStandardMaterial({ color: 0x241104, roughness: 0.8 });
+            const carrotMat = new THREE.MeshStandardMaterial({ color: 0xcc3300, roughness: 0.6 });
+            const potatoMat = new THREE.MeshStandardMaterial({ color: 0xcca677, roughness: 0.8 });
+
+            const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.4, 0.15, 64), plateMat);
+            curryGroup.add(plate);
+
+            const rice = new THREE.Mesh(new THREE.SphereGeometry(0.9, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2), riceMat);
+            rice.scale.set(1.2, 0.6, 1.0);
+            rice.position.set(-0.4, 0.06, 0);
+            curryGroup.add(rice);
+
+            const sauceSurface = new THREE.Mesh(new THREE.SphereGeometry(0.9, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2), sauceMat);
+            sauceSurface.scale.set(1.1, 0.45, 1.0);
+            sauceSurface.position.set(0.4, 0.08, 0);
+            curryGroup.add(sauceSurface);
+
+            const addIngredient = (mat, scale, count, offset) => {
+                for (let i = 0; i < count; i++) {
+                    const geo = new THREE.DodecahedronGeometry(0.2 * scale, 1);
+                    const mesh = new THREE.Mesh(geo, mat);
+                    mesh.position.set(offset + (Math.random() - 0.5) * 0.8, 0.2 + Math.random() * 0.1, (Math.random() - 0.5) * 0.8);
+                    curryGroup.add(mesh);
+                }
+            };
+            addIngredient(beefMat, 1.3, 5, 0.4);
+            addIngredient(carrotMat, 1.1, 4, 0.5);
+            addIngredient(potatoMat, 1.2, 4, 0.3);
+            return curryGroup;
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x010101, 15, 60);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, 20);
+            camera.lookAt(0, 4, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x000000, 0);
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const orangeLight = new THREE.PointLight(0xff6600, 10, 50);
+            orangeLight.position.set(5, 15, 5);
+            scene.add(orangeLight);
+            const softFill = new THREE.DirectionalLight(0xffffff, 0.4);
+            softFill.position.set(0, 10, 10);
+            scene.add(softFill);
+
+            pinGroup = new THREE.Group();
+            scene.add(pinGroup);
+
+            const pinMainMat = new THREE.MeshPhysicalMaterial({
+                color: 0xff6600,
+                emissive: 0xff3300,
+                emissiveIntensity: 1.2,
+                metalness: 0.7,
+                roughness: 0.1,
+                transparent: true,
+                opacity: 0.5,
+                depthWrite: false
+            });
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(headRadius, 64, 64), pinMainMat);
+            head.position.y = headY;
+            pinGroup.add(head);
+
+            const crystalMat = new THREE.MeshPhysicalMaterial({
+                color: 0xff6600,
+                transmission: 0.95,
+                transparent: true,
+                opacity: 0.1,
+                depthWrite: false
+            });
+            const glassCore = new THREE.Mesh(new THREE.SphereGeometry(headRadius * 0.98, 64, 64), crystalMat);
+            glassCore.position.y = headY;
+            pinGroup.add(glassCore);
+
+            const tail = new THREE.Mesh(new THREE.ConeGeometry(headRadius * 0.6, 6.0, 64), pinMainMat);
+            tail.rotation.x = Math.PI;
+            tail.position.y = headY - 3.0;
+            pinGroup.add(tail);
+
+            const iconSize = 2.0;
+            const iconGeo = new THREE.CircleGeometry(iconSize, 64);
+            const iconMat = new THREE.MeshBasicMaterial({
+                transparent: true,
+                opacity: 1.0,
+                side: THREE.DoubleSide,
+                depthTest: true
+            });
+            iconMesh = new THREE.Mesh(iconGeo, iconMat);
+            iconMesh.visible = false;
+            scene.add(iconMesh);
+
+            const frameGeo = new THREE.TorusGeometry(iconSize, 0.06, 16, 100);
+            const frameMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: true });
+            iconFrame = new THREE.Mesh(frameGeo, frameMat);
+            iconFrame.visible = false;
+            scene.add(iconFrame);
+
+            pulseRing = new THREE.Mesh(
+                new THREE.TorusGeometry(1.2, 0.02, 16, 100),
+                new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.5 })
+            );
+            pulseRing.rotation.x = Math.PI / 2;
+            pulseRing.position.y = -0.5;
+            scene.add(pulseRing);
+
+            foodGroup = createDeliciousCurry();
+            foodGroup.rotation.x = 0.6;
+            scene.add(foodGroup);
+
+            window.addEventListener("mousedown", () => (isDragging = true));
+            window.addEventListener("mouseup", () => (isDragging = false));
+            window.addEventListener("mousemove", (e) => {
+                if (!isDragging) return;
+                const deltaX = e.offsetX - previousMousePosition.x;
+                scene.rotation.y += deltaX * 0.005;
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            });
+            window.addEventListener("resize", () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function animate(ts) {
+            requestAnimationFrame(animate);
+            ts = ts || performance.now();
+            const targetFps = window.__targetFps || 30;
+            const minInterval = 1000 / targetFps;
+            if (_lastFrameTs > 0 && (ts - _lastFrameTs) < minInterval) {
+                return;
+            }
+            _lastFrameTs = ts;
+
+            const time = Date.now() * 0.001;
+            const hoverY = Math.sin(time * 1.5) * 0.4;
+
+            pinGroup.position.y = hoverY;
+            pinGroup.rotation.y += 0.005;
+
+            const iconY = headY + hoverY;
+            iconMesh.position.set(0, iconY, 0);
+            iconFrame.position.set(0, iconY, 0);
+            iconMesh.quaternion.copy(camera.quaternion);
+            iconFrame.quaternion.copy(camera.quaternion);
+
+            foodGroup.position.set(0, headY + headRadius + 0.2 + hoverY + Math.sin(time * 2) * 0.1, 0);
+            foodGroup.rotation.y += 0.015;
+
+            pulseRing.scale.set(1 + (time % 1.5) * 2.2, 1 + (time % 1.5) * 2.2, 1);
+            pulseRing.material.opacity = 1 - (time % 1.5) / 1.5;
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
