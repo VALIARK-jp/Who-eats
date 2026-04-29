@@ -2,7 +2,9 @@ class FeedPost {
   const FeedPost({
     required this.id,
     required this.userName,
+    this.userIconUrl,
     required this.placeName,
+    this.placeGoogleId,
     required this.caption,
     required this.imageUrl,
     required this.likes,
@@ -12,7 +14,9 @@ class FeedPost {
 
   final String id;
   final String userName;
+  final String? userIconUrl;
   final String placeName;
+  final String? placeGoogleId;
   final String caption;
   final String imageUrl;
   final int likes;
@@ -42,6 +46,30 @@ class MapPin {
   final List<String> friendAvatars;
   final double? latitude;
   final double? longitude;
+
+  MapPin copyWith({
+    String? id,
+    String? placeName,
+    double? rating,
+    String? friendComment,
+    String? imageUrl,
+    bool? isFriendVisited,
+    List<String>? friendAvatars,
+    double? latitude,
+    double? longitude,
+  }) {
+    return MapPin(
+      id: id ?? this.id,
+      placeName: placeName ?? this.placeName,
+      rating: rating ?? this.rating,
+      friendComment: friendComment ?? this.friendComment,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isFriendVisited: isFriendVisited ?? this.isFriendVisited,
+      friendAvatars: friendAvatars ?? this.friendAvatars,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+    );
+  }
 }
 
 class FriendCandidate {
@@ -104,12 +132,21 @@ class AppNotification {
 class PostDraft {
   const PostDraft({
     required this.photoUrl,
+    this.localImagePath,
+    this.placeGoogleId,
+    this.placeLatitude,
+    this.placeLongitude,
     required this.placeName,
     required this.note,
     required this.withWho,
   });
 
   final String photoUrl;
+  /// Local filesystem path when the image was captured on device (Supabase flow).
+  final String? localImagePath;
+  final String? placeGoogleId;
+  final double? placeLatitude;
+  final double? placeLongitude;
   final String placeName;
   final String note;
   final String withWho;
@@ -120,11 +157,13 @@ class PlacePostPreview {
     required this.id,
     required this.userName,
     required this.comment,
+    this.imageUrl,
   });
 
   final String id;
   final String userName;
   final String comment;
+  final String? imageUrl;
 }
 
 class PlaceDetail {

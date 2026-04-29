@@ -12,7 +12,11 @@ abstract interface class DashboardRepository {
   });
   Future<MapPin?> resolvePlacePinFromCoordinate(double lat, double lng);
   Future<PlaceDetail> getPlaceDetail(String placeId);
-  Future<List<PlaceSuggestion>> autocompletePlaces(String query);
+  Future<List<PlaceSuggestion>> autocompletePlaces(
+    String query, {
+    double? biasLat,
+    double? biasLng,
+  });
   Future<List<FriendCandidate>> getFriendCandidates();
   Future<RecordSummary> getRecordSummary();
   Future<ProfileOverview> getProfileOverview();

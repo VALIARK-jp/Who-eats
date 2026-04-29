@@ -87,21 +87,29 @@ class PlacePostPreviewModel {
     required this.id,
     required this.userName,
     required this.comment,
+    this.imageUrl,
   });
 
   final String id;
   final String userName;
   final String comment;
+  final String? imageUrl;
 
   factory PlacePostPreviewModel.fromJson(Map<String, dynamic> json) {
     return PlacePostPreviewModel(
       id: (json['id'] ?? '').toString(),
       userName: (json['userName'] ?? json['user_name'] ?? '').toString(),
       comment: (json['comment'] ?? '').toString(),
+      imageUrl: (json['imageUrl'] ?? json['image_url'])?.toString(),
     );
   }
 
   PlacePostPreview toEntity() {
-    return PlacePostPreview(id: id, userName: userName, comment: comment);
+    return PlacePostPreview(
+      id: id,
+      userName: userName,
+      comment: comment,
+      imageUrl: imageUrl,
+    );
   }
 }

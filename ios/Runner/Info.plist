@@ -47,5 +47,9 @@
 	<true/>
 	<key>WHOEATS_IOS_MAPS_API_KEY</key>
 	<string>$(WHOEATS_IOS_MAPS_API_KEY)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>投稿用の写真を撮影するためにカメラにアクセスします。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>近くのお店を表示し、検索結果を現在地に合わせるために位置情報を使います。</string>
 </dict>
 </plist>

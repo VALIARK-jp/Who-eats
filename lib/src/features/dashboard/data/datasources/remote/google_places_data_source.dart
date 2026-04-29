@@ -171,6 +171,7 @@ class GooglePlacesDataSource {
               id: 'rv_${entry.key}',
               userName: (entry.value['author_name'] ?? 'user').toString(),
               comment: (entry.value['text'] ?? '').toString(),
+              imageUrl: photoUrl.isEmpty ? null : photoUrl,
             ),
           )
           .toList(),
@@ -183,16 +184,22 @@ class GooglePlacesDataSource {
     );
   }
 
-  Future<List<PlaceSuggestion>> autocomplete(String query) async {
+  Future<List<PlaceSuggestion>> autocomplete(
+    String query, {
+    double? originLat,
+    double? originLng,
+  }) async {
     _log('Autocomplete start query="$query"');
     if (query.trim().isEmpty) return const [];
+    final lat = originLat ?? _defaultLat;
+    final lng = originLng ?? _defaultLng;
     final uri = Uri.https(
       'maps.googleapis.com',
       '/maps/api/place/autocomplete/json',
       {
         'input': query,
         'types': 'establishment',
-        'location': '$_defaultLat,$_defaultLng',
+        'location': '$lat,$lng',
         'radius': '25000',
         'key': _apiKey,
         'language': 'ja',

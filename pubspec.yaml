@@ -40,6 +40,8 @@ dependencies:
   webview_flutter: ^4.13.0
   flutter_dotenv: ^6.0.1
   supabase_flutter: ^2.12.4
+  image_picker: ^1.1.2
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
+import 'core/supabase/user_profile_sync.dart';
 import 'core/theme/app_theme.dart';
 import 'features/dashboard/data/datasources/mock_dashboard_data_source.dart';
 import 'features/dashboard/data/datasources/remote/google_places_data_source.dart';
@@ -52,28 +55,67 @@ class WhoEatsApp extends StatelessWidget {
         title: 'Who eats',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: AppConfig.hasSupabase ? const _AuthGate() : const AppShellPage(),
+        home: AppConfig.hasSupabase ? const AuthGate() : const AppShellPage(),
       ),
     );
   }
 }
 
-class _AuthGate extends StatelessWidget {
-  const _AuthGate();
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  late final StreamSubscription<AuthState> _authSub;
+  String? _profileSyncedForUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    final client = Supabase.instance.client;
+    _authSub = client.auth.onAuthStateChange.listen(_onAuthState);
+    final session = client.auth.currentSession;
+    if (session != null) {
+      _scheduleProfileSync(session.user.id);
+    }
+  }
+
+  void _onAuthState(AuthState data) {
+    final session = data.session;
+    if (session == null) {
+      setState(() => _profileSyncedForUserId = null);
+      return;
+    }
+    _scheduleProfileSync(session.user.id);
+  }
+
+  void _scheduleProfileSync(String userId) {
+    if (_profileSyncedForUserId == userId) return;
+    syncCurrentUserProfile().then((_) {
+      if (!mounted) return;
+      if (Supabase.instance.client.auth.currentUser?.id != userId) return;
+      setState(() => _profileSyncedForUserId = userId);
+    }).catchError((Object e, StackTrace st) {
+      debugPrint('AuthGate: user profile sync failed: $e\n$st');
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final supabase = Supabase.instance.client;
-    return StreamBuilder<AuthState>(
-      stream: supabase.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        final session = supabase.auth.currentSession;
-        if (session != null) {
-          return const AppShellPage();
-        }
-        return const _EmailAuthPage();
-      },
-    );
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session != null) {
+      return const AppShellPage();
+    }
+    return const _EmailAuthPage();
   }
 }
 

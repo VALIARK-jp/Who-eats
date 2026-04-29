@@ -18,6 +18,15 @@ class AppConfig {
   static String get supabasePublishableKey =>
       _env('WHOEATS_SUPABASE_PUBLISHABLE_KEY');
 
+  /// Matches seeded row in `0002_post_images_bucket_dev_place.sql` when env unset.
+  static const String fallbackDevPlaceUuid =
+      '00000000-0000-4000-8000-000000000001';
+
+  static String get defaultDevPlaceUuid {
+    final v = _env('WHOEATS_DEFAULT_DEV_PLACE_UUID');
+    return v.isNotEmpty ? v : fallbackDevPlaceUuid;
+  }
+
   static bool get hasMapApi =>
       mapPinsApiUrl.isNotEmpty && placeDetailApiTemplate.isNotEmpty;
   static bool get hasGooglePlacesApi => googleMapsWebApiKey.isNotEmpty;

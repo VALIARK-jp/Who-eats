@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/supabase/post_submit_service.dart';
+import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
@@ -31,7 +35,7 @@ class AppShellPage extends StatelessWidget {
           _FriendsPage(candidates: controller.friendCandidates),
           _CameraPage(onShot: () => _onCameraPressed(context, controller)),
           _RecordPage(summary: controller.recordSummary!),
-          _ProfilePage(profile: controller.profileOverview!),
+          _ProfilePage(profile: controller.profileOverview!, controller: controller),
         ];
 
         return Scaffold(
@@ -87,11 +91,38 @@ class AppShellPage extends StatelessWidget {
     BuildContext context,
     AppShellController controller,
   ) async {
-    await controller.openCameraFlow();
+    if (AppConfig.hasSupabase) {
+      final loc = await controller.ensureDeviceLocation();
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1600,
+        imageQuality: 88,
+      );
+      if (file == null) return;
+      MapPin? nearest;
+      if (loc != null) {
+        nearest = await controller.resolvePlacePinFromCoordinate(loc.lat, loc.lng);
+      }
+      controller.setPostDraft(
+        PostDraft(
+          photoUrl: '',
+          localImagePath: file.path,
+          placeGoogleId: nearest?.id,
+          placeLatitude: nearest?.latitude,
+          placeLongitude: nearest?.longitude,
+          placeName: nearest?.placeName ?? '最寄り店を取得できませんでした',
+          note: '',
+          withWho: '',
+        ),
+      );
+    } else {
+      await controller.openCameraFlow();
+    }
     if (!context.mounted || controller.postDraft == null) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: AppColors.blackElevated,
       builder: (_) => _PostEditorSheet(
         draft: controller.postDraft!,
@@ -390,14 +421,48 @@ class _MapTabState extends State<_MapTab> {
   final ValueNotifier<int> _pin3dAnimationFps =
       ValueNotifier<int>(_pin3dFpsMapIdle);
 
+  bool _didCenterOnDeviceLocation = false;
+
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_onShellControllerUpdate);
     _prepareMarkerIcons();
+  }
+
+  void _onShellControllerUpdate() {
+    unawaited(_tryCenterOnDeviceLocation());
+  }
+
+  Future<void> _tryCenterOnDeviceLocation() async {
+    if (_didCenterOnDeviceLocation) return;
+    final lat = widget.controller.deviceLatitude;
+    final lng = widget.controller.deviceLongitude;
+    final map = _mapController;
+    if (lat == null || lng == null || map == null) return;
+    _didCenterOnDeviceLocation = true;
+    try {
+      await map.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: LatLng(lat, lng), zoom: 15),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _lastCameraTarget = LatLng(lat, lng);
+      });
+      await _refreshViewportPins();
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[MapTab] center on device location failed: $e\n$st');
+      }
+      _didCenterOnDeviceLocation = false;
+    }
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onShellControllerUpdate);
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
@@ -421,6 +486,7 @@ class _MapTabState extends State<_MapTab> {
             onMapCreated: (controller) {
               _mapController = controller;
               _refreshViewportPins();
+              unawaited(_tryCenterOnDeviceLocation());
             },
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
@@ -808,13 +874,7 @@ class _MapTabState extends State<_MapTab> {
     if (_displayTier != 2 || _visible3dPinOffsets.isEmpty) {
       return const [];
     }
-    final forcedPostedId = AppConfig.postedPinPlaceId.trim();
-    final forcedPostedName = AppConfig.postedPinPlaceName.trim().toLowerCase();
-    final postedPinId = _resolvePostedPinId(
-      pins: pins,
-      forcedPostedId: forcedPostedId,
-      forcedPostedName: forcedPostedName,
-    );
+    final postedIds = widget.controller.postedPlaceGoogleIds;
 
     return [
       for (int i = 0; i < pins.length; i++)
@@ -822,28 +882,9 @@ class _MapTabState extends State<_MapTab> {
           ..._buildSingle3dOverlayWithTapTarget(
             context,
             pins[i],
-            isPostedPin: postedPinId != null && pins[i].id == postedPinId,
+            isPostedPin: postedIds.contains(pins[i].id) || pins[i].isFriendVisited,
           ),
     ];
-  }
-
-  String? _resolvePostedPinId({
-    required List<MapPin> pins,
-    required String forcedPostedId,
-    required String forcedPostedName,
-  }) {
-    if (forcedPostedId.isNotEmpty) {
-      final matched = pins.where((p) => p.id == forcedPostedId).toList();
-      return matched.isEmpty ? null : matched.first.id;
-    }
-    if (forcedPostedName.isNotEmpty) {
-      final matched = pins.where(
-        (p) => p.placeName.toLowerCase().contains(forcedPostedName),
-      );
-      return matched.isEmpty ? null : matched.first.id;
-    }
-    final visited = pins.where((p) => p.isFriendVisited);
-    return visited.isEmpty ? null : visited.first.id;
   }
 
   List<Widget> _buildSingle3dOverlayWithTapTarget(
@@ -853,6 +894,7 @@ class _MapTabState extends State<_MapTab> {
   }) {
     final offset = _visible3dPinOffsets[pin.id]!;
     final pinAssetPath = isPostedPin ? 'assets/3d_pin_posted.html' : 'assets/3d_pin.html';
+    final postedIconUrl = widget.controller.postedPlaceUserIcons[pin.id];
     return [
       Positioned(
         left: offset.dx - 75,
@@ -867,6 +909,7 @@ class _MapTabState extends State<_MapTab> {
               width: 150,
               height: 150,
               assetPath: pinAssetPath,
+              initialIconUrl: isPostedPin ? postedIconUrl : null,
               initialIconAsset: isPostedPin ? 'doc/yuto.jpg' : null,
               webviewBackground: Colors.transparent,
               animationFpsListenable: _pin3dAnimationFps,
@@ -910,9 +953,10 @@ class _MapTabState extends State<_MapTab> {
           Marker(
             markerId: MarkerId(pins[i].id),
             position: _latLngFor(pins[i], i),
-            icon:
-                _microMarkerIcon ??
-                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+            icon: _microMarkerIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueOrange,
+                ),
             zIndexInt: 1,
             onTap: () async => _openMapBottomSheet(context, pins[i]),
           ),
@@ -1301,8 +1345,31 @@ class _RecordPage extends StatelessWidget {
 }
 
 class _ProfilePage extends StatelessWidget {
-  const _ProfilePage({required this.profile});
+  const _ProfilePage({required this.profile, required this.controller});
   final ProfileOverview profile;
+  final AppShellController controller;
+
+  Future<void> _editIcon(BuildContext context) async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      imageQuality: 86,
+    );
+    if (file == null) return;
+    try {
+      await ProfileIconService().uploadAndSaveProfileIcon(File(file.path));
+      await controller.initialize();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('プロフィールアイコンを更新しました')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('アイコン更新に失敗しました: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1319,11 +1386,19 @@ class _ProfilePage extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 26,
-                child: Text(profile.name.substring(0, 1).toUpperCase()),
+                backgroundImage: profile.avatarUrl.isNotEmpty
+                    ? NetworkImage(profile.avatarUrl)
+                    : null,
+                child: profile.avatarUrl.isEmpty
+                    ? Text(profile.name.substring(0, 1).toUpperCase())
+                    : null,
               ),
               const SizedBox(width: 12),
               Expanded(child: Text('@${profile.name}')),
-              OutlinedButton(onPressed: () {}, child: const Text('プロフィール編集')),
+              OutlinedButton(
+                onPressed: () => _editIcon(context),
+                child: const Text('アイコン編集'),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1628,12 +1703,23 @@ class _MapPlaceSheet extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const CircleAvatar(
-                          radius: 16,
-                          backgroundColor: AppColors.gray,
-                          child: Icon(Icons.person, size: 16),
-                        ),
-                        const SizedBox(width: 8),
+                        if (post.imageUrl != null && post.imageUrl!.isNotEmpty)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              post.imageUrl!,
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        else
+                          const CircleAvatar(
+                            radius: 28,
+                            backgroundColor: AppColors.gray,
+                            child: Icon(Icons.photo_outlined, size: 20),
+                          ),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1770,82 +1856,240 @@ class _BottomStat extends StatelessWidget {
   }
 }
 
-class _PostEditorSheet extends StatelessWidget {
+class _PostEditorSheet extends StatefulWidget {
   const _PostEditorSheet({required this.draft, required this.controller});
   final PostDraft draft;
   final AppShellController controller;
 
   @override
+  State<_PostEditorSheet> createState() => _PostEditorSheetState();
+}
+
+class _PostEditorSheetState extends State<_PostEditorSheet> {
+  late final TextEditingController _captionController;
+  late final TextEditingController _placeController;
+  String _postType = 'restaurant';
+  String _visibility = 'friends';
+  bool _submitting = false;
+  String? _selectedPlaceGoogleId;
+  double? _selectedPlaceLat;
+  double? _selectedPlaceLng;
+
+  @override
+  void initState() {
+    super.initState();
+    _captionController = TextEditingController(text: widget.draft.note);
+    _placeController = TextEditingController(text: widget.draft.placeName);
+    _selectedPlaceGoogleId = widget.draft.placeGoogleId;
+    _selectedPlaceLat = widget.draft.placeLatitude;
+    _selectedPlaceLng = widget.draft.placeLongitude;
+  }
+
+  @override
+  void dispose() {
+    _captionController.dispose();
+    _placeController.dispose();
+    super.dispose();
+  }
+
+  String _visibilityLabel() {
+    switch (_visibility) {
+      case 'public':
+        return '公開';
+      case 'private':
+        return '非公開';
+      default:
+        return '友だちのみ';
+    }
+  }
+
+  Future<void> _submit(BuildContext context) async {
+    if (_submitting) return;
+    if (AppConfig.hasSupabase) {
+      final path = widget.draft.localImagePath;
+      if (path == null || path.isEmpty) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('カメラで撮影した写真が必要です')),
+        );
+        return;
+      }
+      setState(() => _submitting = true);
+      try {
+        await PostSubmitService().submitPhotoPost(
+          imageFile: File(path),
+          postType: _postType,
+          visibility: _visibility,
+          restaurantPlaceGoogleId: _selectedPlaceGoogleId,
+          restaurantPlaceName: _placeController.text.trim(),
+          restaurantPlaceLatitude: _selectedPlaceLat,
+          restaurantPlaceLongitude: _selectedPlaceLng,
+          caption: _captionController.text.trim().isEmpty
+              ? null
+              : _captionController.text.trim(),
+        );
+        if (!context.mounted) return;
+        widget.controller.clearPostDraft();
+        await widget.controller.initialize();
+        if (!context.mounted) return;
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('投稿しました')),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('投稿に失敗しました: $e')),
+        );
+      } finally {
+        if (mounted) setState(() => _submitting = false);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    Navigator.pop(context);
+  }
+
+  void _onSubmitPressed(BuildContext context) {
+    FocusScope.of(context).unfocus();
+    _submit(context);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    const actionAreaHeight = 84.0;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.72,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Stack(
           children: [
-            const Text(
-              '新しい投稿',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.network(
-                draft.photoUrl,
-                height: 200,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              onChanged: controller.searchPlaceSuggestions,
-              decoration: InputDecoration(
-                labelText: '料理名（店名）',
-                hintText: draft.placeName,
-              ),
-            ),
-            const SizedBox(height: 8),
-            AnimatedBuilder(
-              animation: controller,
-              builder: (_, __) => Column(
-                children: controller.placeSuggestions
-                    .take(4)
-                    .map(
-                      (s) => ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(
-                          Icons.location_on_outlined,
-                          size: 18,
-                        ),
-                        title: Text(
-                          s.description,
-                          style: const TextStyle(fontSize: 13),
+            Positioned.fill(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                children: [
+                  const Text(
+                    '新しい投稿',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: SizedBox(
+                      height: 200,
+                      width: double.infinity,
+                      child: widget.draft.localImagePath != null
+                          ? Image.file(
+                              File(widget.draft.localImagePath!),
+                              fit: BoxFit.cover,
+                            )
+                          : Image.network(
+                              widget.draft.photoUrl,
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _placeController,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: '店名（現在地から最寄り）',
+                    ),
+                  ),
+                  if (_selectedPlaceGoogleId == null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        '位置情報または最寄り店の解決に失敗したため、投稿できません。',
+                        style: TextStyle(fontSize: 12, color: Colors.orange),
+                      ),
+                    ),
+                  TextField(
+                    controller: _captionController,
+                    decoration: InputDecoration(
+                      labelText: 'キャプション',
+                      hintText: widget.draft.note,
+                    ),
+                  ),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: '誰といるか',
+                      hintText: widget.draft.withWho,
+                    ),
+                  ),
+                  if (AppConfig.hasSupabase) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      '種類',
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'restaurant', label: Text('外食')),
+                        ButtonSegment(value: 'home', label: Text('自宅')),
+                      ],
+                      selected: {_postType},
+                      onSelectionChanged: (s) {
+                        setState(() => _postType = s.first);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '公開範囲',
+                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (v) => setState(() => _visibility = v),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'friends',
+                            child: Text('友だちのみ'),
+                          ),
+                          PopupMenuItem(value: 'public', child: Text('公開')),
+                          PopupMenuItem(value: 'private', child: Text('非公開')),
+                        ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_visibilityLabel()),
+                            const Icon(Icons.arrow_drop_down),
+                          ],
                         ),
                       ),
-                    )
-                    .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: actionAreaHeight),
+                ],
               ),
             ),
-            TextField(
-              decoration: InputDecoration(
-                labelText: '一言',
-                hintText: draft.note,
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 12 + bottomInset,
+              child: SizedBox(
+                height: 48,
+                child: FilledButton(
+                  onPressed: (_submitting ||
+                          (_postType == 'restaurant' &&
+                              _selectedPlaceGoogleId == null))
+                      ? null
+                      : () => _onSubmitPressed(context),
+                  child: _submitting
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('投稿する'),
+                ),
               ),
-            ),
-            TextField(
-              decoration: InputDecoration(
-                labelText: '誰といるか',
-                hintText: draft.withWho,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('投稿する'),
             ),
           ],
         ),

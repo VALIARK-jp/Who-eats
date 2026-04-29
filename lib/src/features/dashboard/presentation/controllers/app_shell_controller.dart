@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../../core/location/device_location.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/usecases/dashboard_usecases.dart';
 
@@ -55,17 +56,43 @@ class AppShellController extends ChangeNotifier {
   List<AppNotification> notifications = [];
   PostDraft? postDraft;
   List<PlaceSuggestion> placeSuggestions = [];
+  Set<String> postedPlaceGoogleIds = <String>{};
+  Map<String, String> postedPlaceUserIcons = <String, String>{};
+  double? deviceLatitude;
+  double? deviceLongitude;
 
   Future<void> initialize() async {
     _log('initialize start');
     loading = true;
     notifyListeners();
+    final deviceLocFuture = readDeviceLatLng();
     feed = await _getHomeFeedUseCase();
     mapPins = await _getMapPinsUseCase();
     friendCandidates = await _getFriendCandidatesUseCase();
     recordSummary = await _getRecordSummaryUseCase();
     profileOverview = await _getProfileOverviewUseCase();
     notifications = await _getNotificationsUseCase();
+    postedPlaceGoogleIds = {
+      ...feed
+          .map((p) => p.placeGoogleId)
+          .whereType<String>()
+          .where((v) => v.isNotEmpty),
+      ...mapPins.where((p) => p.isFriendVisited).map((p) => p.id),
+    };
+    postedPlaceUserIcons = {
+      for (final p in feed)
+        if ((p.placeGoogleId ?? '').isNotEmpty &&
+            (p.userIconUrl ?? '').isNotEmpty)
+          p.placeGoogleId!: p.userIconUrl!,
+    };
+    final loc = await deviceLocFuture;
+    if (loc != null) {
+      deviceLatitude = loc.lat;
+      deviceLongitude = loc.lng;
+      _log('device location lat=$deviceLatitude lng=$deviceLongitude');
+    } else {
+      _log('device location unavailable');
+    }
     loading = false;
     _log('initialize done feed=${feed.length} pins=${mapPins.length}');
     notifyListeners();
@@ -83,6 +110,30 @@ class AppShellController extends ChangeNotifier {
 
   Future<void> openCameraFlow() async {
     postDraft = await _createPostDraftUseCase();
+    notifyListeners();
+  }
+
+  Future<DeviceLatLng?> ensureDeviceLocation() async {
+    if (deviceLatitude != null && deviceLongitude != null) {
+      return DeviceLatLng(lat: deviceLatitude!, lng: deviceLongitude!);
+    }
+    final loc = await readDeviceLatLng();
+    if (loc != null) {
+      deviceLatitude = loc.lat;
+      deviceLongitude = loc.lng;
+      notifyListeners();
+    }
+    return loc;
+  }
+
+  void setPostDraft(PostDraft draft) {
+    postDraft = draft;
+    notifyListeners();
+  }
+
+  void clearPostDraft() {
+    if (postDraft == null) return;
+    postDraft = null;
     notifyListeners();
   }
 
@@ -119,7 +170,11 @@ class AppShellController extends ChangeNotifier {
 
   Future<void> searchPlaceSuggestions(String query) async {
     _log('searchPlaceSuggestions query="$query"');
-    placeSuggestions = await _autocompletePlacesUseCase(query);
+    placeSuggestions = await _autocompletePlacesUseCase(
+      query,
+      biasLat: deviceLatitude,
+      biasLng: deviceLongitude,
+    );
     _log('searchPlaceSuggestions result=${placeSuggestions.length}');
     notifyListeners();
   }

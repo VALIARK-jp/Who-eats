@@ -5,7 +5,9 @@ class MockDashboardDataSource {
     FeedPost(
       id: 'p1',
       userName: 'haruka',
+      userIconUrl: null,
       placeName: 'and people udagawa',
+      placeGoogleId: 'm1',
       caption: 'オムライスの半熟感が最高だった',
       imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554',
       likes: 42,
@@ -15,7 +17,9 @@ class MockDashboardDataSource {
     FeedPost(
       id: 'p2',
       userName: 'ryota',
+      userIconUrl: null,
       placeName: '恵比寿焼肉',
+      placeGoogleId: 'm2',
       caption: '肉の香りがもう優勝',
       imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1',
       likes: 29,
@@ -63,17 +67,32 @@ class MockDashboardDataSource {
     openNow: true,
     travelMinutes: 9,
     posts: [
-      PlacePostPreview(id: 'pp1', userName: 'haruka', comment: 'ライト暗めで写真映えした！'),
-      PlacePostPreview(id: 'pp2', userName: 'ryota', comment: 'ご飯もデザートも当たり'),
+      PlacePostPreview(
+        id: 'pp1',
+        userName: 'haruka',
+        comment: 'ライト暗めで写真映えした！',
+        imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4',
+      ),
+      PlacePostPreview(
+        id: 'pp2',
+        userName: 'ryota',
+        comment: 'ご飯もデザートも当たり',
+        imageUrl: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543',
+      ),
       PlacePostPreview(
         id: 'pp3',
         userName: 'yuma_21',
         comment: '友達と来るのにちょうど良い',
+        imageUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836',
       ),
     ],
   );
 
-  Future<List<PlaceSuggestion>> autocompletePlaces(String query) async =>
+  Future<List<PlaceSuggestion>> autocompletePlaces(
+    String query, {
+    double? biasLat,
+    double? biasLng,
+  }) async =>
       const [
         PlaceSuggestion(placeId: 'm1', description: 'and people udagawa'),
         PlaceSuggestion(placeId: 'm2', description: '渋谷らーめん本舗'),

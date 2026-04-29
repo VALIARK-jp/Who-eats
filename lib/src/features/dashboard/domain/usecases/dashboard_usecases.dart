@@ -52,8 +52,15 @@ class GetPlaceDetailUseCase {
 class AutocompletePlacesUseCase {
   const AutocompletePlacesUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<PlaceSuggestion>> call(String query) =>
-      _repository.autocompletePlaces(query);
+  Future<List<PlaceSuggestion>> call(
+    String query, {
+    double? biasLat,
+    double? biasLng,
+  }) => _repository.autocompletePlaces(
+    query,
+    biasLat: biasLat,
+    biasLng: biasLng,
+  );
 }
 
 class GetFriendCandidatesUseCase {

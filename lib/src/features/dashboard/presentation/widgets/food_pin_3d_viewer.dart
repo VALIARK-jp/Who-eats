@@ -20,6 +20,7 @@ class FoodPin3DViewer extends StatefulWidget {
     this.height,
     this.assetPath = 'assets/3d_pin.html',
     this.initialIconAsset,
+    this.initialIconUrl,
     this.webviewBackground = Colors.transparent,
     this.animationFpsListenable,
   });
@@ -28,6 +29,7 @@ class FoodPin3DViewer extends StatefulWidget {
   final double? height;
   final String assetPath;
   final String? initialIconAsset;
+  final String? initialIconUrl;
   final Color webviewBackground;
 
   /// マップ操作時などに FPS を下げる。未指定なら HTML 既定（30fps）。
@@ -88,6 +90,10 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
       _lastPushedFps = null;
       unawaited(_pushTargetFpsToWebView());
     }
+    if (oldWidget.initialIconAsset != widget.initialIconAsset ||
+        oldWidget.initialIconUrl != widget.initialIconUrl) {
+      unawaited(_injectInitialIconIfNeeded());
+    }
   }
 
   @override
@@ -146,6 +152,21 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   }
 
   Future<void> _injectInitialIconIfNeeded() async {
+    final iconUrl = widget.initialIconUrl;
+    if (iconUrl != null && iconUrl.isNotEmpty) {
+      try {
+        await _waitForPageReady();
+        await _controller.runJavaScript(
+          'window.updateIcon && window.updateIcon(${jsonEncode(iconUrl)});',
+        );
+        return;
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[FoodPin3DViewer] inject icon url failed: $e\n$st');
+        }
+      }
+    }
+
     final iconAsset = widget.initialIconAsset;
     if (iconAsset == null || iconAsset.isEmpty) return;
     try {
