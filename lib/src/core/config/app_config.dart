@@ -14,8 +14,13 @@ class AppConfig {
   static String get postedPinPlaceId => _env('WHOEATS_POSTED_PIN_PLACE_ID');
   static String get postedPinPlaceName =>
       _env('WHOEATS_POSTED_PIN_PLACE_NAME');
+  static String get supabaseUrl => _env('WHOEATS_SUPABASE_URL');
+  static String get supabasePublishableKey =>
+      _env('WHOEATS_SUPABASE_PUBLISHABLE_KEY');
 
   static bool get hasMapApi =>
       mapPinsApiUrl.isNotEmpty && placeDetailApiTemplate.isNotEmpty;
   static bool get hasGooglePlacesApi => googleMapsWebApiKey.isNotEmpty;
+  static bool get hasSupabase =>
+      supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty;
 }
