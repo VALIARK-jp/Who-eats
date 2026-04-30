@@ -144,25 +144,22 @@ class _CameraCta extends StatelessWidget {
     return SizedBox(
       width: 58,
       height: 58,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: Ink(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.orange,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.orange.withValues(alpha: 0.48),
-                  blurRadius: 34,
-                  spreadRadius: 4,
-                ),
-              ],
-            ),
-            child: const Icon(Icons.add, color: Colors.black, size: 30),
+      child: GestureDetector(
+        onTap: onPressed,
+        behavior: HitTestBehavior.opaque,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.orange,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.orange.withValues(alpha: 0.48),
+                blurRadius: 34,
+                spreadRadius: 4,
+              ),
+            ],
           ),
+          child: const Icon(Icons.add, color: Colors.black, size: 30),
         ),
       ),
     );
