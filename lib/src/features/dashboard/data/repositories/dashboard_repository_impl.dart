@@ -31,10 +31,17 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<List<FeedPost>> getHomeFeed() async {
-    final base = await _dataSource.getHomeFeed();
-    final mine = await _getMyRecentPostsForFeed();
-    if (mine.isEmpty) return base;
-    return [...mine, ...base];
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid != null) {
+      try {
+        // RLS (`posts_select_visible`) applies visibility + block rules.
+        return await _getHomeFeedFromSupabase();
+      } catch (e) {
+        _log('getHomeFeed supabase failed: $e');
+        return _dataSource.getHomeFeed();
+      }
+    }
+    return _dataSource.getHomeFeed();
   }
 
   @override
@@ -400,60 +407,100 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   double _deg2rad(double d) => d * (math.pi / 180.0);
 
-  Future<List<FeedPost>> _getMyRecentPostsForFeed() async {
-    final uid = _supabase.auth.currentUser?.id;
-    final user = _supabase.auth.currentUser;
-    if (uid == null || user == null) return const [];
-    try {
-      final rows = await _supabase
-          .from('posts')
-          .select('''
-            id,caption,created_at,places(name,google_place_id),post_images(storage_path,display_order)
-          ''')
-          .eq('user_id', uid)
-          .isFilter('deleted_at', null)
-          .gte(
-            'created_at',
-            DateTime.now().toUtc().subtract(const Duration(hours: 24)).toIso8601String(),
-          )
-          .order('created_at', ascending: false)
-          .limit(20);
+  Future<List<FeedPost>> _getHomeFeedFromSupabase() async {
+    if (_supabase.auth.currentUser?.id == null) return const [];
 
-      final list = <FeedPost>[];
-      final userIconUrl = await _resolveCurrentUserIconUrl();
-      for (final raw in (rows as List<dynamic>)) {
-        final row = raw as Map<String, dynamic>;
-        final images = (row['post_images'] as List<dynamic>? ?? [])
-            .cast<Map<String, dynamic>>();
-        if (images.isEmpty) continue;
-        images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
-            .compareTo(((b['display_order'] as num?) ?? 0)));
-        final storagePath = (images.first['storage_path'] ?? '').toString();
-        if (storagePath.isEmpty) continue;
-        final imageUrl = await _supabase.storage
-            .from('post-images')
-            .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-        final place = _extractEmbeddedPlace(row['places']);
-        list.add(
-          FeedPost(
-            id: row['id'].toString(),
-            userName: (user.email ?? 'me').split('@').first,
-            userIconUrl: userIconUrl,
-            placeName: (place?['name'] ?? '不明な店舗').toString(),
-            placeGoogleId: (place?['google_place_id'] ?? '').toString(),
-            caption: (row['caption'] ?? '').toString(),
-            imageUrl: imageUrl,
-            likes: 0,
-            comments: 0,
-            friendAvatars: const [],
-          ),
-        );
-      }
-      return list;
-    } catch (e) {
-      _log('_getMyRecentPostsForFeed failed: $e');
-      return const [];
+    final rows = await _supabase
+        .from('posts')
+        .select('''
+          id,caption,created_at,post_type,
+          users(name,icon_path,email),
+          places(name,google_place_id),
+          post_images(storage_path,display_order)
+        ''')
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    final list = <FeedPost>[];
+    for (final raw in (rows as List<dynamic>)) {
+      final row = raw as Map<String, dynamic>;
+      final post = await _feedPostFromTimelineRow(row);
+      if (post != null) list.add(post);
     }
+    return list;
+  }
+
+  Future<FeedPost?> _feedPostFromTimelineRow(Map<String, dynamic> row) async {
+    final images = (row['post_images'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (images.isEmpty) return null;
+    images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
+        .compareTo(((b['display_order'] as num?) ?? 0)));
+    final storagePath = (images.first['storage_path'] ?? '').toString();
+    if (storagePath.isEmpty) return null;
+
+    String imageUrl;
+    try {
+      imageUrl = await _supabase.storage
+          .from('post-images')
+          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+    } catch (e) {
+      _log('_feedPostFromTimelineRow signed url failed: $e');
+      return null;
+    }
+
+    final author = _extractEmbeddedUser(row['users']);
+    final displayName = (author?['name'] ?? '').toString().trim();
+    final email = (author?['email'] ?? '').toString();
+    final userName = displayName.isNotEmpty
+        ? displayName
+        : (email.isNotEmpty ? email.split('@').first : 'user');
+
+    final iconPath = (author?['icon_path'] ?? '').toString();
+    final userIconUrl = await _signedStorageOrAbsoluteUrl(iconPath);
+
+    final place = _extractEmbeddedPlace(row['places']);
+    final postType = (row['post_type'] ?? 'restaurant').toString();
+    final placeName = place != null
+        ? (place['name'] ?? '不明な店舗').toString()
+        : (postType == 'home' ? 'ホーム' : '不明な店舗');
+
+    return FeedPost(
+      id: row['id'].toString(),
+      userName: userName,
+      userIconUrl: userIconUrl,
+      placeName: placeName,
+      placeGoogleId: (place?['google_place_id'] ?? '').toString(),
+      caption: (row['caption'] ?? '').toString(),
+      imageUrl: imageUrl,
+      likes: 0,
+      comments: 0,
+      friendAvatars: const [],
+    );
+  }
+
+  Future<String?> _signedStorageOrAbsoluteUrl(String iconPath) async {
+    if (iconPath.isEmpty) return null;
+    if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) {
+      return iconPath;
+    }
+    try {
+      return await _supabase.storage
+          .from('post-images')
+          .createSignedUrl(iconPath, 60 * 60 * 24 * 7);
+    } catch (e) {
+      _log('_signedStorageOrAbsoluteUrl failed: $e');
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? _extractEmbeddedUser(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is List && raw.isNotEmpty && raw.first is Map<String, dynamic>) {
+      return raw.first as Map<String, dynamic>;
+    }
+    return null;
   }
 
   Future<List<PlacePostPreview>> _getMyPlacePosts({

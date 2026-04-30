@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/supabase/post_submit_service.dart';
@@ -15,10 +16,61 @@ import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
+import '../widgets/floating_bottom_nav.dart';
+import '../widgets/friend_avatar_stack.dart';
+import '../widgets/food_post_card.dart';
 import '../widgets/food_pin_3d_viewer.dart';
+import '../widgets/place_bottom_sheet.dart';
+import '../widgets/friend_avatar.dart';
+import '../widgets/orange_glow_button.dart';
+import '../widgets/calendar_record_view.dart';
+import '../widgets/profile_food_grid.dart';
+import '../widgets/app_state_view.dart';
 
-class AppShellPage extends StatelessWidget {
+class AppShellPage extends StatefulWidget {
   const AppShellPage({super.key});
+
+  @override
+  State<AppShellPage> createState() => _AppShellPageState();
+}
+
+class _AppShellPageState extends State<AppShellPage> {
+  MapPin? _activePlaceSheetPin;
+  bool _postEditorOpen = false;
+  FeedPost? _activePostDetail;
+
+  double _bottomNavOffset(BuildContext context) {
+    // Matches the outer padding of `FloatingBottomNav` (height=62, bottom padding=8).
+    return 62 + 8 + MediaQuery.paddingOf(context).bottom;
+  }
+
+  void _openPlaceSheet(MapPin pin) {
+    setState(() => _activePlaceSheetPin = pin);
+  }
+
+  void _closePlaceSheet() {
+    if (_activePlaceSheetPin == null) return;
+    setState(() => _activePlaceSheetPin = null);
+  }
+
+  void _openPostEditor() {
+    setState(() => _postEditorOpen = true);
+  }
+
+  void _openPostDetail(FeedPost post) {
+    setState(() => _activePostDetail = post);
+  }
+
+  void _closePostEditor({bool clearDraft = true, AppShellController? controller}) {
+    if (!_postEditorOpen) return;
+    setState(() => _postEditorOpen = false);
+    if (clearDraft) controller?.clearPostDraft();
+  }
+
+  void _closePostDetail() {
+    if (_activePostDetail == null) return;
+    setState(() => _activePostDetail = null);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,56 +83,124 @@ class AppShellPage extends StatelessWidget {
         }
 
         final pages = [
-          _HomePage(controller: controller),
+          _HomePage(
+            controller: controller,
+            onOpenPlace: _openPlaceSheet,
+            onOpenPostDetail: _openPostDetail,
+          ),
           _FriendsPage(candidates: controller.friendCandidates),
           _CameraPage(onShot: () => _onCameraPressed(context, controller)),
           _RecordPage(summary: controller.recordSummary!),
           _ProfilePage(profile: controller.profileOverview!, controller: controller),
         ];
 
+        final bottomOffset = _bottomNavOffset(context);
+        final availableHeight = MediaQuery.of(context).size.height - bottomOffset;
+
         return Scaffold(
           extendBody: true,
-          body: pages[controller.bottomIndex],
-          bottomNavigationBar: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: NavigationBar(
-                height: 62,
-                selectedIndex: controller.bottomIndex,
-                backgroundColor: AppColors.black,
-                indicatorColor: Colors.transparent,
-                onDestinationSelected: (index) {
-                  if (index == 2) {
-                    _onCameraPressed(context, controller);
-                    return;
-                  }
-                  controller.changeBottomIndex(index);
-                },
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    label: 'ホーム',
+          body: Stack(
+            children: [
+              pages[controller.bottomIndex],
+
+              // Place (map pin) bottom sheet overlay.
+              if (_activePlaceSheetPin != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _closePlaceSheet,
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.25),
+                    ),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.people_alt_outlined),
-                    label: '友達',
+                ),
+              if (_activePlaceSheetPin != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: availableHeight,
+                  child: DraggableScrollableSheet(
+                    initialChildSize: 0.56,
+                    minChildSize: 0.34,
+                    maxChildSize: 0.78,
+                    snap: true,
+                    snapSizes: const [0.56, 0.72],
+                    expand: false,
+                    builder: (context, scrollController) {
+                      final pin = _activePlaceSheetPin!;
+                      return PlaceBottomSheet(
+                        pin: pin,
+                        detailFuture: controller.getPlaceDetail(pin.id),
+                        scrollController: scrollController,
+                        onClose: _closePlaceSheet,
+                        onPostTap: (_) {},
+                      );
+                    },
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.camera_alt),
-                    label: '撮影',
+                ),
+
+              // Post editor overlay (camera -> edit -> submit).
+              if (_postEditorOpen && controller.postDraft != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: bottomOffset,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _closePostEditor(
+                      controller: controller,
+                    ),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.22),
+                    ),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.calendar_month_outlined),
-                    label: '記録',
+                ),
+              if (_postEditorOpen && controller.postDraft != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: bottomOffset,
+                  height: availableHeight,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizedBox(
+                      // Keep the same feel as the old bottom-sheet (72%).
+                      height: (availableHeight * 0.72).clamp(420.0, availableHeight),
+                      child: PostCreationPage(
+                        draft: controller.postDraft!,
+                        controller: controller,
+                        sheetHeight: (availableHeight * 0.72).clamp(420.0, availableHeight),
+                        onClose: () => _closePostEditor(controller: controller),
+                      ),
+                    ),
                   ),
-                  NavigationDestination(
-                    icon: Icon(Icons.person_outline),
-                    label: 'プロフィール',
+                ),
+
+              // Post detail overlay.
+              if (_activePostDetail != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: bottomOffset,
+                  child: PostDetailPage(
+                    post: _activePostDetail!,
+                    controller: controller,
+                    onClose: _closePostDetail,
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
+          ),
+          bottomNavigationBar: FloatingBottomNav(
+            selectedIndex: controller.bottomIndex,
+            onTabSelected: (index) => controller.changeBottomIndex(index),
+            onCameraPressed: () => controller.changeBottomIndex(2),
           ),
         );
       },
@@ -99,10 +219,12 @@ class AppShellPage extends StatelessWidget {
         imageQuality: 88,
       );
       if (file == null) return;
+
       MapPin? nearest;
       if (loc != null) {
         nearest = await controller.resolvePlacePinFromCoordinate(loc.lat, loc.lng);
       }
+
       controller.setPostDraft(
         PostDraft(
           photoUrl: '',
@@ -118,23 +240,21 @@ class AppShellPage extends StatelessWidget {
     } else {
       await controller.openCameraFlow();
     }
+
     if (!context.mounted || controller.postDraft == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: AppColors.blackElevated,
-      builder: (_) => _PostEditorSheet(
-        draft: controller.postDraft!,
-        controller: controller,
-      ),
-    );
+    _openPostEditor();
   }
 }
 
 class _HomePage extends StatefulWidget {
-  const _HomePage({required this.controller});
+  const _HomePage({
+    required this.controller,
+    required this.onOpenPlace,
+    required this.onOpenPostDetail,
+  });
   final AppShellController controller;
+  final ValueChanged<MapPin> onOpenPlace;
+  final ValueChanged<FeedPost> onOpenPostDetail;
 
   @override
   State<_HomePage> createState() => _HomePageState();
@@ -185,10 +305,14 @@ class _HomePageState extends State<_HomePage> {
               }
             },
             children: [
-              _FeedTab(feed: controller.feed),
+              _FeedTab(
+                feed: controller.feed,
+                onTapPost: widget.onOpenPostDetail,
+              ),
               _MapTab(
                 mapPins: controller.mapPins,
                 controller: controller,
+                onPlaceTap: widget.onOpenPlace,
                 onSearchExpansionChanged: (expanded) {
                   if (!mounted) return;
                   setState(() {
@@ -290,10 +414,11 @@ class _HomeTabSwitcher extends StatelessWidget {
         showSelectedIcon: false,
         style: SegmentedButton.styleFrom(
           backgroundColor: AppColors.black.withValues(alpha: 0.8),
-          selectedBackgroundColor: AppColors.black.withValues(alpha: 0.8),
-          foregroundColor: AppColors.white,
-          selectedForegroundColor: AppColors.orange,
-          side: BorderSide(color: AppColors.white.withValues(alpha: 0.22)),
+          selectedBackgroundColor: AppColors.orangeAccent.withValues(alpha: 0.18),
+          foregroundColor: AppColors.white.withValues(alpha: 0.78),
+          selectedForegroundColor: AppColors.orangeHighlight,
+          side: BorderSide(color: AppColors.border2),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
         ),
         segments: const [
           ButtonSegment(value: 0, label: Text('投稿')),
@@ -307,58 +432,31 @@ class _HomeTabSwitcher extends StatelessWidget {
 }
 
 class _FeedTab extends StatelessWidget {
-  const _FeedTab({required this.feed});
+  const _FeedTab({
+    required this.feed,
+    required this.onTapPost,
+  });
   final List<FeedPost> feed;
+  final ValueChanged<FeedPost> onTapPost;
 
   @override
   Widget build(BuildContext context) {
+    if (feed.isEmpty) {
+      return AppStateView(
+        type: AppStateType.empty,
+        title: '投稿がまだありません',
+        message: '撮影して、みんなの「おすすめ」を広げよう。',
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 130, 16, 120),
       itemCount: feed.length,
       separatorBuilder: (_, _) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final post = feed[index];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '@${post.userName}',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Image.network(
-                    post.imageUrl,
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  post.placeName,
-                  style: const TextStyle(color: Colors.orangeAccent),
-                ),
-                Text(post.caption),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.favorite_border, size: 18),
-                    const SizedBox(width: 4),
-                    Text('${post.likes}'),
-                    const SizedBox(width: 12),
-                    const Icon(Icons.chat_bubble_outline, size: 18),
-                    const SizedBox(width: 4),
-                    Text('${post.comments}'),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        return FoodPostCard(
+          post: post,
+          onTap: () => onTapPost(post),
         );
       },
     );
@@ -369,11 +467,13 @@ class _MapTab extends StatefulWidget {
   const _MapTab({
     required this.mapPins,
     required this.controller,
+    required this.onPlaceTap,
     required this.onSearchExpansionChanged,
     required this.onEdgeSwipeBack,
   });
   final List<MapPin> mapPins;
   final AppShellController controller;
+  final ValueChanged<MapPin> onPlaceTap;
   final ValueChanged<bool> onSearchExpansionChanged;
   final VoidCallback onEdgeSwipeBack;
 
@@ -474,6 +574,18 @@ class _MapTabState extends State<_MapTab> {
   Widget build(BuildContext context) {
     final pins = widget.mapPins;
     final topBarY = MediaQuery.paddingOf(context).top;
+    if (pins.isEmpty) {
+      final hasLocation = widget.controller.deviceLatitude != null &&
+          widget.controller.deviceLongitude != null;
+      return AppStateView(
+        type: hasLocation ? AppStateType.empty : AppStateType.permissionDenied,
+        title: hasLocation ? '近くの店舗が見つかりません' : '位置情報が必要です',
+        message: hasLocation
+            ? 'キーワード検索で探してみてください。'
+            : '位置情報/位置許可を有効にしてからお試しください。',
+        onRetry: hasLocation ? null : () {},
+      );
+    }
     return Stack(
       children: [
         Positioned.fill(
@@ -674,25 +786,7 @@ class _MapTabState extends State<_MapTab> {
   Future<void> _openMapBottomSheet(BuildContext context, MapPin pin) async {
     if (!context.mounted) return;
     _log('openBottomSheet placeId=${pin.id} name=${pin.placeName}');
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      enableDrag: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.56,
-        minChildSize: 0.34,
-        maxChildSize: 0.78,
-        snap: true,
-        snapSizes: const [0.56, 0.72],
-        expand: false,
-        builder: (context, scrollController) => _MapPlaceSheet(
-          pin: pin,
-          detailFuture: widget.controller.getPlaceDetail(pin.id),
-          scrollController: scrollController,
-        ),
-      ),
-    );
+    widget.onPlaceTap(pin);
   }
 
   Future<void> _applyKeywordFilter(String? keyword) async {
@@ -1167,73 +1261,358 @@ class _ZoomButton extends StatelessWidget {
   }
 }
 
-class _FriendsPage extends StatelessWidget {
+class _FriendsPage extends StatefulWidget {
   const _FriendsPage({required this.candidates});
   final List<FriendCandidate> candidates;
 
   @override
+  State<_FriendsPage> createState() => _FriendsPageState();
+}
+
+class _FriendsPageState extends State<_FriendsPage> {
+  bool _searchByConnection = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onFriendTap(FriendCandidate c) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${c.name} のプロフィールは未実装（MVP）')),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (widget.candidates.isEmpty) {
+      return SafeArea(
+        child: AppStateView(
+          type: AppStateType.empty,
+          title: '友達がいません',
+          message: 'まずはつながって、おすすめを広げよう。',
+        ),
+      );
+    }
     return SafeArea(
       child: Column(
         children: [
-          const ListTile(
-            title: Text(
-              '友達',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '友達',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                if (_searchByConnection)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => setState(() => _searchByConnection = false),
+                  ),
+              ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
+              controller: _searchController,
               decoration: InputDecoration(
                 hintText: '@user_codeで検索',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                suffixIcon: _searchController.text.trim().isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
               ),
             ),
           ),
+
           const SizedBox(height: 10),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: candidates.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 0.92,
+
+          if (!_searchByConnection)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: OrangeGlowButton(
+                width: double.infinity,
+                height: 42,
+                isEnabled: true,
+                borderRadius: 999,
+                onPressed: () => setState(() => _searchByConnection = true),
+                child: const Text(
+                  'からむで探す',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black,
+                  ),
+                ),
               ),
-              itemBuilder: (context, index) {
-                final item = candidates[index];
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
+            ),
+
+          const SizedBox(height: 12),
+
+          Expanded(
+            child: _searchByConnection
+                ? FriendSearchPage(
+                    candidates: widget.candidates,
+                    onBack: () => setState(() => _searchByConnection = false),
+                    onFriendTap: _onFriendTap,
+                  )
+                : FriendGrid(
+                    candidates: widget.candidates,
+                    onFriendTap: _onFriendTap,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 友達アイコンのグリッド（4列）。
+class FriendGrid extends StatelessWidget {
+  const FriendGrid({
+    super.key,
+    required this.candidates,
+    required this.onFriendTap,
+  });
+
+  final List<FriendCandidate> candidates;
+  final ValueChanged<FriendCandidate> onFriendTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      itemCount: candidates.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.9,
+      ),
+      itemBuilder: (context, index) {
+        final item = candidates[index];
+        final showDot = item.isFollowing || item.mutualCount > 0;
+        return InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => onFriendTap(item),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FriendAvatar(
+                displayName: item.name,
+                radius: 22,
+                showStatusDot: showDot,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 「からむで探す」検索UI（MVP: candidates の mock を並べる）
+class FriendSearchPage extends StatelessWidget {
+  const FriendSearchPage({
+    super.key,
+    required this.candidates,
+    required this.onBack,
+    required this.onFriendTap,
+  });
+
+  final List<FriendCandidate> candidates;
+  final VoidCallback onBack;
+  final ValueChanged<FriendCandidate> onFriendTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final recommendedTags = const [
+      'グルメ',
+      'カフェ巡り',
+      'ラーメン',
+      '焼肉',
+      'スイーツ',
+      'ランチ',
+    ];
+
+    final sorted = [...candidates]
+      ..sort((a, b) => b.mutualCount.compareTo(a.mutualCount));
+
+    final top = sorted.take(4).toList(growable: false);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          '共通の友達が多い人',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 12),
+
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemBuilder: (context, i) {
+              final c = top[i];
+              final showDot = c.isFollowing || c.mutualCount > 0;
+              return InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => onFriendTap(c),
+                child: Container(
+                  width: 120,
+                  decoration: BoxDecoration(
+                    color: AppColors.blackElevated.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FriendAvatar(
+                        displayName: c.name,
+                        radius: 22,
+                        showStatusDot: showDot,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        c.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                      ),
+                      Text(
+                        '共通 ${c.mutualCount}人',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemCount: top.length,
+          ),
+        ),
+
+        const SizedBox(height: 18),
+
+        const Text(
+          'おすすめタグ',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 12),
+
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final t in recommendedTags)
+              FilterChip(
+                label: Text(t),
+                onSelected: (_) {},
+                selected: false,
+                backgroundColor: AppColors.blackElevated.withValues(alpha: 0.7),
+                shape: StadiumBorder(
+                  side: BorderSide(color: AppColors.orange.withValues(alpha: 0.5)),
+                ),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w900),
+                checkmarkColor: AppColors.orange,
+              ),
+          ],
+        ),
+
+        const SizedBox(height: 18),
+
+        const Text(
+          '候補一覧',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 10),
+
+        ...sorted.map(
+          (c) => InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => onFriendTap(c),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.blackElevated.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  FriendAvatar(
+                    displayName: c.name,
+                    radius: 20,
+                    showStatusDot: c.isFollowing || c.mutualCount > 0,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        CircleAvatar(
-                          radius: 24,
-                          child: Text(item.name.substring(0, 1).toUpperCase()),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(item.name),
                         Text(
-                          '共通の友達 ${item.mutualCount}人',
-                          style: const TextStyle(fontSize: 12),
+                          c.name,
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
                         ),
-                        const SizedBox(height: 8),
-                        FilledButton.tonal(
-                          onPressed: () {},
-                          child: Text(item.isFollowing ? 'フォロー中' : 'フォロー'),
+                        const SizedBox(height: 4),
+                        Text(
+                          '共通友達 ${c.mutualCount}人',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
+                  FilledButton(
+                    onPressed: () => onFriendTap(c),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.orange,
+                      foregroundColor: Colors.black,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: Text(c.isFollowing ? 'フォロー中' : 'フォロー'),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1272,74 +1651,36 @@ class _RecordPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text(
-            '記録',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: List.generate(31, (index) {
-                  final day = '${index + 1}';
-                  final active = summary.monthlyShots.contains(day);
-                  return CircleAvatar(
-                    radius: 14,
-                    backgroundColor: active
-                        ? Colors.orange
-                        : AppColors.gray,
-                    child: Text(day, style: const TextStyle(fontSize: 11)),
-                  );
-                }),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              title: const Text('連続投稿日数'),
-              trailing: Text(
-                '${summary.streakDays}日',
-                style: const TextStyle(color: Colors.orangeAccent),
-              ),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              title: const Text('平均カロリー'),
-              trailing: Text('${summary.caloriesAvg} kcal'),
-            ),
-          ),
-          Card(
-            child: ListTile(
-              title: const Text('平均タンパク質'),
-              trailing: Text('${summary.proteinAvg} g'),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'AI提案',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(summary.aiSuggestion),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: CalendarRecordView(summary: summary),
+    );
+  }
+}
+
+Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('ログアウト'),
+      content: const Text('ログアウトしますか？'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('ログアウト'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  try {
+    await Supabase.instance.client.auth.signOut();
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('ログアウトに失敗しました: $e')),
     );
   }
 }
@@ -1375,11 +1716,16 @@ class _ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          120 + MediaQuery.paddingOf(context).bottom,
+        ),
         children: [
           const Text(
             'プロフィール',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),
           Row(
@@ -1394,9 +1740,20 @@ class _ProfilePage extends StatelessWidget {
                     : null,
               ),
               const SizedBox(width: 12),
-              Expanded(child: Text('@${profile.name}')),
+              Expanded(
+                child: Text(
+                  '@${profile.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               OutlinedButton(
                 onPressed: () => _editIcon(context),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
                 child: const Text('アイコン編集'),
               ),
             ],
@@ -1414,26 +1771,45 @@ class _ProfilePage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Text('ピン留めしたご飯', style: TextStyle(fontWeight: FontWeight.w700)),
-          _PhotoGrid(urls: profile.pinnedShots),
+          const Text(
+            'ピン留めしたご飯',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          ProfileFoodGrid(urls: profile.pinnedShots),
           const SizedBox(height: 12),
-          const Text('投稿一覧', style: TextStyle(fontWeight: FontWeight.w700)),
-          _PhotoGrid(urls: profile.recentShots),
+          const Text(
+            '投稿一覧',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          ProfileFoodGrid(urls: profile.recentShots),
+          if (AppConfig.hasSupabase) ...[
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => _confirmAndSignOutFromProfile(context),
+                child: const Text('ログアウト'),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
+// ignore: unused_element
 class _MapPlaceSheet extends StatelessWidget {
   const _MapPlaceSheet({
     required this.pin,
     required this.detailFuture,
     required this.scrollController,
+    required this.onClose,
   });
   final MapPin pin;
   final Future<PlaceDetail> detailFuture;
   final ScrollController scrollController;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -1521,7 +1897,7 @@ class _MapPlaceSheet extends StatelessWidget {
                             const SizedBox(width: 8),
                             IconButton(
                               icon: const Icon(Icons.close, color: Colors.white70),
-                              onPressed: () => Navigator.of(context).pop(),
+                              onPressed: onClose,
                               constraints: const BoxConstraints(),
                               padding: EdgeInsets.zero,
                             ),
@@ -1856,16 +2232,24 @@ class _BottomStat extends StatelessWidget {
   }
 }
 
-class _PostEditorSheet extends StatefulWidget {
-  const _PostEditorSheet({required this.draft, required this.controller});
+class PostCreationPage extends StatefulWidget {
+  const PostCreationPage({
+    super.key,
+    required this.draft,
+    required this.controller,
+    required this.onClose,
+    this.sheetHeight,
+  });
   final PostDraft draft;
   final AppShellController controller;
+  final VoidCallback onClose;
+  final double? sheetHeight;
 
   @override
-  State<_PostEditorSheet> createState() => _PostEditorSheetState();
+  State<PostCreationPage> createState() => _PostCreationPageState();
 }
 
-class _PostEditorSheetState extends State<_PostEditorSheet> {
+class _PostCreationPageState extends State<PostCreationPage> {
   late final TextEditingController _captionController;
   late final TextEditingController _placeController;
   String _postType = 'restaurant';
@@ -1932,7 +2316,7 @@ class _PostEditorSheetState extends State<_PostEditorSheet> {
         widget.controller.clearPostDraft();
         await widget.controller.initialize();
         if (!context.mounted) return;
-        Navigator.pop(context);
+        widget.onClose();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('投稿しました')),
         );
@@ -1947,7 +2331,7 @@ class _PostEditorSheetState extends State<_PostEditorSheet> {
       return;
     }
     if (!context.mounted) return;
-    Navigator.pop(context);
+    widget.onClose();
   }
 
   void _onSubmitPressed(BuildContext context) {
@@ -1964,16 +2348,25 @@ class _PostEditorSheetState extends State<_PostEditorSheet> {
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.72,
+        height: widget.sheetHeight ?? MediaQuery.of(context).size.height * 0.72,
         child: Stack(
           children: [
             Positioned.fill(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 children: [
-                  const Text(
-                    '新しい投稿',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: widget.onClose,
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        '新しい投稿',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   ClipRRect(
@@ -2098,6 +2491,229 @@ class _PostEditorSheetState extends State<_PostEditorSheet> {
   }
 }
 
+/// MVPのための投稿詳細オーバーレイ（後続ToDoでUI精度を上げます）
+class PostDetailPage extends StatelessWidget {
+  const PostDetailPage({
+    super.key,
+    required this.post,
+    required this.controller,
+    required this.onClose,
+  });
+
+  final FeedPost post;
+  final AppShellController controller;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeFuture = (post.placeGoogleId ?? '').isNotEmpty
+        ? controller.getPlaceDetail(post.placeGoogleId!)
+        : Future<PlaceDetail?>.value(null);
+    final iconUrl = post.userIconUrl ?? '';
+    final hasNetworkIcon = iconUrl.isNotEmpty &&
+        (iconUrl.startsWith('http://') || iconUrl.startsWith('https://'));
+    final initial =
+        post.userName.isNotEmpty ? post.userName[0].toUpperCase() : '?';
+
+    return Container(
+      color: AppColors.black.withValues(alpha: 0.94),
+      child: SafeArea(
+        top: true,
+        bottom: false,
+        child: FutureBuilder<PlaceDetail?>(
+          future: placeFuture,
+          builder: (context, snapshot) {
+            final place = snapshot.data;
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: onClose,
+                      ),
+                      const SizedBox(width: 4),
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: AppColors.blackElevated,
+                        backgroundImage:
+                            hasNetworkIcon ? NetworkImage(iconUrl) : null,
+                        child: hasNetworkIcon
+                            ? null
+                            : Text(
+                                initial,
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '@${post.userName}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.more_vert, color: Colors.white70),
+                        onPressed: () {},
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Stack(
+                          children: [
+                            Image.network(
+                              post.imageUrl,
+                              height: 300,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 300,
+                                width: double.infinity,
+                                color: AppColors.cardElevated,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.fastfood_outlined),
+                              ),
+                            ),
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.transparent,
+                                        Colors.black.withValues(alpha: 0.35),
+                                        Colors.black.withValues(alpha: 0.72),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: 14,
+                              right: 14,
+                              bottom: 14,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    place?.placeName ?? post.placeName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 20,
+                                      color: Colors.white,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star,
+                                          size: 16, color: AppColors.orangeAccent),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '★ ${(place?.rating ?? 4.5).toStringAsFixed(1)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if ((place?.address ?? '').isNotEmpty)
+                        Text(
+                          place!.address!,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      if (place?.travelMinutes != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '徒歩 ${place!.travelMinutes}分',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      Text(
+                        post.caption,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Icon(Icons.favorite_border,
+                              size: 18, color: Colors.white.withValues(alpha: 0.85)),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${post.likes}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          Icon(Icons.chat_bubble_outline,
+                              size: 18, color: Colors.white.withValues(alpha: 0.85)),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${post.comments}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      FriendAvatarStack(
+                        avatarDisplays: post.friendAvatars,
+                        maxVisible: 4,
+                        avatarRadius: 16,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _StatTile extends StatelessWidget {
   const _StatTile({required this.label, required this.value});
   final String label;
@@ -2119,6 +2735,7 @@ class _StatTile extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PhotoGrid extends StatelessWidget {
   const _PhotoGrid({required this.urls});
   final List<String> urls;
