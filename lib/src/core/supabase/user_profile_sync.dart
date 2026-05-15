@@ -1,22 +1,26 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Ensures a row exists in [public.users] for the current auth user.
+import 'supabase_tables.dart';
+
+/// 共有 Supabase の [SupabaseTables.profiles] に、現在の auth ユーザー行を用意する。
 ///
-/// RLS allows insert when `auth.uid() = id`. [user_code] must match
-/// `^@[A-Za-z0-9_]+$` and be unique; we derive a stable code from the auth UUID.
+/// Valiark 運用: デフォルトは `whoeats_users`（`id = auth.users.id`）。`0001_init` の
+/// `user_code` / `name` / `email` / `icon_path` など。`WHOEATS_SUPABASE_PROFILES_TABLE` で別表に切替可。
 Future<void> syncCurrentUserProfile() async {
   final client = Supabase.instance.client;
   final user = client.auth.currentUser;
   if (user == null) return;
 
+  final table = SupabaseTables.profiles;
+
   final existing =
-      await client.from('users').select('id').eq('id', user.id).maybeSingle();
+      await client.from(table).select('id').eq('id', user.id).maybeSingle();
   if (existing != null) {
     final email = user.email?.trim() ?? '';
     if (email.isNotEmpty) {
       try {
-        await client.from('users').update({'email': email}).eq('id', user.id);
+        await client.from(table).update({'email': email}).eq('id', user.id);
       } catch (e, st) {
         debugPrint('syncCurrentUserProfile: email update skipped: $e\n$st');
       }
@@ -34,17 +38,16 @@ Future<void> syncCurrentUserProfile() async {
       ? metaName.trim()
       : (email.contains('@') ? email.split('@').first : 'User');
 
-  final userCode = defaultUserCodeFromAuthId(user.id);
+  final username = defaultUsernameFromAuthId(user.id);
 
   try {
-    await client.from('users').insert({
+    await client.from(table).insert({
       'id': user.id,
-      'user_code': userCode,
+      'username': username,
       'name': name,
       'email': safeEmail,
     });
   } on PostgrestException catch (e) {
-    // Parallel listeners or retry: row may already exist.
     if (e.code == '23505') {
       return;
     }
@@ -52,8 +55,9 @@ Future<void> syncCurrentUserProfile() async {
   }
 }
 
-/// Deterministic, unique-enough handle: `@` + 32 hex chars from UUID (no hyphens).
-String defaultUserCodeFromAuthId(String authUserId) {
+/// `panda_profiles_username_format`: ^[A-Za-z0-9_]{3,30}$（先頭 w + UUID hex 29 文字 = 30）
+String defaultUsernameFromAuthId(String authUserId) {
   final hex = authUserId.replaceAll('-', '');
-  return '@$hex';
+  final tail = hex.length >= 29 ? hex.substring(0, 29) : hex.padRight(29, '0');
+  return 'w$tail';
 }

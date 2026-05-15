@@ -105,7 +105,6 @@
 				57A35B2D4D202651AEF4E379 /* Pods-RunnerTests.release.xcconfig */,
 				BA26B9C5A2C6B4F106DC3A77 /* Pods-RunnerTests.profile.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -200,7 +199,7 @@
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				C0CFF2A97A753F72CC29D74F /* [CP] Copy Pods Resources */,
 				A84C032D1CD90E99021512C2 /* [CP] Embed Pods Frameworks */,
-				7F4E902C2B6C4E5A9D1C0F8E201 /* Flutter legacy Runner.app path */,
+				7F4E902C2B6C4E5A9D1C0F8E201 /* Flutter expected Runner.app copy */,
 			);
 			buildRules = (
 			);
@@ -332,6 +331,22 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		7F4E902C2B6C4E5A9D1C0F8E201 /* Flutter expected Runner.app copy */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Flutter expected Runner.app copy";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "FLUTTER_BUILD_DIR=\"${SRCROOT}/../build/ios\"\nSRC_APP=\"${TARGET_BUILD_DIR}/Runner.app\"\ncase \"${PLATFORM_NAME}\" in\n  iphoneos) DEST_SUB=iphoneos ;;\n  iphonesimulator) DEST_SUB=iphonesimulator ;;\n  *) echo \"note: Flutter copy skipped (PLATFORM_NAME=${PLATFORM_NAME})\"\n    exit 0 ;;\nesac\nDEST_DIR=\"${FLUTTER_BUILD_DIR}/${DEST_SUB}\"\nmkdir -p \"${DEST_DIR}\"\nif [ -d \"${SRC_APP}\" ]; then\n  rm -rf \"${DEST_DIR}/Runner.app\"\n  cp -R \"${SRC_APP}\" \"${DEST_DIR}/Runner.app\"\n  echo \"note: Flutter -> ${DEST_DIR}/Runner.app\"\nelse\n  echo \"warning: Flutter copy skipped (missing ${SRC_APP})\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 		9740EEB61CF901F6004384FC /* Run Script */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -379,23 +394,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		7F4E902C2B6C4E5A9D1C0F8E201 /* Flutter legacy Runner.app path */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${TARGET_BUILD_DIR}/Runner.app",
-			);
-			name = "Flutter legacy Runner.app path";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "FLUTTER_BUILD_DIR=\"${SRCROOT}/../build/ios\"\nSRC_APP=\"${TARGET_BUILD_DIR}/Runner.app\"\ncase \"${PLATFORM_NAME}\" in\n  iphoneos) DEST_SUB=iphoneos ;;\n  iphonesimulator) DEST_SUB=iphonesimulator ;;\n  *) echo \"note: Flutter legacy copy skipped (PLATFORM_NAME=${PLATFORM_NAME})\"\n    exit 0 ;;\nesac\nDEST_DIR=\"${FLUTTER_BUILD_DIR}/${DEST_SUB}\"\nmkdir -p \"${DEST_DIR}\"\nif [ -d \"${SRC_APP}\" ]; then\n  rm -rf \"${DEST_DIR}/Runner.app\"\n  cp -R \"${SRC_APP}\" \"${DEST_DIR}/Runner.app\"\n  echo \"note: Flutter legacy copy -> ${DEST_DIR}/Runner.app\"\nelse\n  echo \"warning: Flutter legacy copy skipped (missing ${SRC_APP})\"\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -507,14 +505,15 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = KA7HX4TQC3;
+				DEVELOPMENT_TEAM = 6KX9X2UAGT;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -531,7 +530,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -549,7 +548,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -565,7 +564,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -690,14 +689,15 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = KA7HX4TQC3;
+				DEVELOPMENT_TEAM = 6KX9X2UAGT;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -713,14 +713,15 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = KA7HX4TQC3;
+				DEVELOPMENT_TEAM = 6KX9X2UAGT;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.whoEatsApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.valiark.whoeats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
+import 'core/supabase/user_profile_sync.dart';
+import 'core/supabase/valiark_deeplink_handler.dart';
 import 'core/theme/app_theme.dart';
-import 'features/auth/presentation/auth_gate.dart';
 import 'features/dashboard/data/datasources/mock_dashboard_data_source.dart';
 import 'features/dashboard/data/datasources/remote/google_places_data_source.dart';
 import 'features/dashboard/data/datasources/remote/map_api_data_source.dart';
@@ -12,8 +17,52 @@ import 'features/dashboard/domain/usecases/dashboard_usecases.dart';
 import 'features/dashboard/presentation/controllers/app_shell_controller.dart';
 import 'features/dashboard/presentation/pages/app_shell_page.dart';
 
-class WhoEatsApp extends StatelessWidget {
+class WhoEatsApp extends StatefulWidget {
   const WhoEatsApp({super.key});
+
+  @override
+  State<WhoEatsApp> createState() => _WhoEatsAppState();
+}
+
+class _WhoEatsAppState extends State<WhoEatsApp> {
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ValiarkDeeplinkHandler.handleOnce();
+      if (AppConfig.hasSupabase) {
+        unawaited(_bootstrapStaleSession());
+        _authSub = Supabase.instance.client.auth.onAuthStateChange.listen(
+          (AuthState data) {
+            if (data.session != null) {
+              unawaited(syncCurrentUserProfile());
+            }
+          },
+        );
+      }
+    });
+  }
+
+  Future<void> _bootstrapStaleSession() async {
+    final auth = Supabase.instance.client.auth;
+    final session = auth.currentSession;
+    if (session == null || !session.isExpired) return;
+    try {
+      await auth.refreshSession();
+    } catch (e, st) {
+      debugPrint('WhoEatsApp: refreshSession failed, clearing local session: $e\n$st');
+      await auth.signOut(scope: SignOutScope.local);
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +101,7 @@ class WhoEatsApp extends StatelessWidget {
         title: 'Who eats',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: AppConfig.hasSupabase
-            ? const AuthGate(child: AppShellPage())
-            : const AppShellPage(),
+        home: const AppShellPage(),
       ),
     );
   }

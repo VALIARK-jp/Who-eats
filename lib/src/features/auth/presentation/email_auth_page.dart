@@ -1,5 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../../core/config/app_config.dart';
+import '../../dashboard/presentation/controllers/app_shell_controller.dart';
+
+String _userFacingAuthErrorMessage(Object error) {
+  final s = error.toString();
+  if (s.contains('Failed host lookup') ||
+      s.contains('SocketException') ||
+      s.contains('nodename nor servname') ||
+      s.contains('Connection refused') ||
+      s.contains('Network is unreachable')) {
+    final host = AppConfig.supabaseUrl;
+    return 'サーバーに届きませんでした。端末のネットワークを確認し、'
+        'プロジェクトの .env にある WHOEATS_SUPABASE_URL（または SUPABASE_URL）が '
+        'Supabase ダッシュボードの URL と一致しているか確認してください。'
+        '${host.isNotEmpty ? '\n（現在: $host）' : ''}';
+  }
+  return '通信に失敗しました。しばらくしてからもう一度お試しください。';
+}
 
 /// メール＋パスワードのフォーム（親が [Scaffold] / [ScaffoldMessenger] を用意すること）。
 class EmailAuthForm extends StatefulWidget {
@@ -21,6 +41,18 @@ class _EmailAuthFormState extends State<EmailAuthForm> {
     super.dispose();
   }
 
+  Future<void> _afterAuthSuccess() async {
+    if (!mounted) return;
+    try {
+      final shell = context.read<AppShellController>();
+      await shell.initialize();
+    } catch (_) {}
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   Future<void> _signIn() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -34,8 +66,11 @@ class _EmailAuthFormState extends State<EmailAuthForm> {
         email: email,
         password: password,
       );
+      await _afterAuthSuccess();
     } on AuthException catch (error) {
       _showMessage(error.message);
+    } catch (e) {
+      _showMessage(_userFacingAuthErrorMessage(e));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -55,10 +90,13 @@ class _EmailAuthFormState extends State<EmailAuthForm> {
       await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
+        emailRedirectTo: AppConfig.valiarkAuthRedirectUrl,
       );
       _showMessage('登録しました。確認メールが必要な場合は受信箱を確認してください。');
     } on AuthException catch (error) {
       _showMessage(error.message);
+    } catch (e) {
+      _showMessage(_userFacingAuthErrorMessage(e));
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

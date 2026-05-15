@@ -23,7 +23,7 @@
 2. **プロジェクトをリンク**（ダッシュボード → Project Settings → General の **Reference ID** を使う）
 
    ```bash
-   cd "/Users/makiyuto/dev/Who eats"
+   cd "/Users/makiyuto/dev/Who_eats"
    supabase link --project-ref <YOUR_PROJECT_REF>
    ```
 

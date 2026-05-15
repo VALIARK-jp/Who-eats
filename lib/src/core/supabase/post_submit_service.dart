@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'supabase_tables.dart';
+
 /// Creates a post row, uploads one image to `post-images`, and links `post_images`.
 class PostSubmitService {
   PostSubmitService({SupabaseClient? client})
@@ -47,7 +49,7 @@ class PostSubmitService {
         : 'image/jpeg';
 
     final postRow = await _client
-        .from('posts')
+        .from(SupabaseTables.posts)
         .insert({
           'user_id': uid,
           'place_id': placeId,
@@ -66,7 +68,7 @@ class PostSubmitService {
       fileOptions: FileOptions(contentType: contentType, upsert: false),
     );
 
-    await _client.from('post_images').insert({
+    await _client.from(SupabaseTables.postImages).insert({
       'post_id': postId,
       'storage_path': storagePath,
       'display_order': 0,
@@ -89,7 +91,7 @@ class PostSubmitService {
     }
 
     final existing = await _client
-        .from('places')
+        .from(SupabaseTables.places)
         .select('id')
         .eq('google_place_id', googlePlaceId)
         .maybeSingle();
@@ -99,7 +101,7 @@ class PostSubmitService {
 
     try {
       final inserted = await _client
-          .from('places')
+          .from(SupabaseTables.places)
           .insert({
             'google_place_id': googlePlaceId,
             'name': placeName,
@@ -112,7 +114,7 @@ class PostSubmitService {
       return inserted['id'] as String;
     } on PostgrestException {
       final raced = await _client
-          .from('places')
+          .from(SupabaseTables.places)
           .select('id')
           .eq('google_place_id', googlePlaceId)
           .single();

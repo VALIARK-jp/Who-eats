@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../auth/application/auth_session.dart';
@@ -17,6 +18,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
 import '../widgets/floating_bottom_nav.dart';
+import '../widgets/signed_in_gate_overlay.dart';
 import '../widgets/friend_avatar_stack.dart';
 import '../widgets/food_post_card.dart';
 import '../widgets/food_pin_3d_viewer.dart';
@@ -38,6 +40,29 @@ class _AppShellPageState extends State<AppShellPage> {
   MapPin? _activePlaceSheetPin;
   bool _postEditorOpen = false;
   FeedPost? _activePostDetail;
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (AppConfig.hasSupabase) {
+      _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  bool _showsSignedInGate(int bottomIndex) {
+    if (!AppConfig.hasSupabase) return false;
+    if (bottomIndex == 0) return false;
+    return Supabase.instance.client.auth.currentUser == null;
+  }
 
   double _bottomNavOffset(BuildContext context) {
     // Matches the outer padding of `FloatingBottomNav` (height=62, bottom padding=8).
@@ -102,6 +127,12 @@ class _AppShellPageState extends State<AppShellPage> {
           body: Stack(
             children: [
               pages[controller.bottomIndex],
+
+              if (_showsSignedInGate(controller.bottomIndex))
+                SignedInGateOverlay(
+                  bottomInset: bottomOffset,
+                  tabIndex: controller.bottomIndex,
+                ),
 
               // Place (map pin) bottom sheet overlay.
               if (_activePlaceSheetPin != null)
@@ -212,7 +243,8 @@ class _AppShellPageState extends State<AppShellPage> {
     AppShellController controller,
   ) async {
     if (AppConfig.hasSupabase) {
-      final loc = await controller.ensureDeviceLocation();
+      // 位置取得は時間がかかることがある。先にやるとカメラタブの真っ黒画面のまま長く待つことになるので、
+      // 先にカメラ／ピッカーを開き、撮影後に位置と最寄り店を解決する。
       final file = await ImagePicker().pickImage(
         source: ImageSource.camera,
         maxWidth: 1600,
@@ -220,6 +252,7 @@ class _AppShellPageState extends State<AppShellPage> {
       );
       if (file == null) return;
 
+      final loc = await controller.ensureDeviceLocation();
       MapPin? nearest;
       if (loc != null) {
         nearest = await controller.resolvePlacePinFromCoordinate(loc.lat, loc.lng);
@@ -241,6 +274,10 @@ class _AppShellPageState extends State<AppShellPage> {
       await controller.openCameraFlow();
     }
 
+    if (!context.mounted || controller.postDraft == null) return;
+    // 撮影後もタブ2のままだと画面全体が黒ベースのままなので、編集シートはホーム上に載せる。
+    controller.changeBottomIndex(0);
+    await Future<void>.delayed(Duration.zero);
     if (!context.mounted || controller.postDraft == null) return;
     _openPostEditor();
   }
@@ -1628,15 +1665,40 @@ class _CameraPage extends StatelessWidget {
         onTap: onShot,
         child: Container(
           color: Colors.black,
-          alignment: Alignment.bottomCenter,
-          padding: const EdgeInsets.only(bottom: 48),
-          child: Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white, width: 3),
-              shape: BoxShape.circle,
-            ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 3),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'タップしてカメラで撮影',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  '位置情報の取得は撮影のあとに行います。',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white38,
+                        height: 1.35,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1714,6 +1776,8 @@ class _ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final signedIn = Supabase.instance.client.auth.currentUser != null;
+
     return SafeArea(
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -1747,15 +1811,16 @@ class _ProfilePage extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              OutlinedButton(
-                onPressed: () => _editIcon(context),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+              if (AppConfig.hasSupabase && signedIn)
+                OutlinedButton(
+                  onPressed: () => _editIcon(context),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Text('アイコン編集'),
                 ),
-                child: const Text('アイコン編集'),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1782,7 +1847,7 @@ class _ProfilePage extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
           ProfileFoodGrid(urls: profile.recentShots),
-          if (AppConfig.hasSupabase) ...[
+          if (AppConfig.hasSupabase && signedIn) ...[
             const SizedBox(height: 28),
             SizedBox(
               width: double.infinity,

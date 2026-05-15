@@ -1,6 +1,6 @@
 {
-    "name": "who_eats_app",
-    "short_name": "who_eats_app",
+    "name": "Who eats",
+    "short_name": "Who eats",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

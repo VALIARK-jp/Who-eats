@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'supabase_tables.dart';
+
 class ProfileIconService {
   ProfileIconService({SupabaseClient? client})
     : _client = client ?? Supabase.instance.client;
@@ -29,8 +31,16 @@ class ProfileIconService {
       file,
       fileOptions: FileOptions(contentType: contentType, upsert: true),
     );
-    await _client.from('users').update({'icon_path': path}).eq('id', uid);
-    return path;
+
+    final signed = await _client.storage
+        .from(_bucket)
+        .createSignedUrl(path, 60 * 60 * 24 * 365);
+
+    await _client
+        .from(SupabaseTables.profiles)
+        .update({'icon_path': signed})
+        .eq('id', uid);
+    return signed;
   }
 
   String _guessExt(String p) {

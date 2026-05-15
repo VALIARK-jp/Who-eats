@@ -20,6 +20,10 @@ Future<void> main() async {
       await Supabase.initialize(
         url: AppConfig.supabaseUrl,
         anonKey: AppConfig.supabasePublishableKey,
+        authOptions: const FlutterAuthClientOptions(
+          authFlowType: AuthFlowType.pkce,
+          detectSessionInUri: true,
+        ),
       );
     }
     runApp(const WhoEatsApp());
