@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// メール＋パスワードの最小ログイン／新規登録。
-class EmailAuthPage extends StatefulWidget {
-  const EmailAuthPage({super.key});
+/// メール＋パスワードのフォーム（親が [Scaffold] / [ScaffoldMessenger] を用意すること）。
+class EmailAuthForm extends StatefulWidget {
+  const EmailAuthForm({super.key});
 
   @override
-  State<EmailAuthPage> createState() => _EmailAuthPageState();
+  State<EmailAuthForm> createState() => _EmailAuthFormState();
 }
 
-class _EmailAuthPageState extends State<EmailAuthPage> {
+class _EmailAuthFormState extends State<EmailAuthForm> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -75,43 +75,60 @@ class _EmailAuthPageState extends State<EmailAuthPage> {
 
   @override
   Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _emailController,
+            decoration: const InputDecoration(labelText: 'メールアドレス'),
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            decoration: const InputDecoration(labelText: 'パスワード'),
+            obscureText: true,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _signIn,
+                  child: const Text('ログイン'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isLoading ? null : _signUp,
+                  child: const Text('新規登録'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 単体のメールログイン画面（デバッグ用・シンプル構成）。
+class EmailAuthPage extends StatelessWidget {
+  const EmailAuthPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Who eats Login')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(labelText: 'Email'),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Password'),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _isLoading ? null : _signIn,
-                    child: const Text('ログイン'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isLoading ? null : _signUp,
-                    child: const Text('新規登録'),
-                  ),
-                ),
-              ],
-            ),
-          ],
+      appBar: AppBar(title: const Text('Who eats ログイン')),
+      body: const SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: EmailAuthForm(),
         ),
       ),
     );

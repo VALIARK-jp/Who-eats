@@ -18,6 +18,9 @@ class AppConfig {
   static String get supabasePublishableKey =>
       _env('WHOEATS_SUPABASE_PUBLISHABLE_KEY');
 
+  /// Panda 側 SSO / OAuth 開始 URL（未設定なら空でボタン非表示）。
+  static String get pandaOAuthUrl => _env('WHOEATS_PANDA_OAUTH_URL');
+
   /// Matches seeded row in `0002_post_images_bucket_dev_place.sql` when env unset.
   static const String fallbackDevPlaceUuid =
       '00000000-0000-4000-8000-000000000001';
