@@ -66,6 +66,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Physical iOS debug: LLDB attach can add tens of seconds and VM Service delays.
+  # See flutter run output / https://github.com/flutter/flutter/issues/173416
+  config:
+    enable-lldb-debugging: false
+
   assets:
     - .env
     - assets/3d_pin.html
