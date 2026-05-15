@@ -5,16 +5,16 @@ import '../../../core/config/app_config.dart';
 import '../application/auth_session.dart';
 import 'email_auth_page.dart';
 
-/// Panda SSO 導線つきのログイン入口（メールログインは下段）。
+/// ログイン画面（メールフォーム + 任意のブラウザ導線）。
 class SignInPage extends StatelessWidget {
   const SignInPage({super.key});
 
-  Future<void> _openPandaOAuth(BuildContext context) async {
+  Future<void> _openBrowserLogin(BuildContext context) async {
     final raw = AppConfig.pandaOAuthUrl;
     if (raw.isEmpty) return;
     final uri = Uri.tryParse(raw);
     if (uri == null) {
-      _toast(context, 'WHOEATS_PANDA_OAUTH_URL の形式が不正です');
+      _toast(context, 'ログイン用URLの形式が正しくありません');
       return;
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -29,7 +29,7 @@ class SignInPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final pandaUrl = AppConfig.pandaOAuthUrl;
+    final browserLoginUrl = AppConfig.pandaOAuthUrl;
     return Scaffold(
       appBar: AppBar(title: const Text('Who eats')),
       body: SafeArea(
@@ -44,22 +44,23 @@ class SignInPage extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Panda 側と OAuth を揃えた場合は、まずブラウザで Panda から認証し、このアプリに戻ってください。'
-              'トークンが古いままだとホームだけ開いて失敗することがあります。',
+              'LINE・Apple ID・メールのいずれかでログインできます。\n'
+              '下のフォームから、メールアドレスとパスワードでログイン・新規登録ができます。'
+              '新規登録の確認メールに記載のリンクを開くと、このアプリに戻ります。',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.white70,
                     height: 1.45,
                   ),
             ),
             const SizedBox(height: 20),
-            if (pandaUrl.isNotEmpty)
+            if (browserLoginUrl.isNotEmpty)
               FilledButton.tonal(
-                onPressed: () => _openPandaOAuth(context),
-                child: const Text('Panda（ブラウザ）でログイン'),
+                onPressed: () => _openBrowserLogin(context),
+                child: const Text('ブラウザでログイン（LINE / Apple / メール）'),
               )
             else
               Text(
-                'Panda 連携: `.env` に WHOEATS_PANDA_OAUTH_URL を入れると上にボタンが出ます。',
+                'ブラウザでのログインは、現在ご利用いただけません。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Colors.white54,
                     ),

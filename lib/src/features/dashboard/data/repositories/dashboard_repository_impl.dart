@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../datasources/mock_dashboard_data_source.dart';
 import '../datasources/remote/google_places_data_source.dart';
 import '../datasources/remote/map_api_data_source.dart';
+import '../../../../core/supabase/supabase_tables.dart';
 
 class DashboardRepositoryImpl implements DashboardRepository {
   DashboardRepositoryImpl({
@@ -331,10 +332,12 @@ class DashboardRepositoryImpl implements DashboardRepository {
     String? keyword,
   }) async {
     try {
+      final tPlaces = SupabaseTables.places;
+      final tImages = SupabaseTables.postImages;
       final rows = await _supabase
-          .from('posts')
+          .from(SupabaseTables.posts)
           .select(
-            'id,caption,created_at,places!inner(google_place_id,name,latitude,longitude),post_images(storage_path,display_order)',
+            'id,caption,created_at,$tPlaces!inner(google_place_id,name,latitude,longitude),$tImages(storage_path,display_order)',
           )
           .eq('post_type', 'restaurant')
           .isFilter('deleted_at', null)
@@ -345,7 +348,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       final q = (keyword ?? '').trim().toLowerCase();
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
-        final place = _extractEmbeddedPlace(row['places']);
+        final place = _extractEmbeddedPlace(row[tPlaces]);
         if (place == null) continue;
         final placeId = (place['google_place_id'] ?? '').toString();
         if (placeId.isEmpty || byPlace.containsKey(placeId)) continue;
@@ -360,7 +363,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
           continue;
         }
         String imageUrl = '';
-        final images = (row['post_images'] as List<dynamic>? ?? [])
+        final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
         if (images.isNotEmpty) {
           images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
@@ -410,13 +413,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<List<FeedPost>> _getHomeFeedFromSupabase() async {
     if (_supabase.auth.currentUser?.id == null) return const [];
 
+    final tProfiles = SupabaseTables.profiles;
+    final tPlaces = SupabaseTables.places;
+    final tImages = SupabaseTables.postImages;
     final rows = await _supabase
-        .from('posts')
+        .from(SupabaseTables.posts)
         .select('''
           id,caption,created_at,post_type,
-          users(name,icon_path,email),
-          places(name,google_place_id),
-          post_images(storage_path,display_order)
+          $tProfiles(name,icon_path,email),
+          $tPlaces(name,google_place_id),
+          $tImages(storage_path,display_order)
         ''')
         .isFilter('deleted_at', null)
         .order('created_at', ascending: false)
@@ -450,14 +456,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
       return null;
     }
 
-    final author = _extractEmbeddedUser(row['users']);
+    final author = _extractEmbeddedUser(row[SupabaseTables.profiles]) ??
+        _extractEmbeddedUser(row['users']);
     final displayName = (author?['name'] ?? '').toString().trim();
     final email = (author?['email'] ?? '').toString();
     final userName = displayName.isNotEmpty
         ? displayName
         : (email.isNotEmpty ? email.split('@').first : 'user');
 
-    final iconPath = (author?['icon_path'] ?? '').toString();
+    final iconPath = (author?['avatar_url'] ?? author?['icon_path'] ?? '')
+        .toString();
     final userIconUrl = await _signedStorageOrAbsoluteUrl(iconPath);
 
     final place = _extractEmbeddedPlace(row['places']);
@@ -510,20 +518,22 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final user = _supabase.auth.currentUser;
     if (uid == null || user == null) return const [];
     try {
+      final tPlaces = SupabaseTables.places;
+      final tImages = SupabaseTables.postImages;
       final rows = await _supabase
-          .from('posts')
+          .from(SupabaseTables.posts)
           .select(
-            'id,caption,places!inner(google_place_id),post_images(storage_path,display_order)',
+            'id,caption,$tPlaces!inner(google_place_id),$tImages(storage_path,display_order)',
           )
           .eq('user_id', uid)
-          .eq('places.google_place_id', placeGoogleId)
+          .eq('$tPlaces.google_place_id', placeGoogleId)
           .isFilter('deleted_at', null)
           .order('created_at', ascending: false)
           .limit(8);
       final result = <PlacePostPreview>[];
       for (final e in (rows as List<dynamic>)) {
         final row = e as Map<String, dynamic>;
-        final images = (row['post_images'] as List<dynamic>? ?? [])
+        final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
         String? imageUrl;
         if (images.isNotEmpty) {
@@ -557,21 +567,22 @@ class DashboardRepositoryImpl implements DashboardRepository {
     if (uid == null) return null;
     try {
       final row = await _supabase
-          .from('users')
-          .select('icon_path')
+          .from(SupabaseTables.profiles)
+          .select()
           .eq('id', uid)
           .maybeSingle();
-      final iconPath = (row?['icon_path'] ?? '').toString();
-      if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) {
-        return iconPath;
+      final direct =
+          (row?['icon_path'] ?? row?['avatar_url'] ?? '').toString();
+      if (direct.startsWith('http://') || direct.startsWith('https://')) {
+        return direct;
       }
-      if (iconPath.isNotEmpty) {
+      if (direct.isNotEmpty) {
         return await _supabase.storage
             .from('post-images')
-            .createSignedUrl(iconPath, 60 * 60 * 24 * 7);
+            .createSignedUrl(direct, 60 * 60 * 24 * 7);
       }
     } catch (e) {
-      _log('_resolveCurrentUserIconUrl users table lookup failed: $e');
+      _log('_resolveCurrentUserIconUrl profiles lookup failed: $e');
     }
     final meta = _supabase.auth.currentUser?.userMetadata;
     final avatar = (meta?['avatar_url'] ?? '').toString();
