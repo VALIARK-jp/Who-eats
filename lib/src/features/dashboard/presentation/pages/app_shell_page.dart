@@ -8,9 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../auth/application/auth_session.dart';
 import '../../../../core/supabase/post_submit_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -1676,7 +1676,7 @@ Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
   );
   if (ok != true || !context.mounted) return;
   try {
-    await Supabase.instance.client.auth.signOut();
+    await signOutCurrentUser();
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
