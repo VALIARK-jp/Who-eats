@@ -2,18 +2,32 @@
 
 Who eats UI prototype built with Flutter (clean architecture + mock-first).
 
+## 開発セットアップ
+
+- **秘密・`.env` の運用（Valiark 共通）:** [docs/valiark_client_secrets_playbook.md](docs/valiark_client_secrets_playbook.md)
+- **環境値の優先順位:** `--dart-define=KEY=value` を付けた場合は、ルートの `.env` より優先（`lib/src/core/config/app_config.dart` の `AppConfig`）。
+- **初回:** `cp .env.example .env` で `.env` を作る（`pubspec.yaml` の asset に含まれるため必須）。または [scripts/flutter_run_dev.sh](scripts/flutter_run_dev.sh) が無ければ自動コピーしてから `flutter run`。
+
 ## Map API integration (pins + place detail)
 
 The map screen fetches map pins and place detail from external APIs and
 automatically falls back to mock data when the API is unavailable.
 
-### Run with map APIs (via `.env`)
+### Run with map APIs (via `.env` or `--dart-define`)
 
 ```bash
 cp .env.example .env
 # Edit .env values
 
 flutter run
+```
+
+CI や一時試行では `.env` を触らずに上書きできる例:
+
+```bash
+flutter run \
+  --dart-define=WHOEATS_SUPABASE_URL=https://xxx.supabase.co \
+  --dart-define=WHOEATS_SUPABASE_ANON_KEY=eyJ...
 ```
 
 `WHOEATS_GOOGLE_MAPS_WEB_API_KEY` is used for direct Google API trials:

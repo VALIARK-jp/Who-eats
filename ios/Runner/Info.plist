@@ -27,11 +27,19 @@
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>io.valiark.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>io.valiark.auth</string>
+				<string>line3rdp.com.valiark.whoeats</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Who eats Auth (valiark-dev)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.valiark.whoeats</string>
 			</array>
 		</dict>
 	</array>
@@ -41,6 +49,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>投稿用の写真を撮影するためにカメラにアクセスします。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>プロフィール写真を選ぶために写真ライブラリへのアクセスが必要です。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>近くのお店を表示し、検索結果を現在地に合わせるために位置情報を使います。</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
-import '../../../auth/presentation/sign_in_page.dart';
+import '../../../auth/presentation/login_page.dart';
+import '../../../auth/presentation/signup_page.dart';
 
 /// 未ログイン時にホーム以外のタブ上へ重ねる、グレーアウト＋ログイン誘導。
 class SignedInGateOverlay extends StatelessWidget {
@@ -31,9 +32,15 @@ class SignedInGateOverlay extends StatelessWidget {
     }
   }
 
-  void _openSignIn(BuildContext context) {
+  void _openLogin(BuildContext context) {
     Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => const SignInPage()),
+      MaterialPageRoute<void>(builder: (_) => const LoginPage()),
+    );
+  }
+
+  void _openSignup(BuildContext context) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const SignupPage()),
     );
   }
 
@@ -80,7 +87,7 @@ class SignedInGateOverlay extends StatelessWidget {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'ログインまたは新規登録すると、すべての機能が使えます。',
+                        'ログインしてこの機能を解放しましょう。',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: AppColors.textSubtle,
@@ -91,7 +98,7 @@ class SignedInGateOverlay extends StatelessWidget {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
-                          onPressed: () => _openSignIn(context),
+                          onPressed: () => _openLogin(context),
                           child: const Text('ログイン'),
                         ),
                       ),
@@ -99,7 +106,7 @@ class SignedInGateOverlay extends StatelessWidget {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
-                          onPressed: () => _openSignIn(context),
+                          onPressed: () => _openSignup(context),
                           child: const Text('新規登録'),
                         ),
                       ),

@@ -10,6 +10,9 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />
+        <meta-data
+            android:name="com.linecorp.linesdk.ChannelId"
+            android:value="${lineChannelId}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,12 +34,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Valiark 共有 Auth リダイレクト（メール / PKCE）。host/path は可変のため scheme のみ。 -->
+            <!-- Who eats 専用 Auth リダイレクト（メール / PKCE）。Panda Talk は io.valiark.pandatalk。 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="io.valiark.auth" />
+                <data
+                    android:scheme="io.valiark.whoeats"
+                    android:host="callback" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

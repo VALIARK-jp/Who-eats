@@ -107,6 +107,8 @@ class RecordSummary {
 class ProfileOverview {
   const ProfileOverview({
     required this.name,
+    required this.userCode,
+    required this.bio,
     required this.avatarUrl,
     required this.followers,
     required this.following,
@@ -115,6 +117,8 @@ class ProfileOverview {
   });
 
   final String name;
+  final String userCode;
+  final String bio;
   final String avatarUrl;
   final int followers;
   final int following;
@@ -142,6 +146,7 @@ class PostDraft {
   });
 
   final String photoUrl;
+
   /// Local filesystem path when the image was captured on device (Supabase flow).
   final String? localImagePath;
   final String? placeGoogleId;
@@ -197,10 +202,7 @@ class PlaceDetail {
 }
 
 class PlaceSuggestion {
-  const PlaceSuggestion({
-    required this.placeId,
-    required this.description,
-  });
+  const PlaceSuggestion({required this.placeId, required this.description});
 
   final String placeId;
   final String description;

@@ -1,172 +1,421 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/config/app_config.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../dashboard/presentation/controllers/app_shell_controller.dart';
+import '../application/auth_service.dart';
 
-String _userFacingAuthErrorMessage(Object error) {
-  final s = error.toString();
-  if (s.contains('Failed host lookup') ||
-      s.contains('SocketException') ||
-      s.contains('nodename nor servname') ||
-      s.contains('Connection refused') ||
-      s.contains('Network is unreachable')) {
-    final host = AppConfig.supabaseUrl;
-    return 'サーバーに届きませんでした。端末のネットワークを確認し、'
-        'プロジェクトの .env にある WHOEATS_SUPABASE_URL（または SUPABASE_URL）が '
-        'Supabase ダッシュボードの URL と一致しているか確認してください。'
-        '${host.isNotEmpty ? '\n（現在: $host）' : ''}';
-  }
-  return '通信に失敗しました。しばらくしてからもう一度お試しください。';
-}
+/// メール＋パスワード（[AuthService] / [AppConfig.authRedirectUrl] 経由）。
+class EmailAuthPage extends StatefulWidget {
+  const EmailAuthPage({
+    super.key,
+    this.initialTab = 0,
+    this.showSignupTab = true,
+    this.showLoginTab = true,
+  });
 
-/// メール＋パスワードのフォーム（親が [Scaffold] / [ScaffoldMessenger] を用意すること）。
-class EmailAuthForm extends StatefulWidget {
-  const EmailAuthForm({super.key});
+  final int initialTab;
+  final bool showSignupTab;
+  final bool showLoginTab;
 
   @override
-  State<EmailAuthForm> createState() => _EmailAuthFormState();
+  State<EmailAuthPage> createState() => _EmailAuthPageState();
 }
 
-class _EmailAuthFormState extends State<EmailAuthForm> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+class _EmailAuthPageState extends State<EmailAuthPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  StreamSubscription<AuthState>? _authSub;
+  final _auth = AuthService();
+
+  final _loginFormKey = GlobalKey<FormState>();
+  final _signupFormKey = GlobalKey<FormState>();
+  final _loginEmailController = TextEditingController();
+  final _loginPasswordController = TextEditingController();
+  final _signupEmailController = TextEditingController();
+  final _signupPasswordController = TextEditingController();
+  final _signupConfirmPasswordController = TextEditingController();
+  final _displayNameController = TextEditingController();
+
   bool _isLoading = false;
+  bool _showLoginPassword = false;
+  bool _showSignupPassword = false;
+  bool _showConfirmPassword = false;
+  String? _signupError;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab,
+    );
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn && mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+  }
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
+    _tabController.dispose();
+    _authSub?.cancel();
+    _loginEmailController.dispose();
+    _loginPasswordController.dispose();
+    _signupEmailController.dispose();
+    _signupPasswordController.dispose();
+    _signupConfirmPasswordController.dispose();
+    _displayNameController.dispose();
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showTabs = widget.showSignupTab && widget.showLoginTab;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        title: Text(
+          showTabs
+              ? 'メール認証'
+              : (widget.showLoginTab ? 'ログイン' : '新規登録'),
+        ),
+        bottom: showTabs
+            ? TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'ログイン'),
+                  Tab(text: '新規登録'),
+                ],
+              )
+            : null,
+      ),
+      body: showTabs
+          ? TabBarView(
+              controller: _tabController,
+              children: [_buildLoginForm(), _buildSignupForm()],
+            )
+          : (widget.showLoginTab ? _buildLoginForm() : _buildSignupForm()),
+    );
+  }
+
+  Widget _buildLoginForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Form(
+        key: _loginFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _loginEmailController,
+              decoration: const InputDecoration(labelText: 'メールアドレス'),
+              keyboardType: TextInputType.emailAddress,
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'メールアドレスを入力してください';
+                if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v)) {
+                  return '正しいメールアドレスを入力してください';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _loginPasswordController,
+              decoration: InputDecoration(
+                labelText: 'パスワード',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _showLoginPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                  onPressed: () =>
+                      setState(() => _showLoginPassword = !_showLoginPassword),
+                ),
+              ),
+              obscureText: !_showLoginPassword,
+              validator: (v) =>
+                  v == null || v.isEmpty ? 'パスワードを入力してください' : null,
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _isLoading ? null : _signIn,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('ログイン'),
+            ),
+            TextButton(
+              onPressed: _resetPassword,
+              child: const Text('パスワードを忘れた場合'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSignupForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Form(
+        key: _signupFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _displayNameController,
+              decoration: const InputDecoration(labelText: '表示名'),
+              validator: (v) =>
+                  v == null || v.isEmpty ? '表示名を入力してください' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _signupEmailController,
+              decoration: const InputDecoration(labelText: 'メールアドレス'),
+              keyboardType: TextInputType.emailAddress,
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'メールアドレスを入力してください';
+                if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v)) {
+                  return '正しいメールアドレスを入力してください';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _signupPasswordController,
+              decoration: InputDecoration(
+                labelText: 'パスワード',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _showSignupPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                  onPressed: () => setState(
+                    () => _showSignupPassword = !_showSignupPassword,
+                  ),
+                ),
+              ),
+              obscureText: !_showSignupPassword,
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'パスワードを入力してください';
+                if (v.length < 6) return 'パスワードは6文字以上で入力してください';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _signupConfirmPasswordController,
+              decoration: InputDecoration(
+                labelText: 'パスワード確認',
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _showConfirmPassword
+                        ? Icons.visibility
+                        : Icons.visibility_off,
+                  ),
+                  onPressed: () => setState(
+                    () => _showConfirmPassword = !_showConfirmPassword,
+                  ),
+                ),
+              ),
+              obscureText: !_showConfirmPassword,
+              validator: (v) {
+                if (v == null || v.isEmpty) {
+                  return 'パスワード確認を入力してください';
+                }
+                if (v != _signupPasswordController.text) {
+                  return 'パスワードが一致しません';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _isLoading ? null : _signUp,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('新規登録'),
+            ),
+            if (_signupError != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _signupError!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _afterAuthSuccess() async {
     if (!mounted) return;
     try {
-      final shell = context.read<AppShellController>();
-      await shell.initialize();
+      await context.read<AppShellController>().initialize();
     } catch (_) {}
     if (!mounted) return;
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> _signIn() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    if (email.isEmpty || password.isEmpty) {
-      _showMessage('メールアドレスとパスワードを入力してください');
-      return;
-    }
+    if (!_loginFormKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
+      await _auth.signInWithEmail(
+        email: _loginEmailController.text.trim(),
+        password: _loginPasswordController.text,
       );
       await _afterAuthSuccess();
-    } on AuthException catch (error) {
-      _showMessage(error.message);
     } catch (e) {
-      _showMessage(_userFacingAuthErrorMessage(e));
+      if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _signUp() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    if (email.isEmpty || password.isEmpty) {
-      _showMessage('メールアドレスとパスワードを入力してください');
-      return;
-    }
-    setState(() => _isLoading = true);
+    if (!_signupFormKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _signupError = null;
+    });
     try {
-      await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: password,
-        emailRedirectTo: AppConfig.valiarkAuthRedirectUrl,
+      final response = await _auth.signUpWithEmail(
+        email: _signupEmailController.text.trim(),
+        password: _signupPasswordController.text,
+        displayName: _displayNameController.text.trim(),
       );
-      _showMessage('登録しました。確認メールが必要な場合は受信箱を確認してください。');
-    } on AuthException catch (error) {
-      _showMessage(error.message);
-    } catch (e) {
-      _showMessage(_userFacingAuthErrorMessage(e));
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (response.session != null) {
+        await _afterAuthSuccess();
+        return;
       }
+      final sentTo = _signupEmailController.text.trim();
+      if (!mounted) return;
+      Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => _EmailSentPage(email: sentTo),
+        ),
+      );
+    } on EmailAlreadyRegisteredException {
+      if (mounted) {
+        _showExistingAccountDialog();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _signupError = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+  Future<void> _resetPassword() async {
+    final email = _loginEmailController.text.trim();
+    if (email.isEmpty) {
+      _showError('メールアドレスを入力してください');
+      return;
+    }
+    try {
+      await _auth.resetPassword(email);
+      _showSuccess('パスワードリセット用のメールを送信しました');
+    } catch (e) {
+      _showError(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  void _showExistingAccountDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('すでにアカウントがあります'),
+        content: const Text(
+          'このメールアドレスは登録済みです。「ログイン」から同じメールとパスワードで続けてください。',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('閉じる')),
+        ],
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _emailController,
-            decoration: const InputDecoration(labelText: 'メールアドレス'),
-            keyboardType: TextInputType.emailAddress,
-            autocorrect: false,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _passwordController,
-            decoration: const InputDecoration(labelText: 'パスワード'),
-            obscureText: true,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton(
-                  onPressed: _isLoading ? null : _signIn,
-                  child: const Text('ログイン'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : _signUp,
-                  child: const Text('新規登録'),
-                ),
-              ),
-            ],
-          ),
+  void _showError(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('エラー'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('送信しました'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
         ],
       ),
     );
   }
 }
 
-/// 単体のメールログイン画面（デバッグ用・シンプル構成）。
-class EmailAuthPage extends StatelessWidget {
-  const EmailAuthPage({super.key});
+class _EmailSentPage extends StatelessWidget {
+  const _EmailSentPage({required this.email});
+
+  final String email;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Who eats ログイン')),
-      body: const SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(16),
-          child: EmailAuthForm(),
+      appBar: AppBar(title: const Text('確認メールを送信しました')),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('$email 宛に確認メールを送りました。'),
+            const SizedBox(height: 12),
+            const Text(
+              'メール内のリンクをタップすると Who eats に戻り、プロフィール設定へ進みます。',
+            ),
+            const Spacer(),
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('閉じる'),
+            ),
+          ],
         ),
       ),
     );

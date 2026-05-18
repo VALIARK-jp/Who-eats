@@ -49,6 +49,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["MAPS_API_KEY"] = androidMapsApiKey
+        manifestPlaceholders["lineChannelId"] = "2010102462"
     }
 
     buildTypes {
