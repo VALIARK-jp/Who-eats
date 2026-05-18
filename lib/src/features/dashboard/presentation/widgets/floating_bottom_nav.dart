@@ -11,7 +11,7 @@ class FloatingBottomNav extends StatelessWidget {
     required this.onCameraPressed,
   });
 
-  /// 0: Home, 1: Friends, 2: Camera (CTA only), 3: Record, 4: Profile
+  /// 0: Home, 1: Map, 2: Camera (CTA only), 3: Record, 4: Profile
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
   final VoidCallback onCameraPressed;
@@ -49,8 +49,8 @@ class FloatingBottomNav extends StatelessWidget {
                           onTap: () => onTabSelected(0),
                         ),
                         _NavItem(
-                          icon: Icons.people_alt_outlined,
-                          label: '友達',
+                          icon: Icons.map_outlined,
+                          label: '地図',
                           selected: selectedIndex == 1,
                           onTap: () => onTabSelected(1),
                         ),

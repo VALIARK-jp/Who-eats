@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/web/google_maps_loader.dart';
 import '../../../auth/application/auth_session.dart';
 import '../../../../core/supabase/post_submit_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
@@ -72,6 +73,17 @@ class _AppShellPageState extends State<AppShellPage> {
     setState(() => _activePostDetail = null);
   }
 
+  void _openFriendsPage(List<FriendCandidate> candidates) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          backgroundColor: AppColors.black,
+          body: _FriendsPage(candidates: candidates),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppShellController>(
@@ -87,8 +99,15 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPlace: _openPlaceSheet,
             onOpenPostDetail: _openPostDetail,
+            onOpenFriends: () => _openFriendsPage(controller.friendCandidates),
           ),
-          _FriendsPage(candidates: controller.friendCandidates),
+          _MapTab(
+            mapPins: controller.mapPins,
+            controller: controller,
+            onPlaceTap: _openPlaceSheet,
+            onSearchExpansionChanged: (_) {},
+            onEdgeSwipeBack: () {},
+          ),
           _CameraPage(onShot: () => _onCameraPressed(context, controller)),
           _RecordPage(summary: controller.recordSummary!),
           _ProfilePage(profile: controller.profileOverview!, controller: controller),
@@ -251,127 +270,59 @@ class _HomePage extends StatefulWidget {
     required this.controller,
     required this.onOpenPlace,
     required this.onOpenPostDetail,
+    required this.onOpenFriends,
   });
   final AppShellController controller;
   final ValueChanged<MapPin> onOpenPlace;
   final ValueChanged<FeedPost> onOpenPostDetail;
+  final VoidCallback onOpenFriends;
 
   @override
   State<_HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<_HomePage> {
-  late final PageController _pageController = PageController(
-    initialPage: widget.controller.homeTabIndex,
-  );
-  bool _hideHomeTabSwitcher = false;
-
-  @override
-  void didUpdateWidget(covariant _HomePage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_pageController.hasClients &&
-        _pageController.page?.round() != widget.controller.homeTabIndex) {
-      _pageController.animateToPage(
-        widget.controller.homeTabIndex,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
     return Stack(
       children: [
-        Positioned.fill(
-          child: PageView(
-            controller: _pageController,
-            physics: controller.homeTabIndex == 1
-                ? const NeverScrollableScrollPhysics()
-                : const _HighVelocityPagePhysics(),
-            onPageChanged: (index) {
-              controller.changeHomeTab(index);
-              if (index != 1 && _hideHomeTabSwitcher) {
-                setState(() {
-                  _hideHomeTabSwitcher = false;
-                });
-              }
-            },
-            children: [
-              _FeedTab(
-                feed: controller.feed,
-                onTapPost: widget.onOpenPostDetail,
-              ),
-              _MapTab(
-                mapPins: controller.mapPins,
-                controller: controller,
-                onPlaceTap: widget.onOpenPlace,
-                onSearchExpansionChanged: (expanded) {
-                  if (!mounted) return;
-                  setState(() {
-                    _hideHomeTabSwitcher = expanded;
-                  });
-                },
-                onEdgeSwipeBack: () {
-                  setState(() {
-                    _hideHomeTabSwitcher = false;
-                  });
-                  controller.changeHomeTab(0);
-                  _pageController.animateToPage(
-                    0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                  );
-                },
-              ),
-            ],
-          ),
+        _FeedTab(
+          feed: controller.feed,
+          onTapPost: widget.onOpenPostDetail,
         ),
         SafeArea(
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: IconButton(
-                    icon: const Icon(Icons.notifications_none),
-                    onPressed: () => _showNotificationSheet(
-                      context,
-                      controller.notifications,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.black.withValues(alpha: 0.8),
-                      minimumSize: const Size(46, 46),
-                      fixedSize: const Size(46, 46),
-                      padding: EdgeInsets.zero,
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.people_outline),
+                  onPressed: widget.onOpenFriends,
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.black.withValues(alpha: 0.8),
+                    minimumSize: const Size(46, 46),
+                    fixedSize: const Size(46, 46),
+                    padding: EdgeInsets.zero,
                   ),
                 ),
-              ),
-              if (!_hideHomeTabSwitcher)
-                Transform.translate(
-                  offset: const Offset(0, -40),
-                  child: _HomeTabSwitcher(
-                    selectedIndex: controller.homeTabIndex,
-                    onChanged: (target) {
-                      controller.changeHomeTab(target);
-                      _pageController.animateToPage(
-                        target,
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOut,
-                      );
-                    },
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.notifications_none),
+                  onPressed: () => _showNotificationSheet(
+                    context,
+                    controller.notifications,
+                  ),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.black.withValues(alpha: 0.8),
+                    minimumSize: const Size(46, 46),
+                    fixedSize: const Size(46, 46),
+                    padding: EdgeInsets.zero,
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
@@ -379,57 +330,6 @@ class _HomePageState extends State<_HomePage> {
   }
 }
 
-class _HighVelocityPagePhysics extends PageScrollPhysics {
-  const _HighVelocityPagePhysics({super.parent});
-
-  @override
-  _HighVelocityPagePhysics applyTo(ScrollPhysics? ancestor) {
-    return _HighVelocityPagePhysics(parent: buildParent(ancestor));
-  }
-
-  // Require a deliberate, fast swipe for page changes.
-  @override
-  double get minFlingDistance => 44.0;
-
-  @override
-  double get minFlingVelocity => 2400.0;
-
-  @override
-  double get dragStartDistanceMotionThreshold => 28.0;
-}
-
-class _HomeTabSwitcher extends StatelessWidget {
-  const _HomeTabSwitcher({
-    required this.selectedIndex,
-    required this.onChanged,
-  });
-
-  final int selectedIndex;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SegmentedButton<int>(
-        showSelectedIcon: false,
-        style: SegmentedButton.styleFrom(
-          backgroundColor: AppColors.black.withValues(alpha: 0.8),
-          selectedBackgroundColor: AppColors.orangeAccent.withValues(alpha: 0.18),
-          foregroundColor: AppColors.white.withValues(alpha: 0.78),
-          selectedForegroundColor: AppColors.orangeHighlight,
-          side: BorderSide(color: AppColors.border2),
-          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-        ),
-        segments: const [
-          ButtonSegment(value: 0, label: Text('投稿')),
-          ButtonSegment(value: 1, label: Text('マップ')),
-        ],
-        selected: {selectedIndex},
-        onSelectionChanged: (values) => onChanged(values.first),
-      ),
-    );
-  }
-}
 
 class _FeedTab extends StatelessWidget {
   const _FeedTab({
@@ -449,7 +349,7 @@ class _FeedTab extends StatelessWidget {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 130, 16, 120),
+      padding: const EdgeInsets.fromLTRB(16, 120, 16, 120),
       itemCount: feed.length,
       separatorBuilder: (_, _) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
@@ -527,11 +427,17 @@ class _MapTabState extends State<_MapTab> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onShellControllerUpdate);
+    googleMapsLoadFailedNotifier.addListener(_onGoogleMapsLoadFailureChanged);
     _prepareMarkerIcons();
   }
 
   void _onShellControllerUpdate() {
     unawaited(_tryCenterOnDeviceLocation());
+  }
+
+  void _onGoogleMapsLoadFailureChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _tryCenterOnDeviceLocation() async {
@@ -563,6 +469,7 @@ class _MapTabState extends State<_MapTab> {
   @override
   void dispose() {
     widget.controller.removeListener(_onShellControllerUpdate);
+    googleMapsLoadFailedNotifier.removeListener(_onGoogleMapsLoadFailureChanged);
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
@@ -574,6 +481,27 @@ class _MapTabState extends State<_MapTab> {
   Widget build(BuildContext context) {
     final pins = widget.mapPins;
     final topBarY = MediaQuery.paddingOf(context).top;
+    if (kIsWeb && googleMapsLoadFailed) {
+      return AppStateView(
+        type: AppStateType.error,
+        title: 'Google Maps を表示できません',
+        message: googleMapsLoadErrorMessage ??
+            'Google Maps API キーの制限を確認してください。',
+        onRetry: AppConfig.hasGooglePlacesApi
+            ? () async {
+                try {
+                  await loadGoogleMapsScript(AppConfig.googleMapsWebApiKey);
+                } catch (_) {
+                  // ignore
+                }
+                if (mounted) {
+                  setState(() {});
+                }
+              }
+            : null,
+      );
+    }
+
     if (pins.isEmpty) {
       final hasLocation = widget.controller.deviceLatitude != null &&
           widget.controller.deviceLongitude != null;
@@ -597,7 +525,12 @@ class _MapTabState extends State<_MapTab> {
             style: _hideDefaultPoiStyle,
             onMapCreated: (controller) {
               _mapController = controller;
-              _refreshViewportPins();
+              _log('Map created, refreshing viewport pins');
+              unawaited(
+                _refreshViewportPins().catchError((e, st) {
+                  _log('Error refreshing viewport pins: $e\n$st');
+                }),
+              );
               unawaited(_tryCenterOnDeviceLocation());
             },
             myLocationEnabled: true,
@@ -1303,6 +1236,14 @@ class _FriendsPageState extends State<_FriendsPage> {
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                  style: IconButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(40, 40),
+                  ),
+                ),
                 Expanded(
                   child: Text(
                     '友達',

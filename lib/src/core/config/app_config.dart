@@ -12,11 +12,15 @@ class AppConfig {
   static String get googleMapsWebApiKey =>
       _env('WHOEATS_GOOGLE_MAPS_WEB_API_KEY');
   static String get postedPinPlaceId => _env('WHOEATS_POSTED_PIN_PLACE_ID');
-  static String get postedPinPlaceName =>
-      _env('WHOEATS_POSTED_PIN_PLACE_NAME');
+  static String get postedPinPlaceName => _env('WHOEATS_POSTED_PIN_PLACE_NAME');
   static String get supabaseUrl => _env('WHOEATS_SUPABASE_URL');
-  static String get supabasePublishableKey =>
-      _env('WHOEATS_SUPABASE_PUBLISHABLE_KEY');
+  static String get supabasePublishableKey {
+    final publishableKey = _env('WHOEATS_SUPABASE_PUBLISHABLE_KEY');
+    if (publishableKey.isNotEmpty) {
+      return publishableKey;
+    }
+    return _env('WHOEATS_SUPABASE_ANON_KEY');
+  }
 
   /// Panda 側 SSO / OAuth 開始 URL（未設定なら空でボタン非表示）。
   static String get pandaOAuthUrl => _env('WHOEATS_PANDA_OAUTH_URL');
