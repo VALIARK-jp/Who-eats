@@ -330,7 +330,6 @@ class _HomePageState extends State<_HomePage> {
   }
 }
 
-
 class _FeedTab extends StatelessWidget {
   const _FeedTab({
     required this.feed,
