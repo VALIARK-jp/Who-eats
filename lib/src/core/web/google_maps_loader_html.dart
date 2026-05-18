@@ -7,7 +7,9 @@ import 'package:flutter/foundation.dart';
 bool googleMapsLoaded = false;
 bool googleMapsLoadFailed = false;
 String? googleMapsLoadErrorMessage;
-final ValueNotifier<bool> googleMapsLoadFailedNotifier = ValueNotifier<bool>(false);
+final ValueNotifier<bool> googleMapsLoadFailedNotifier = ValueNotifier<bool>(
+  false,
+);
 
 void _setLoadFailure(String message) {
   googleMapsLoaded = false;
@@ -16,8 +18,13 @@ void _setLoadFailure(String message) {
   googleMapsLoadFailedNotifier.value = true;
 }
 
+Future<void>? _loadingFuture;
+
 Future<void> loadGoogleMapsScript(String apiKey) async {
   if (document.querySelector('script[data-whoeats-google-maps]') != null) {
+    if (_loadingFuture != null) {
+      await _loadingFuture;
+    }
     if (!googleMapsLoadFailed) {
       googleMapsLoaded = true;
       googleMapsLoadErrorMessage = null;
@@ -30,9 +37,7 @@ Future<void> loadGoogleMapsScript(String apiKey) async {
     window,
     'gm_authFailure',
     js_util.allowInterop(() {
-      _setLoadFailure(
-        'Google Maps APIキーが拒否されました。API 制限またはリファラー制限を確認してください。',
-      );
+      _setLoadFailure('Google Maps APIキーが拒否されました。API 制限またはリファラー制限を確認してください。');
     }),
   );
 
@@ -48,7 +53,9 @@ Future<void> loadGoogleMapsScript(String apiKey) async {
   script.onError.listen((event) {
     if (!completer.isCompleted) {
       _setLoadFailure('Google Maps JavaScript failed to load.');
-      completer.completeError(StateError('Google Maps JavaScript failed to load.'));
+      completer.completeError(
+        StateError('Google Maps JavaScript failed to load.'),
+      );
     }
   });
   script.onLoad.listen((event) {
@@ -64,11 +71,17 @@ Future<void> loadGoogleMapsScript(String apiKey) async {
   });
 
   document.head?.append(script);
-  return completer.future.timeout(
+  _loadingFuture = completer.future.timeout(
     const Duration(seconds: 12),
     onTimeout: () {
       _setLoadFailure('Google Maps JavaScript load timed out.');
       throw TimeoutException('Google Maps JavaScript load timed out.');
     },
   );
+
+  try {
+    await _loadingFuture;
+  } finally {
+    _loadingFuture = null;
+  }
 }

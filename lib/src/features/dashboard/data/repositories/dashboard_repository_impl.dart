@@ -65,14 +65,14 @@ class DashboardRepositoryImpl implements DashboardRepository {
           final merged = _mergeMapPinsPreferDb(
             dbPins: dbPins,
             googlePins: googlePins
-              .map(
-                (pin) => pin.toEntity().copyWith(
-                  isFriendVisited:
-                      pin.toEntity().isFriendVisited ||
-                      postedPlaceIds.contains(pin.id),
-                ),
-              )
-              .toList(),
+                .map(
+                  (pin) => pin.toEntity().copyWith(
+                    isFriendVisited:
+                        pin.toEntity().isFriendVisited ||
+                        postedPlaceIds.contains(pin.id),
+                  ),
+                )
+                .toList(),
           );
           return merged;
         }
@@ -118,14 +118,14 @@ class DashboardRepositoryImpl implements DashboardRepository {
         return _mergeMapPinsPreferDb(
           dbPins: dbPins,
           googlePins: googlePins
-            .map(
-              (pin) => pin.toEntity().copyWith(
-                isFriendVisited:
-                    pin.toEntity().isFriendVisited ||
-                    postedPlaceIds.contains(pin.id),
-              ),
-            )
-            .toList(),
+              .map(
+                (pin) => pin.toEntity().copyWith(
+                  isFriendVisited:
+                      pin.toEntity().isFriendVisited ||
+                      postedPlaceIds.contains(pin.id),
+                ),
+              )
+              .toList(),
         );
       } catch (e) {
         _log('searchMapPins google failed: $e');
@@ -154,25 +154,26 @@ class DashboardRepositoryImpl implements DashboardRepository {
     );
     if (_googlePlacesDataSource != null) {
       try {
-        final googlePins = await _googlePlacesDataSource.searchNearbyPlacesAround(
-          lat: lat,
-          lng: lng,
-          radiusMeters: radiusMeters,
-          keyword: keyword,
-        );
+        final googlePins = await _googlePlacesDataSource
+            .searchNearbyPlacesAround(
+              lat: lat,
+              lng: lng,
+              radiusMeters: radiusMeters,
+              keyword: keyword,
+            );
         final postedPlaceIds = dbPins.map((e) => e.id).toSet();
         _log('searchMapPinsAround source=google count=${googlePins.length}');
         return _mergeMapPinsPreferDb(
           dbPins: dbPins,
           googlePins: googlePins
-            .map(
-              (pin) => pin.toEntity().copyWith(
-                isFriendVisited:
-                    pin.toEntity().isFriendVisited ||
-                    postedPlaceIds.contains(pin.id),
-              ),
-            )
-            .toList(),
+              .map(
+                (pin) => pin.toEntity().copyWith(
+                  isFriendVisited:
+                      pin.toEntity().isFriendVisited ||
+                      postedPlaceIds.contains(pin.id),
+                ),
+              )
+              .toList(),
         );
       } catch (e) {
         _log('searchMapPinsAround google failed: $e');
@@ -262,9 +263,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     double? biasLat,
     double? biasLng,
   }) async {
-    _log(
-      'autocomplete query="$query" biasLat=$biasLat biasLng=$biasLng',
-    );
+    _log('autocomplete query="$query" biasLat=$biasLat biasLng=$biasLng');
     if (_googlePlacesDataSource != null) {
       try {
         final suggestions = await _googlePlacesDataSource.autocomplete(
@@ -292,11 +291,41 @@ class DashboardRepositoryImpl implements DashboardRepository {
   @override
   Future<ProfileOverview> getProfileOverview() async {
     final base = await _dataSource.getProfileOverview();
-    final iconUrl = await _resolveCurrentUserIconUrl();
-    if (iconUrl == null || iconUrl.isEmpty) return base;
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return base;
+
+    try {
+      final row = await _supabase
+          .from(SupabaseTables.profiles)
+          .select('name, user_code, bio, icon_path, avatar_url')
+          .eq('id', uid)
+          .maybeSingle();
+      if (row == null) return base;
+
+      final name = (row['name'] ?? '').toString().trim();
+      final userCode = (row['user_code'] ?? '').toString().trim();
+      final bio = (row['bio'] ?? '').toString().trim();
+      final iconUrl = await _profileIconUrlFromRow(row);
+
+      return ProfileOverview(
+        name: name.isNotEmpty ? name : base.name,
+        userCode: userCode.isNotEmpty ? userCode : base.userCode,
+        bio: bio,
+        avatarUrl: iconUrl ?? base.avatarUrl,
+        followers: base.followers,
+        following: base.following,
+        pinnedShots: base.pinnedShots,
+        recentShots: base.recentShots,
+      );
+    } catch (e) {
+      _log('getProfileOverview profiles lookup failed: $e');
+    }
+
     return ProfileOverview(
       name: base.name,
-      avatarUrl: iconUrl,
+      userCode: base.userCode,
+      bio: base.bio,
+      avatarUrl: base.avatarUrl,
       followers: base.followers,
       following: base.following,
       pinnedShots: base.pinnedShots,
@@ -366,8 +395,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
         final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
         if (images.isNotEmpty) {
-          images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
-              .compareTo(((b['display_order'] as num?) ?? 0)));
+          images.sort(
+            (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
+              ((b['display_order'] as num?) ?? 0),
+            ),
+          );
           final storagePath = (images.first['storage_path'] ?? '').toString();
           if (storagePath.isNotEmpty) {
             imageUrl = await _supabase.storage
@@ -441,8 +473,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final images = (row['post_images'] as List<dynamic>? ?? [])
         .cast<Map<String, dynamic>>();
     if (images.isEmpty) return null;
-    images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
-        .compareTo(((b['display_order'] as num?) ?? 0)));
+    images.sort(
+      (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
+        ((b['display_order'] as num?) ?? 0),
+      ),
+    );
     final storagePath = (images.first['storage_path'] ?? '').toString();
     if (storagePath.isEmpty) return null;
 
@@ -456,7 +491,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
       return null;
     }
 
-    final author = _extractEmbeddedUser(row[SupabaseTables.profiles]) ??
+    final author =
+        _extractEmbeddedUser(row[SupabaseTables.profiles]) ??
         _extractEmbeddedUser(row['users']);
     final displayName = (author?['name'] ?? '').toString().trim();
     final email = (author?['email'] ?? '').toString();
@@ -537,8 +573,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
             .cast<Map<String, dynamic>>();
         String? imageUrl;
         if (images.isNotEmpty) {
-          images.sort((a, b) => ((a['display_order'] as num?) ?? 0)
-              .compareTo(((b['display_order'] as num?) ?? 0)));
+          images.sort(
+            (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
+              ((b['display_order'] as num?) ?? 0),
+            ),
+          );
           final storagePath = (images.first['storage_path'] ?? '').toString();
           if (storagePath.isNotEmpty) {
             imageUrl = await _supabase.storage
@@ -562,34 +601,15 @@ class DashboardRepositoryImpl implements DashboardRepository {
     }
   }
 
-  Future<String?> _resolveCurrentUserIconUrl() async {
-    final uid = _supabase.auth.currentUser?.id;
-    if (uid == null) return null;
-    try {
-      final row = await _supabase
-          .from(SupabaseTables.profiles)
-          .select()
-          .eq('id', uid)
-          .maybeSingle();
-      final direct =
-          (row?['icon_path'] ?? row?['avatar_url'] ?? '').toString();
-      if (direct.startsWith('http://') || direct.startsWith('https://')) {
-        return direct;
-      }
-      if (direct.isNotEmpty) {
-        return await _supabase.storage
-            .from('post-images')
-            .createSignedUrl(direct, 60 * 60 * 24 * 7);
-      }
-    } catch (e) {
-      _log('_resolveCurrentUserIconUrl profiles lookup failed: $e');
+  Future<String?> _profileIconUrlFromRow(Map<String, dynamic>? row) async {
+    final direct = (row?['icon_path'] ?? row?['avatar_url'] ?? '').toString();
+    if (direct.startsWith('http://') || direct.startsWith('https://')) {
+      return direct;
     }
-    final meta = _supabase.auth.currentUser?.userMetadata;
-    final avatar = (meta?['avatar_url'] ?? '').toString();
-    if (avatar.startsWith('http://') || avatar.startsWith('https://')) {
-      return avatar;
-    }
-    return null;
+    if (direct.isEmpty) return null;
+    return _supabase.storage
+        .from('post-images')
+        .createSignedUrl(direct, 60 * 60 * 24 * 7);
   }
 
   Map<String, dynamic>? _extractEmbeddedPlace(dynamic raw) {

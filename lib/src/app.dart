@@ -15,7 +15,7 @@ import 'features/dashboard/data/datasources/remote/map_api_data_source.dart';
 import 'features/dashboard/data/repositories/dashboard_repository_impl.dart';
 import 'features/dashboard/domain/usecases/dashboard_usecases.dart';
 import 'features/dashboard/presentation/controllers/app_shell_controller.dart';
-import 'features/dashboard/presentation/pages/app_shell_page.dart';
+import 'features/auth/presentation/auth_shell_page.dart';
 
 class WhoEatsApp extends StatefulWidget {
   const WhoEatsApp({super.key});
@@ -101,7 +101,7 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         title: 'Who eats',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const AppShellPage(),
+        home: const AuthShellPage(),
       ),
     );
   }

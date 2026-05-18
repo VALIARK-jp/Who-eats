@@ -5,6 +5,7 @@ class AppColors {
 
   // Background (spec: #050505 ~ #0B0B0D)
   static const black = Color(0xFF050505);
+  static const background = black;
   static const blackElevated = Color(0xFF0B0B0D);
 
   // Card surfaces (spec: #111111 / #151515)
@@ -12,6 +13,7 @@ class AppColors {
   static const cardElevated = Color(0xFF151515);
 
   static const white = Color(0xFFFFFFFF);
+  static const textPrimary = white;
 
   // Text hierarchy
   static const textSubtle = Color.fromRGBO(255, 255, 255, 0.65);

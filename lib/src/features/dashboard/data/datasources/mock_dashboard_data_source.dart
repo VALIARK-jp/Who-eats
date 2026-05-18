@@ -71,19 +71,22 @@ class MockDashboardDataSource {
         id: 'pp1',
         userName: 'haruka',
         comment: 'ライト暗めで写真映えした！',
-        imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4',
+        imageUrl:
+            'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4',
       ),
       PlacePostPreview(
         id: 'pp2',
         userName: 'ryota',
         comment: 'ご飯もデザートも当たり',
-        imageUrl: 'https://images.unsplash.com/photo-1482049016688-2d3e1b311543',
+        imageUrl:
+            'https://images.unsplash.com/photo-1482049016688-2d3e1b311543',
       ),
       PlacePostPreview(
         id: 'pp3',
         userName: 'yuma_21',
         comment: '友達と来るのにちょうど良い',
-        imageUrl: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836',
+        imageUrl:
+            'https://images.unsplash.com/photo-1504674900247-0877df9cc836',
       ),
     ],
   );
@@ -92,11 +95,10 @@ class MockDashboardDataSource {
     String query, {
     double? biasLat,
     double? biasLng,
-  }) async =>
-      const [
-        PlaceSuggestion(placeId: 'm1', description: 'and people udagawa'),
-        PlaceSuggestion(placeId: 'm2', description: '渋谷らーめん本舗'),
-      ];
+  }) async => const [
+    PlaceSuggestion(placeId: 'm1', description: 'and people udagawa'),
+    PlaceSuggestion(placeId: 'm2', description: '渋谷らーめん本舗'),
+  ];
 
   Future<List<FriendCandidate>> getFriendCandidates() async => const [
     FriendCandidate(
@@ -139,6 +141,8 @@ class MockDashboardDataSource {
 
   Future<ProfileOverview> getProfileOverview() async => const ProfileOverview(
     name: 'ryota',
+    userCode: '@ryota',
+    bio: '',
     avatarUrl: '',
     followers: 498,
     following: 342,
