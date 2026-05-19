@@ -15,12 +15,12 @@ class AppConfig {
       fromDefine.isNotEmpty ? fromDefine : fromFile;
 
   static String get mapPinsApiUrl => _pick(
-    String.fromEnvironment('WHOEATS_MAP_PINS_API_URL', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_MAP_PINS_API_URL', defaultValue: ''),
     _env('WHOEATS_MAP_PINS_API_URL'),
   );
 
   static String get placeDetailApiTemplate => _pick(
-    String.fromEnvironment(
+    const String.fromEnvironment(
       'WHOEATS_PLACE_DETAIL_API_TEMPLATE',
       defaultValue: '',
     ),
@@ -28,25 +28,25 @@ class AppConfig {
   );
 
   static String get googleMapsWebApiKey => _pick(
-    String.fromEnvironment('WHOEATS_GOOGLE_MAPS_WEB_API_KEY', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_GOOGLE_MAPS_WEB_API_KEY', defaultValue: ''),
     _env('WHOEATS_GOOGLE_MAPS_WEB_API_KEY'),
   );
 
   static String get postedPinPlaceId => _pick(
-    String.fromEnvironment('WHOEATS_POSTED_PIN_PLACE_ID', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_POSTED_PIN_PLACE_ID', defaultValue: ''),
     _env('WHOEATS_POSTED_PIN_PLACE_ID'),
   );
 
   static String get postedPinPlaceName => _pick(
-    String.fromEnvironment('WHOEATS_POSTED_PIN_PLACE_NAME', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_POSTED_PIN_PLACE_NAME', defaultValue: ''),
     _env('WHOEATS_POSTED_PIN_PLACE_NAME'),
   );
 
   /// `WHOEATS_SUPABASE_URL`（dart-define / .env）または `SUPABASE_*`。
   static String get supabaseUrl {
-    final wD = String.fromEnvironment('WHOEATS_SUPABASE_URL', defaultValue: '');
+    final wD = const String.fromEnvironment('WHOEATS_SUPABASE_URL', defaultValue: '');
     if (wD.isNotEmpty) return wD;
-    final sD = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+    final sD = const String.fromEnvironment('SUPABASE_URL', defaultValue: '');
     if (sD.isNotEmpty) return sD;
     final w = _env('WHOEATS_SUPABASE_URL');
     if (w.isNotEmpty) return w;
@@ -60,12 +60,12 @@ class AppConfig {
   /// Edge Function なので、`sb_publishable_...` 形式ではなく JWT 形式の
   /// anon key が必要。
   static String get supabaseAnonKey {
-    final anonD = String.fromEnvironment(
+    final anonD = const String.fromEnvironment(
       'WHOEATS_SUPABASE_ANON_KEY',
       defaultValue: '',
     );
     if (anonD.isNotEmpty) return anonD;
-    final sD = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+    final sD = const String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
     if (sD.isNotEmpty) return sD;
     final a = _env('WHOEATS_SUPABASE_ANON_KEY');
     if (a.isNotEmpty) return a;
@@ -73,14 +73,14 @@ class AppConfig {
   }
 
   static String get pandaOAuthUrl => _pick(
-    String.fromEnvironment('WHOEATS_PANDA_OAUTH_URL', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_PANDA_OAUTH_URL', defaultValue: ''),
     _env('WHOEATS_PANDA_OAUTH_URL'),
   );
 
   /// Who eats 用プロフィール表。未設定時は `whoeats_users`。
   static String get supabaseProfilesTable {
     final v = _pick(
-      String.fromEnvironment(
+      const String.fromEnvironment(
         'WHOEATS_SUPABASE_PROFILES_TABLE',
         defaultValue: '',
       ),
@@ -91,20 +91,20 @@ class AppConfig {
 
   /// ドメイン表の接頭辞（例: `whoeats_`）。空なら非接頭辞。
   static String get dbTablePrefix => _pick(
-    String.fromEnvironment('WHOEATS_DB_TABLE_PREFIX', defaultValue: ''),
+    const String.fromEnvironment('WHOEATS_DB_TABLE_PREFIX', defaultValue: ''),
     _env('WHOEATS_DB_TABLE_PREFIX'),
   );
 
   /// メール確認・PKCE 戻り先（Supabase Dashboard の Redirect URLs と一致）。
   static String get authRedirectUrl {
-    final d = String.fromEnvironment(
+    final d = const String.fromEnvironment(
       whoeatsAuthRedirectEnvKey,
       defaultValue: '',
     );
     if (d.isNotEmpty) return d;
     final w = _env(whoeatsAuthRedirectEnvKey);
     if (w.isNotEmpty) return w;
-    final legacyD = String.fromEnvironment(
+    final legacyD = const String.fromEnvironment(
       legacyValiarkAuthRedirectEnvKey,
       defaultValue: '',
     );
@@ -125,7 +125,7 @@ class AppConfig {
 
   static String get defaultDevPlaceUuid {
     final v = _pick(
-      String.fromEnvironment(
+      const String.fromEnvironment(
         'WHOEATS_DEFAULT_DEV_PLACE_UUID',
         defaultValue: '',
       ),

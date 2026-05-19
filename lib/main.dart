@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'src/app.dart';
 import 'src/core/config/app_config.dart';
 import 'src/features/auth/valiark_auth_config.dart';
+import 'src/core/web/google_maps_loader.dart'; 
+
 
 bool _isSupabaseOfflineNoise(Object error) {
   final s = error.toString();
@@ -41,7 +43,9 @@ Future<void> main() async {
           detectSessionInUri: false,
         ),
       );
-      await LineSDK.instance.setup(valiarkLineChannelId);
+      if (!kIsWeb) {
+        await LineSDK.instance.setup(valiarkLineChannelId);
+      }
     }
     runApp(const WhoEatsApp());
   }, (Object error, StackTrace stack) {

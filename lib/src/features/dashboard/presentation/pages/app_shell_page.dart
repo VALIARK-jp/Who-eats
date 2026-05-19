@@ -13,6 +13,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/web/google_maps_loader.dart';
 import '../../../auth/application/auth_session.dart';
+import '../../../auth/presentation/login_page.dart';
+import '../../../auth/presentation/signup_page.dart';
 import '../../../../core/supabase/post_submit_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -61,7 +63,7 @@ class _AppShellPageState extends State<AppShellPage> {
 
   bool _showsSignedInGate(int bottomIndex) {
     if (!AppConfig.hasSupabase) return false;
-    if (bottomIndex == 0) return false;
+    if (bottomIndex == 0 || bottomIndex == 1) return false;
     return Supabase.instance.client.auth.currentUser == null;
   }
 
@@ -102,6 +104,86 @@ class _AppShellPageState extends State<AppShellPage> {
   }
 
   void _openFriendsPage(List<FriendCandidate> candidates) {
+    if (AppConfig.hasSupabase &&
+        Supabase.instance.client.auth.currentUser == null) {
+      showDialog<void>(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: Material(
+              color: AppColors.cardElevated,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      size: 40,
+                      color: AppColors.orange.withValues(alpha: 0.9),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      '友達機能を使うにはログインが必要です',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'ログインしてこの機能を解放しましょう。',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSubtle,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const LoginPage(),
+                            ),
+                          );
+                        },
+                        child: const Text('ログイン'),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const SignupPage(),
+                            ),
+                          );
+                        },
+                        child: const Text('新規登録'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
@@ -333,16 +415,12 @@ class _HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<_HomePage> {
-
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
     return Stack(
       children: [
-        _FeedTab(
-          feed: controller.feed,
-          onTapPost: widget.onOpenPostDetail,
-        ),
+        _FeedTab(feed: controller.feed, onTapPost: widget.onOpenPostDetail),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -361,10 +439,8 @@ class _HomePageState extends State<_HomePage> {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.notifications_none),
-                  onPressed: () => _showNotificationSheet(
-                    context,
-                    controller.notifications,
-                  ),
+                  onPressed: () =>
+                      _showNotificationSheet(context, controller.notifications),
                   style: IconButton.styleFrom(
                     backgroundColor: AppColors.black.withValues(alpha: 0.8),
                     minimumSize: const Size(46, 46),
@@ -514,7 +590,9 @@ class _MapTabState extends State<_MapTab> {
   @override
   void dispose() {
     widget.controller.removeListener(_onShellControllerUpdate);
-    googleMapsLoadFailedNotifier.removeListener(_onGoogleMapsLoadFailureChanged);
+    googleMapsLoadFailedNotifier.removeListener(
+      _onGoogleMapsLoadFailureChanged,
+    );
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
@@ -530,8 +608,8 @@ class _MapTabState extends State<_MapTab> {
       return AppStateView(
         type: AppStateType.error,
         title: 'Google Maps を表示できません',
-        message: googleMapsLoadErrorMessage ??
-            'Google Maps API キーの制限を確認してください。',
+        message:
+            googleMapsLoadErrorMessage ?? 'Google Maps API キーの制限を確認してください。',
         onRetry: AppConfig.hasGooglePlacesApi
             ? () async {
                 try {
