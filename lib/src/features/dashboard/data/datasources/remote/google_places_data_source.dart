@@ -123,7 +123,7 @@ class GooglePlacesDataSource {
     final uri = Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
       'place_id': placeId,
       'fields':
-          'place_id,name,formatted_address,formatted_phone_number,opening_hours,rating,reviews,photos,geometry',
+          'place_id,name,formatted_address,formatted_phone_number,opening_hours,rating,reviews,photos,geometry,website,url',
       'key': _apiKey,
       'language': 'ja',
     });
@@ -181,6 +181,8 @@ class GooglePlacesDataSource {
       travelMinutes: travelMinutes,
       latitude: lat,
       longitude: lng,
+      websiteUrl: (result['website'] ?? '').toString(),
+      googleMapsUrl: (result['url'] ?? '').toString(),
     );
   }
 

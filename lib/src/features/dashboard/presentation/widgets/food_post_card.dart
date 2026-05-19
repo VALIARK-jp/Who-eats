@@ -45,6 +45,15 @@ class FoodPostCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.storefront_outlined, size: 16),
+                  label: const Text('店舗詳細'),
+                ),
+              ),
+              const SizedBox(height: 10),
               _ReactionRow(post: post),
               const SizedBox(height: 10),
               FriendAvatarStack(
@@ -235,4 +244,3 @@ class _ReactionRow extends StatelessWidget {
     );
   }
 }
-

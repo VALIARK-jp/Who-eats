@@ -185,6 +185,8 @@ class PlaceDetail {
     this.travelMinutes,
     this.latitude,
     this.longitude,
+    this.websiteUrl,
+    this.googleMapsUrl,
   });
 
   final String placeId;
@@ -199,6 +201,8 @@ class PlaceDetail {
   final int? travelMinutes;
   final double? latitude;
   final double? longitude;
+  final String? websiteUrl;
+  final String? googleMapsUrl;
 }
 
 class PlaceSuggestion {

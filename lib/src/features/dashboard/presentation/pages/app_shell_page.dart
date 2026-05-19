@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/web/google_maps_loader.dart';
@@ -2578,6 +2579,40 @@ class PostDetailPage extends StatelessWidget {
   final AppShellController controller;
   final VoidCallback onClose;
 
+  Future<void> _openWebsite(BuildContext context, PlaceDetail? place) async {
+    final raw = (((place?.websiteUrl ?? '').trim().isNotEmpty
+            ? place?.websiteUrl
+            : place?.googleMapsUrl) ??
+        '').trim();
+    final uri = Uri.tryParse(raw);
+    if (raw.isEmpty || uri == null || !uri.hasScheme) {
+      _showSnack(context, '店舗サイトが見つかりません');
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) _showSnack(context, '店舗サイトを開けませんでした');
+  }
+
+  Future<void> _openGoogleMaps(BuildContext context, PlaceDetail? place) async {
+    final placeName = place?.placeName ?? post.placeName;
+    final placeId = post.placeGoogleId ?? place?.placeId ?? '';
+    final rawUrl = (place?.googleMapsUrl ?? '').trim();
+    final directUri = Uri.tryParse(rawUrl);
+    final uri = directUri != null && directUri.hasScheme
+        ? directUri
+        : Uri.https('www.google.com', '/maps/search/', {
+            'api': '1',
+            'query': placeName,
+            if (placeId.isNotEmpty) 'query_place_id': placeId,
+          });
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) _showSnack(context, 'Google Mapsを開けませんでした');
+  }
+
+  void _showSnack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final placeFuture = (post.placeGoogleId ?? '').isNotEmpty
@@ -2746,6 +2781,13 @@ class PostDetailPage extends StatelessWidget {
                           ),
                         ),
                       ],
+                      const SizedBox(height: 12),
+                      _PostPlaceActionPanel(
+                        place: place,
+                        fallbackPlaceName: post.placeName,
+                        onOpenWebsite: () => _openWebsite(context, place),
+                        onOpenGoogleMaps: () => _openGoogleMaps(context, place),
+                      ),
                       const SizedBox(height: 14),
                       Text(
                         post.caption,
@@ -2802,6 +2844,120 @@ class PostDetailPage extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _PostPlaceActionPanel extends StatelessWidget {
+  const _PostPlaceActionPanel({
+    required this.place,
+    required this.fallbackPlaceName,
+    required this.onOpenWebsite,
+    required this.onOpenGoogleMaps,
+  });
+
+  final PlaceDetail? place;
+  final String fallbackPlaceName;
+  final VoidCallback onOpenWebsite;
+  final VoidCallback onOpenGoogleMaps;
+
+  @override
+  Widget build(BuildContext context) {
+    final websiteHost = _hostLabel(place?.websiteUrl);
+    final openLabel = place?.openNow == null
+        ? null
+        : place!.openNow!
+            ? '営業中'
+            : '営業時間外';
+    final placeName = (place?.placeName ?? fallbackPlaceName).trim();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.blackElevated.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.storefront_outlined, size: 18, color: AppColors.orange),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  placeName.isEmpty ? '店舗情報' : placeName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              if (openLabel != null)
+                Text(
+                  openLabel,
+                  style: TextStyle(
+                    color: place!.openNow! ? AppColors.orangeHighlight : Colors.white70,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
+          if ((place?.address ?? '').isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              place!.address!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.72),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (websiteHost != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              websiteHost,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.orangeHighlight,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: onOpenWebsite,
+                  icon: const Icon(Icons.language, size: 17),
+                  label: const Text('店舗サイト'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onOpenGoogleMaps,
+                  icon: const Icon(Icons.map_outlined, size: 17),
+                  label: const Text('地図'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _hostLabel(String? raw) {
+    final uri = Uri.tryParse((raw ?? '').trim());
+    final host = uri?.host;
+    if (host == null || host.isEmpty) return null;
+    return host.startsWith('www.') ? host.substring(4) : host;
   }
 }
 
