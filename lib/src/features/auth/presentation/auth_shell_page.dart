@@ -46,11 +46,10 @@ class _AuthShellPageState extends State<AuthShellPage> {
       }
       return;
     }
-    await ProfileOnboardingStore.applyPendingEmailSignup(
+    final done = await ProfileOnboardingStore.resolveSetupComplete(
       userId: user.id,
       email: user.email,
     );
-    final done = await ProfileOnboardingStore.isCompleted(user.id);
     if (mounted) {
       setState(() {
         _profileSetupDone = done;

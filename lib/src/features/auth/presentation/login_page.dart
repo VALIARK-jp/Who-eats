@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../application/auth_service.dart';
+import '../widgets/auth_attribution_notice_block.dart';
+import '../widgets/terms_consent_footer.dart';
 import 'email_auth_page.dart';
 import 'signup_page.dart';
 
@@ -171,6 +173,10 @@ class _LoginPageState extends State<LoginPage> {
               },
               child: const Text('新規登録はこちら'),
             ),
+            const SizedBox(height: 32),
+            const AuthAttributionNoticeBlock(),
+            const SizedBox(height: 16),
+            const TermsConsentFooter(),
           ],
         ),
       ),

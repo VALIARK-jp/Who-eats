@@ -42,7 +42,9 @@ Future<void> main() async {
           detectSessionInUri: false,
         ),
       );
-      await LineSDK.instance.setup(valiarkLineChannelId);
+      if (!kIsWeb) {
+        await LineSDK.instance.setup(valiarkLineChannelId);
+      }
     }
     runApp(const WhoEatsApp());
   }, (Object error, StackTrace stack) {
