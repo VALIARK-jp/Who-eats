@@ -14,6 +14,8 @@ class PlaceDetailModel {
     this.travelMinutes,
     this.latitude,
     this.longitude,
+    this.websiteUrl,
+    this.googleMapsUrl,
   });
 
   final String placeId;
@@ -28,6 +30,8 @@ class PlaceDetailModel {
   final int? travelMinutes;
   final double? latitude;
   final double? longitude;
+  final String? websiteUrl;
+  final String? googleMapsUrl;
 
   factory PlaceDetailModel.fromJson(Map<String, dynamic> json) {
     final postsRaw = json['posts'] as List<dynamic>? ?? [];
@@ -50,6 +54,10 @@ class PlaceDetailModel {
       travelMinutes: (json['travelMinutes'] as num?)?.toInt(),
       latitude: _asNullableDouble(json['latitude'] ?? json['lat']),
       longitude: _asNullableDouble(json['longitude'] ?? json['lng']),
+      websiteUrl: (json['websiteUrl'] ?? json['website_url'] ?? json['website'])
+          ?.toString(),
+      googleMapsUrl: (json['googleMapsUrl'] ?? json['google_maps_url'] ?? json['url'])
+          ?.toString(),
     );
   }
 
@@ -67,6 +75,8 @@ class PlaceDetailModel {
       travelMinutes: travelMinutes,
       latitude: latitude,
       longitude: longitude,
+      websiteUrl: websiteUrl,
+      googleMapsUrl: googleMapsUrl,
     );
   }
 

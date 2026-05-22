@@ -46,7 +46,11 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
 
   Future<void> _openGoogleMaps(PlaceDetail detail) async {
     Uri uri;
-    if (detail.latitude != null && detail.longitude != null) {
+    final googleMapsUrl = (detail.googleMapsUrl ?? '').trim();
+    final directUri = Uri.tryParse(googleMapsUrl);
+    if (directUri != null && directUri.hasScheme) {
+      uri = directUri;
+    } else if (detail.latitude != null && detail.longitude != null) {
       uri = Uri.parse(
         'https://www.google.com/maps/search/?api=1&query=${detail.latitude},${detail.longitude}',
       );
@@ -60,6 +64,21 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) _showSnack('Google Mapsを開けませんでした');
+  }
+
+  Future<void> _openWebsite(PlaceDetail detail) async {
+    final raw = ((detail.websiteUrl ?? '').trim().isNotEmpty
+            ? detail.websiteUrl
+            : detail.googleMapsUrl)
+        ?.trim() ??
+        '';
+    final uri = Uri.tryParse(raw);
+    if (raw.isEmpty || uri == null || !uri.hasScheme) {
+      _showSnack('店舗サイトが見つかりません');
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) _showSnack('店舗サイトを開けませんでした');
   }
 
   Future<void> _openWalkingDirections(PlaceDetail detail) async {
@@ -271,9 +290,9 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             ),
             Expanded(
               child: _PlaceActionButton(
-                icon: Icons.bookmark_border,
-                label: '保存',
-                onTap: () => _showSnack('保存は次フェーズで対応します'),
+                icon: Icons.language,
+                label: '店舗サイト',
+                onTap: () => _openWebsite(detail),
               ),
             ),
           ],
@@ -335,6 +354,12 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             );
           },
         ),
+      ),
+      const SizedBox(height: 14),
+      _PlaceInfoPanel(
+        detail: detail,
+        onOpenWebsite: () => _openWebsite(detail),
+        onOpenGoogleMaps: () => _openGoogleMaps(detail),
       ),
       const SizedBox(height: 14),
       const Text('写真', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
@@ -585,6 +610,115 @@ class _MenuCard extends StatelessWidget {
   }
 }
 
+class _PlaceInfoPanel extends StatelessWidget {
+  const _PlaceInfoPanel({
+    required this.detail,
+    required this.onOpenWebsite,
+    required this.onOpenGoogleMaps,
+  });
+
+  final PlaceDetail detail;
+  final VoidCallback onOpenWebsite;
+  final VoidCallback onOpenGoogleMaps;
+
+  @override
+  Widget build(BuildContext context) {
+    final websiteHost = _hostLabel(detail.websiteUrl);
+    final openLabel = detail.openNow == null
+        ? null
+        : detail.openNow!
+            ? '営業中'
+            : '営業時間外';
+
+    return GlassPanel(
+      padding: const EdgeInsets.all(14),
+      borderRadius: 18,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('店舗情報', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+          const SizedBox(height: 12),
+          if ((detail.address ?? '').isNotEmpty)
+            _InfoLine(icon: Icons.place_outlined, text: detail.address!),
+          if ((detail.phoneNumber ?? '').isNotEmpty)
+            _InfoLine(icon: Icons.call_outlined, text: detail.phoneNumber!),
+          if (openLabel != null)
+            _InfoLine(
+              icon: Icons.schedule,
+              text: openLabel,
+              color: detail.openNow! ? AppColors.orangeHighlight : Colors.white70,
+            ),
+          if (websiteHost != null)
+            _InfoLine(icon: Icons.language, text: websiteHost),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onOpenWebsite,
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('店舗サイト'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onOpenGoogleMaps,
+                  icon: const Icon(Icons.map_outlined, size: 16),
+                  label: const Text('地図で見る'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _hostLabel(String? raw) {
+    final uri = Uri.tryParse((raw ?? '').trim());
+    final host = uri?.host;
+    if (host == null || host.isEmpty) return null;
+    return host.startsWith('www.') ? host.substring(4) : host;
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  const _InfoLine({
+    required this.icon,
+    required this.text,
+    this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: color ?? AppColors.textSubtle),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color ?? AppColors.white.withValues(alpha: 0.86),
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PlaceActionButton extends StatelessWidget {
   const _PlaceActionButton({
     required this.icon,
@@ -631,4 +765,3 @@ class _PlaceActionButton extends StatelessWidget {
     );
   }
 }
-

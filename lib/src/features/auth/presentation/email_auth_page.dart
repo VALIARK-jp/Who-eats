@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../dashboard/presentation/controllers/app_shell_controller.dart';
 import '../application/auth_service.dart';
+import '../widgets/auth_attribution_notice_block.dart';
+import '../widgets/terms_consent_footer.dart';
 
 /// メール＋パスワード（[AuthService] / [AppConfig.authRedirectUrl] 経由）。
 class EmailAuthPage extends StatefulWidget {
@@ -162,6 +164,10 @@ class _EmailAuthPageState extends State<EmailAuthPage>
               onPressed: _resetPassword,
               child: const Text('パスワードを忘れた場合'),
             ),
+            const SizedBox(height: 24),
+            const TermsConsentFooter(),
+            const SizedBox(height: 16),
+            const AuthAttributionNoticeBlock(showCreatedByHeader: false),
           ],
         ),
       ),
@@ -264,6 +270,10 @@ class _EmailAuthPageState extends State<EmailAuthPage>
                 textAlign: TextAlign.center,
               ),
             ],
+            const SizedBox(height: 24),
+            const TermsConsentFooter(),
+            const SizedBox(height: 16),
+            const AuthAttributionNoticeBlock(showCreatedByHeader: false),
           ],
         ),
       ),

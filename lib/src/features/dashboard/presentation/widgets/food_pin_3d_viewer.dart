@@ -8,11 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import 'food_pin_dev_placeholder.dart';
 
-/// WebView + `assets/3d_pin.html` で Three.js 3D ピンを表示する。
+/// iOS/Android: WebView + `assets/3d_pin.html` で Three.js 3D ピンを表示。
 ///
-/// `loadFlutterAsset` は `file://` 相当で開くため、HTML 内の CDN script は
-/// iOS/Android で読めないことが多い。`assets/three.min.js` を同梱して相対参照する。
+/// Web（`flutter run -d chrome`）では [FoodPinDevPlaceholder] の簡易ピンに差し替える。
 class FoodPin3DViewer extends StatefulWidget {
   const FoodPin3DViewer({
     super.key,
@@ -32,15 +32,17 @@ class FoodPin3DViewer extends StatefulWidget {
   final String? initialIconUrl;
   final Color webviewBackground;
 
-  /// マップ操作時などに FPS を下げる。未指定なら HTML 既定（30fps）。
+  /// マップ操作時などに FPS を下げる。未指定なら HTML 既定（30fps）。Web では未使用。
   final ValueListenable<int>? animationFpsListenable;
+
+  bool get _isPostedPin => assetPath.contains('posted');
 
   @override
   State<FoodPin3DViewer> createState() => _FoodPin3DViewerState();
 }
 
 class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
-  late final WebViewController _controller;
+  WebViewController? _controller;
   final Completer<void> _pageReadyCompleter = Completer<void>();
   String? _loadError;
   int? _lastPushedFps;
@@ -48,6 +50,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return;
     widget.animationFpsListenable?.addListener(_onAnimationFpsChanged);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -84,6 +87,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   @override
   void didUpdateWidget(covariant FoodPin3DViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (kIsWeb) return;
     if (oldWidget.animationFpsListenable != widget.animationFpsListenable) {
       oldWidget.animationFpsListenable?.removeListener(_onAnimationFpsChanged);
       widget.animationFpsListenable?.addListener(_onAnimationFpsChanged);
@@ -107,6 +111,8 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   }
 
   Future<void> _pushTargetFpsToWebView() async {
+    final controller = _controller;
+    if (controller == null) return;
     final listenable = widget.animationFpsListenable;
     if (listenable == null) return;
     final fps = listenable.value;
@@ -114,7 +120,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     try {
       await _waitForPageReady();
       if (!mounted) return;
-      await _controller.runJavaScript(
+      await controller.runJavaScript(
         'window.setTargetFps && window.setTargetFps($fps);',
       );
       _lastPushedFps = fps;
@@ -126,8 +132,10 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   }
 
   Future<void> _loadAsset() async {
+    final controller = _controller;
+    if (controller == null) return;
     try {
-      await _controller.loadFlutterAsset(widget.assetPath);
+      await controller.loadFlutterAsset(widget.assetPath);
       await _waitForPageReady();
       await _injectInitialIconIfNeeded();
       await _pushTargetFpsToWebView();
@@ -152,11 +160,13 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   }
 
   Future<void> _injectInitialIconIfNeeded() async {
+    final controller = _controller;
+    if (controller == null) return;
     final iconUrl = widget.initialIconUrl;
     if (iconUrl != null && iconUrl.isNotEmpty) {
       try {
         await _waitForPageReady();
-        await _controller.runJavaScript(
+        await controller.runJavaScript(
           'window.updateIcon && window.updateIcon(${jsonEncode(iconUrl)});',
         );
         return;
@@ -172,18 +182,16 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     try {
       final bytes = await rootBundle.load(iconAsset);
       final base64 = base64Encode(bytes.buffer.asUint8List());
-      // iOS WebKit can fail evaluating very long JS strings.
-      // Send the base64 payload in chunks then compose on the JS side.
       const chunkSize = 8000;
-      await _controller.runJavaScript('window.__whoEatsIconChunks = [];');
+      await controller.runJavaScript('window.__whoEatsIconChunks = [];');
       for (int i = 0; i < base64.length; i += chunkSize) {
         final end = math.min(i + chunkSize, base64.length);
         final chunk = base64.substring(i, end);
-        await _controller.runJavaScript(
+        await controller.runJavaScript(
           'window.__whoEatsIconChunks.push(${jsonEncode(chunk)});',
         );
       }
-      await _controller.runJavaScript('''
+      await controller.runJavaScript('''
         (function() {
           var b64 = (window.__whoEatsIconChunks || []).join('');
           if (b64 && window.updateIcon) {
@@ -201,13 +209,28 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return FoodPinDevPlaceholder(
+        width: widget.width,
+        height: widget.height,
+        isPostedPin: widget._isPostedPin,
+        initialIconAsset: widget.initialIconAsset,
+        initialIconUrl: widget.initialIconUrl,
+      );
+    }
+
+    final controller = _controller;
+    if (controller == null) {
+      return const SizedBox.shrink();
+    }
+
     return SizedBox(
       width: widget.width,
       height: widget.height ?? 300,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          WebViewWidget(controller: _controller),
+          WebViewWidget(controller: controller),
           if (_loadError != null)
             ColoredBox(
               color: AppColors.blackElevated,

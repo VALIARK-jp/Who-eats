@@ -230,6 +230,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
           travelMinutes: entity.travelMinutes,
           latitude: entity.latitude,
           longitude: entity.longitude,
+          websiteUrl: entity.websiteUrl,
+          googleMapsUrl: entity.googleMapsUrl,
         );
       } catch (e) {
         _log('getPlaceDetail google failed: $e');

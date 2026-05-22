@@ -66,6 +66,8 @@ class MockDashboardDataSource {
     phoneNumber: '03-0000-0000',
     openNow: true,
     travelMinutes: 9,
+    websiteUrl: 'https://www.andpeople.co.jp/',
+    googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=and+people+udagawa',
     posts: [
       PlacePostPreview(
         id: 'pp1',

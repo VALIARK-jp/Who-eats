@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/app.dart';
 import 'src/core/config/app_config.dart';
+import 'src/core/web/google_maps_loader.dart';
 import 'src/features/auth/valiark_auth_config.dart';
 import 'src/core/web/google_maps_loader.dart'; 
 
