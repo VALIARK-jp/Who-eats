@@ -10,7 +10,8 @@ class GetHomeFeedUseCase {
 class GetMapPinsUseCase {
   const GetMapPinsUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<MapPin>> call() => _repository.getMapPins();
+  Future<List<MapPin>> call({double? centerLat, double? centerLng}) =>
+      _repository.getMapPins(centerLat: centerLat, centerLng: centerLng);
 }
 
 class SearchMapPinsUseCase {

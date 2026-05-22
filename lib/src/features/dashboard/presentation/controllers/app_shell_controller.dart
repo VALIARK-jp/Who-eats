@@ -66,8 +66,16 @@ class AppShellController extends ChangeNotifier {
     loading = true;
     notifyListeners();
     final deviceLocFuture = readDeviceLatLng();
+    final loc = await deviceLocFuture;
+    if (loc != null) {
+      deviceLatitude = loc.lat;
+      deviceLongitude = loc.lng;
+    }
     feed = await _getHomeFeedUseCase();
-    mapPins = await _getMapPinsUseCase();
+    mapPins = await _getMapPinsUseCase(
+      centerLat: deviceLatitude,
+      centerLng: deviceLongitude,
+    );
     friendCandidates = await _getFriendCandidatesUseCase();
     recordSummary = await _getRecordSummaryUseCase();
     profileOverview = await _getProfileOverviewUseCase();
@@ -85,10 +93,7 @@ class AppShellController extends ChangeNotifier {
             (p.userIconUrl ?? '').isNotEmpty)
           p.placeGoogleId!: p.userIconUrl!,
     };
-    final loc = await deviceLocFuture;
-    if (loc != null) {
-      deviceLatitude = loc.lat;
-      deviceLongitude = loc.lng;
+    if (deviceLatitude != null && deviceLongitude != null) {
       _log('device location lat=$deviceLatitude lng=$deviceLongitude');
     } else {
       _log('device location unavailable');
@@ -164,6 +169,10 @@ class AppShellController extends ChangeNotifier {
       radiusMeters: radiusMeters,
       keyword: keyword,
     );
+    postedPlaceGoogleIds = {
+      ...postedPlaceGoogleIds,
+      ...mapPins.where((p) => p.isFriendVisited).map((p) => p.id),
+    };
     _log('refreshMapPinsForViewport result=${mapPins.length}');
     notifyListeners();
   }

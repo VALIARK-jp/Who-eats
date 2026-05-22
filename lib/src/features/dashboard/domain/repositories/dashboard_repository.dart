@@ -2,7 +2,7 @@ import '../entities/app_entities.dart';
 
 abstract interface class DashboardRepository {
   Future<List<FeedPost>> getHomeFeed();
-  Future<List<MapPin>> getMapPins();
+  Future<List<MapPin>> getMapPins({double? centerLat, double? centerLng});
   Future<List<MapPin>> searchMapPins(String keyword);
   Future<List<MapPin>> searchMapPinsAround({
     required double lat,
