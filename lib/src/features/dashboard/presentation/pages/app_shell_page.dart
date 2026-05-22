@@ -334,16 +334,12 @@ class _HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<_HomePage> {
-
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
     return Stack(
       children: [
-        _FeedTab(
-          feed: controller.feed,
-          onTapPost: widget.onOpenPostDetail,
-        ),
+        _FeedTab(feed: controller.feed, onTapPost: widget.onOpenPostDetail),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -362,10 +358,8 @@ class _HomePageState extends State<_HomePage> {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.notifications_none),
-                  onPressed: () => _showNotificationSheet(
-                    context,
-                    controller.notifications,
-                  ),
+                  onPressed: () =>
+                      _showNotificationSheet(context, controller.notifications),
                   style: IconButton.styleFrom(
                     backgroundColor: AppColors.black.withValues(alpha: 0.8),
                     minimumSize: const Size(46, 46),
@@ -445,7 +439,8 @@ class _MapTabState extends State<_MapTab> {
   GoogleMapController? _mapController;
   bool _edgeSwipeTriggered = false;
   double _edgeSwipeDelta = 0;
-  BitmapDescriptor? _microMarkerIcon;
+  BitmapDescriptor? _visitedMarkerIcon;
+  BitmapDescriptor? _unvisitedMarkerIcon;
   final Map<String, BitmapDescriptor> _clusterIconCache = {};
   final Set<String> _clusterIconLoading = {};
   final TextEditingController _searchController = TextEditingController();
@@ -515,7 +510,9 @@ class _MapTabState extends State<_MapTab> {
   @override
   void dispose() {
     widget.controller.removeListener(_onShellControllerUpdate);
-    googleMapsLoadFailedNotifier.removeListener(_onGoogleMapsLoadFailureChanged);
+    googleMapsLoadFailedNotifier.removeListener(
+      _onGoogleMapsLoadFailureChanged,
+    );
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
@@ -531,8 +528,8 @@ class _MapTabState extends State<_MapTab> {
       return AppStateView(
         type: AppStateType.error,
         title: 'Google Maps を表示できません',
-        message: googleMapsLoadErrorMessage ??
-            'Google Maps API キーの制限を確認してください。',
+        message:
+            googleMapsLoadErrorMessage ?? 'Google Maps API キーの制限を確認してください。',
         onRetry: AppConfig.hasGooglePlacesApi
             ? () async {
                 try {
@@ -970,12 +967,12 @@ class _MapTabState extends State<_MapTab> {
 
     return [
       for (int i = 0; i < pins.length; i++)
-        if (_visible3dPinOffsets.containsKey(pins[i].id))
+        if (_visible3dPinOffsets.containsKey(pins[i].id) &&
+            (postedIds.contains(pins[i].id) || pins[i].isFriendVisited))
           ..._buildSingle3dOverlayWithTapTarget(
             context,
             pins[i],
-            isPostedPin:
-                postedIds.contains(pins[i].id) || pins[i].isFriendVisited,
+            isPostedPin: true,
           ),
     ];
   }
@@ -1048,12 +1045,16 @@ class _MapTabState extends State<_MapTab> {
           Marker(
             markerId: MarkerId(pins[i].id),
             position: _latLngFor(pins[i], i),
-            icon:
-                _microMarkerIcon ??
-                BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueOrange,
-                ),
-            zIndexInt: 1,
+            icon: pins[i].isFriendVisited
+                ? (_visitedMarkerIcon ??
+                      BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueOrange,
+                      ))
+                : (_unvisitedMarkerIcon ??
+                      BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueAzure,
+                      )),
+            zIndexInt: pins[i].isFriendVisited ? 1 : 0,
             onTap: () async => _openMapBottomSheet(context, pins[i]),
           ),
       };
@@ -1102,8 +1103,8 @@ class _MapTabState extends State<_MapTab> {
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       zIndexInt: 3,
       infoWindow: InfoWindow(
-        title: 'この範囲に ${pins.length} 店',
-        snippet: visitedCount > 0 ? '来店ユーザーあり: $visitedCount 件' : '来店ユーザー情報なし',
+        title: '友達が来た店舗: $visitedCount件',
+        snippet: 'この範囲の全店舗: ${pins.length}店',
       ),
     );
   }
@@ -1140,23 +1141,38 @@ class _MapTabState extends State<_MapTab> {
   }
 
   Future<void> _prepareMarkerIcons() async {
-    final microBytes = await _drawMicroDotBytes(size: 8);
+    final visitedBytes = await _drawMicroDotBytes(
+      size: 24,
+      color: AppColors.orange.withValues(alpha: 0.85),
+    );
+    final unvisitedBytes = await _drawMicroDotBytes(
+      size: 16,
+      color: AppColors.gray.withValues(alpha: 0.65),
+    );
     if (!mounted) return;
     setState(() {
-      _microMarkerIcon = BitmapDescriptor.bytes(microBytes);
+      _visitedMarkerIcon = BitmapDescriptor.bytes(visitedBytes);
+      _unvisitedMarkerIcon = BitmapDescriptor.bytes(unvisitedBytes);
     });
   }
 
-  Future<Uint8List> _drawMicroDotBytes({required int size}) async {
+  Future<Uint8List> _drawMicroDotBytes({
+    required int size,
+    required Color color,
+  }) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final width = size.toDouble();
     final center = Offset(width / 2, width / 2);
     canvas.drawCircle(
       center,
-      width * 0.26,
-      Paint()..color = AppColors.orange.withValues(alpha: 0.67),
+      width * 0.28,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width * 0.08,
     );
+    canvas.drawCircle(center, width * 0.22, Paint()..color = color);
     final picture = recorder.endRecording();
     final image = await picture.toImage(width.toInt(), width.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -1173,14 +1189,18 @@ class _MapTabState extends State<_MapTab> {
     final width = size.toDouble();
     final center = Offset(width / 2, width / 2);
     final orange = AppColors.orange;
+    final baseColor =
+        visited > 0 ? AppColors.orange : AppColors.gray.withValues(alpha: 0.85);
 
     final glowPaint = Paint()
       ..color = orange.withValues(alpha: 0.24)
+      ..color = baseColor.withValues(alpha: 0.24)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
     canvas.drawCircle(center, width * 0.36, glowPaint);
 
     final corePaint = Paint()
       ..color = orange
+      ..color = baseColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, width * 0.26, corePaint);
 
@@ -1188,10 +1208,10 @@ class _MapTabState extends State<_MapTab> {
 
     final textPainter = TextPainter(
       text: TextSpan(
-        text: '$total',
+        text: '$visited',
         style: TextStyle(
           color: AppColors.blackElevated,
-          fontSize: width * 0.2,
+          fontSize: width * 0.26,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -1201,8 +1221,26 @@ class _MapTabState extends State<_MapTab> {
       canvas,
       Offset(
         center.dx - textPainter.width / 2,
-        center.dy - textPainter.height / 2,
+        center.dy - textPainter.height / 2 - (visited > 0 ? width * 0.05 : 0),
       ),
+    );
+
+    final visitedPainter = TextPainter(
+      text: TextSpan(
+        text: '友 $visited',
+        style: TextStyle(
+          color: visited > 0
+              ? AppColors.orangeHighlight
+              : AppColors.gray.withValues(alpha: 0.68),
+          fontSize: width * 0.13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    visitedPainter.paint(
+      canvas,
+      Offset(center.dx - visitedPainter.width / 2, center.dy + width * 0.08),
     );
 
     final avatarDots = visited.clamp(0, 8);
@@ -1214,6 +1252,7 @@ class _MapTabState extends State<_MapTab> {
       );
       canvas.drawCircle(dotCenter, width * 0.05, Paint()..color = Colors.white);
       canvas.drawCircle(dotCenter, width * 0.038, Paint()..color = orange);
+      canvas.drawCircle(dotCenter, width * 0.038, Paint()..color = baseColor);
     }
 
     final picture = recorder.endRecording();
@@ -2580,10 +2619,12 @@ class PostDetailPage extends StatelessWidget {
   final VoidCallback onClose;
 
   Future<void> _openWebsite(BuildContext context, PlaceDetail? place) async {
-    final raw = (((place?.websiteUrl ?? '').trim().isNotEmpty
-            ? place?.websiteUrl
-            : place?.googleMapsUrl) ??
-        '').trim();
+    final raw =
+        (((place?.websiteUrl ?? '').trim().isNotEmpty
+                    ? place?.websiteUrl
+                    : place?.googleMapsUrl) ??
+                '')
+            .trim();
     final uri = Uri.tryParse(raw);
     if (raw.isEmpty || uri == null || !uri.hasScheme) {
       _showSnack(context, '店舗サイトが見つかりません');
@@ -2610,7 +2651,9 @@ class PostDetailPage extends StatelessWidget {
   }
 
   void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -2866,8 +2909,8 @@ class _PostPlaceActionPanel extends StatelessWidget {
     final openLabel = place?.openNow == null
         ? null
         : place!.openNow!
-            ? '営業中'
-            : '営業時間外';
+        ? '営業中'
+        : '営業時間外';
     final placeName = (place?.placeName ?? fallbackPlaceName).trim();
 
     return Container(
@@ -2882,7 +2925,11 @@ class _PostPlaceActionPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.storefront_outlined, size: 18, color: AppColors.orange),
+              const Icon(
+                Icons.storefront_outlined,
+                size: 18,
+                color: AppColors.orange,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2896,7 +2943,9 @@ class _PostPlaceActionPanel extends StatelessWidget {
                 Text(
                   openLabel,
                   style: TextStyle(
-                    color: place!.openNow! ? AppColors.orangeHighlight : Colors.white70,
+                    color: place!.openNow!
+                        ? AppColors.orangeHighlight
+                        : Colors.white70,
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),
