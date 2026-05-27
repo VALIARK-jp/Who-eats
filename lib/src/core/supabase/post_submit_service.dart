@@ -48,33 +48,40 @@ class PostSubmitService {
         ? 'image/webp'
         : 'image/jpeg';
 
-    final postRow = await _client
-        .from(SupabaseTables.posts)
-        .insert({
-          'user_id': uid,
-          'place_id': placeId,
-          'post_type': postType,
-          'visibility': visibility,
-          'caption': caption,
-        })
-        .select('id')
-        .single();
-
-    final postId = postRow['id'] as String;
-
     await _client.storage.from(_bucket).upload(
       storagePath,
       imageFile,
       fileOptions: FileOptions(contentType: contentType, upsert: false),
     );
 
-    await _client.from(SupabaseTables.postImages).insert({
-      'post_id': postId,
-      'storage_path': storagePath,
-      'display_order': 0,
-    });
+    try {
+      final postRow = await _client
+          .from(SupabaseTables.posts)
+          .insert({
+            'user_id': uid,
+            'place_id': placeId,
+            'post_type': postType,
+            'visibility': visibility,
+            'caption': caption,
+          })
+          .select('id')
+          .single();
 
-    return postId;
+      final postId = postRow['id'] as String;
+
+      await _client.from(SupabaseTables.postImages).insert({
+        'post_id': postId,
+        'storage_path': storagePath,
+        'display_order': 0,
+      });
+
+      return postId;
+    } catch (e) {
+      try {
+        await _client.storage.from(_bucket).remove([storagePath]);
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   Future<String> _resolveOrCreatePlaceId({

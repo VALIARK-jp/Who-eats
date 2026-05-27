@@ -28,13 +28,13 @@ class SupabaseMapPinsDataSource {
 
     try {
       final tPlaces = SupabaseTables.places;
-      final tProfiles = SupabaseTables.profiles;
+      final tAuthor = SupabaseTables.postAuthorEmbed;
       final tImages = SupabaseTables.postImages;
       final rows = await _client
           .from(SupabaseTables.posts)
           .select(
             'id,caption,created_at,user_id,'
-            '$tProfiles(name,icon_path),'
+            '$tAuthor(name,icon_path),'
             '$tPlaces!inner(google_place_id,name,latitude,longitude),'
             '$tImages(storage_path,display_order)',
           )
@@ -69,7 +69,9 @@ class SupabaseMapPinsDataSource {
           continue;
         }
 
-        final author = _extractEmbeddedMap(row[tProfiles]);
+        final author =
+            _extractEmbeddedMap(row[SupabaseTables.profiles]) ??
+            _extractEmbeddedMap(row['whoeats_users']);
         final userName = (author?['name'] ?? '').toString().trim();
         final avatarToken = _avatarToken(userName);
 
@@ -107,13 +109,13 @@ class SupabaseMapPinsDataSource {
     if (_client.auth.currentUser == null) return const [];
     try {
       final tPlaces = SupabaseTables.places;
-      final tProfiles = SupabaseTables.profiles;
+      final tAuthor = SupabaseTables.postAuthorEmbed;
       final tImages = SupabaseTables.postImages;
       final rows = await _client
           .from(SupabaseTables.posts)
           .select(
             'id,caption,created_at,'
-            '$tProfiles(name,icon_path,email),'
+            '$tAuthor(name,icon_path,email),'
             '$tPlaces!inner(google_place_id),'
             '$tImages(storage_path,display_order)',
           )
@@ -126,7 +128,9 @@ class SupabaseMapPinsDataSource {
       final result = <PlacePostPreview>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
-        final author = _extractEmbeddedMap(row[tProfiles]);
+        final author =
+            _extractEmbeddedMap(row[SupabaseTables.profiles]) ??
+            _extractEmbeddedMap(row['whoeats_users']);
         final displayName = (author?['name'] ?? '').toString().trim();
         final email = (author?['email'] ?? '').toString();
         final userName = displayName.isNotEmpty

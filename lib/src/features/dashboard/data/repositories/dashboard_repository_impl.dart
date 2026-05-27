@@ -6,6 +6,7 @@ import '../datasources/mock_dashboard_data_source.dart';
 import '../datasources/remote/google_places_data_source.dart';
 import '../datasources/remote/map_api_data_source.dart';
 import '../datasources/supabase_map_pins_data_source.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 
 class DashboardRepositoryImpl implements DashboardRepository {
@@ -32,6 +33,9 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   bool get _hasAuthUser => _supabase.auth.currentUser != null;
 
+  /// ログイン済み + Supabase 設定時は DB 実データのみ（モック店・モック投稿に戻さない）。
+  bool get _preferSupabaseData => AppConfig.hasSupabase && _hasAuthUser;
+
   @override
   Future<PostDraft> createPostDraft() => _dataSource.createPostDraft();
 
@@ -41,14 +45,13 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<List<FeedPost>> getHomeFeed() async {
-    final uid = _supabase.auth.currentUser?.id;
-    if (uid != null) {
+    if (_preferSupabaseData) {
       try {
         // RLS (`posts_select_visible`) applies visibility + block rules.
         return await _getHomeFeedFromSupabase();
       } catch (e) {
         _log('getHomeFeed supabase failed: $e');
-        return _dataSource.getHomeFeed();
+        return const [];
       }
     }
     return _dataSource.getHomeFeed();
@@ -75,12 +78,15 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
     if (_googlePlacesDataSource != null) {
       try {
-        final googlePins = await _googlePlacesDataSource.searchNearbyPlaces(
+        final googlePins = await _googlePlacesDataSource.searchNearbyPlacesAround(
+          lat: lat,
+          lng: lng,
+          radiusMeters: _initialMapRadiusMeters,
           keyword: 'restaurant',
         );
         if (googlePins.isNotEmpty) {
           final postedPlaceIds = dbPins.map((e) => e.id).toSet();
-          _log('getMapPins source=google count=${googlePins.length}');
+          _log('getMapPins source=google+db count=${googlePins.length}');
           return _mergeMapPinsPreferDb(
             dbPins: dbPins,
             googlePins: googlePins
@@ -127,6 +133,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       radiusMeters: 12000,
       keyword: keyword,
     );
+
     if (_googlePlacesDataSource != null) {
       try {
         final googlePins = await _googlePlacesDataSource.searchNearbyPlaces(
@@ -172,6 +179,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       radiusMeters: radiusMeters,
       keyword: keyword,
     );
+
     if (_googlePlacesDataSource != null) {
       try {
         final googlePins = await _googlePlacesDataSource
@@ -248,7 +256,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
           rating: entity.rating,
           friendComment: entity.friendComment,
           imageUrl: entity.imageUrl,
-          posts: dbPosts.isNotEmpty ? dbPosts : entity.posts,
+          posts: dbPosts,
           address: entity.address,
           phoneNumber: entity.phoneNumber,
           openNow: entity.openNow,
@@ -294,7 +302,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
           rating: entity.rating,
           friendComment: entity.friendComment,
           imageUrl: entity.imageUrl,
-          posts: dbPosts.isNotEmpty ? dbPosts : entity.posts,
+          posts: dbPosts,
           address: entity.address,
           phoneNumber: entity.phoneNumber,
           openNow: entity.openNow,
@@ -310,7 +318,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       }
     }
 
-    if (isMockPlaceId) {
+    if (isMockPlaceId && !_preferSupabaseData) {
       _log('getPlaceDetail source=mock legacy id');
       return _dataSource.getPlaceDetail(placeId);
     }
@@ -337,6 +345,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
         _log('autocomplete google failed: $e');
       }
     }
+    if (_preferSupabaseData) {
+      _log('autocomplete source=empty');
+      return const [];
+    }
     _log('autocomplete source=mock');
     return _dataSource.autocompletePlaces(
       query,
@@ -358,7 +370,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     try {
       final row = await _supabase
           .from(SupabaseTables.profiles)
-          .select('name, user_code, bio, icon_path, avatar_url')
+          .select('name, user_code, bio, icon_path')
           .eq('id', uid)
           .maybeSingle();
       if (row == null) return base;
@@ -418,14 +430,14 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<List<FeedPost>> _getHomeFeedFromSupabase() async {
     if (_supabase.auth.currentUser?.id == null) return const [];
 
-    final tProfiles = SupabaseTables.profiles;
+    final tAuthor = SupabaseTables.postAuthorEmbed;
     final tPlaces = SupabaseTables.places;
     final tImages = SupabaseTables.postImages;
     final rows = await _supabase
         .from(SupabaseTables.posts)
         .select('''
           id,caption,created_at,post_type,
-          $tProfiles(name,icon_path,email),
+          $tAuthor(name,icon_path,email),
           $tPlaces(name,google_place_id),
           $tImages(storage_path,display_order)
         ''')
@@ -467,18 +479,20 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
     final author =
         _extractEmbeddedUser(row[SupabaseTables.profiles]) ??
-        _extractEmbeddedUser(row['users']);
+        _extractEmbeddedUser(row['users']) ??
+        _extractEmbeddedUser(row['whoeats_users']);
     final displayName = (author?['name'] ?? '').toString().trim();
     final email = (author?['email'] ?? '').toString();
     final userName = displayName.isNotEmpty
         ? displayName
         : (email.isNotEmpty ? email.split('@').first : 'user');
 
-    final iconPath = (author?['avatar_url'] ?? author?['icon_path'] ?? '')
-        .toString();
+    final iconPath = (author?['icon_path'] ?? '').toString();
     final userIconUrl = await _signedStorageOrAbsoluteUrl(iconPath);
 
-    final place = _extractEmbeddedPlace(row['places']);
+    final place =
+        _extractEmbeddedPlace(row[SupabaseTables.places]) ??
+        _extractEmbeddedPlace(row['places']);
     final postType = (row['post_type'] ?? 'restaurant').toString();
     final placeName = place != null
         ? (place['name'] ?? '不明な店舗').toString()
@@ -522,7 +536,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   Future<String?> _profileIconUrlFromRow(Map<String, dynamic>? row) async {
-    final direct = (row?['icon_path'] ?? row?['avatar_url'] ?? '').toString();
+    final direct = (row?['icon_path'] ?? '').toString();
     if (direct.startsWith('http://') || direct.startsWith('https://')) {
       return direct;
     }
