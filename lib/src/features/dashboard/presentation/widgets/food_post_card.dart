@@ -49,8 +49,8 @@ class FoodPostCard extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
                   onPressed: onTap,
-                  icon: const Icon(Icons.storefront_outlined, size: 16),
-                  label: const Text('店舗詳細'),
+                  icon: const Icon(Icons.map_outlined, size: 16),
+                  label: const Text('地図で見る'),
                 ),
               ),
               const SizedBox(height: 10),

@@ -39,6 +39,7 @@ class AppShellPage extends StatefulWidget {
 }
 
 class _AppShellPageState extends State<AppShellPage> {
+  final GlobalKey<_MapTabState> _mapTabKey = GlobalKey<_MapTabState>();
   MapPin? _activePlaceSheetPin;
   bool _postEditorOpen = false;
   FeedPost? _activePostDetail;
@@ -84,8 +85,29 @@ class _AppShellPageState extends State<AppShellPage> {
     setState(() => _postEditorOpen = true);
   }
 
-  void _openPostDetail(FeedPost post) {
-    setState(() => _activePostDetail = post);
+  Future<void> _focusPostPlaceOnMap(
+    FeedPost post,
+    AppShellController controller,
+  ) async {
+    setState(() {
+      _activePostDetail = null;
+      _activePlaceSheetPin = null;
+    });
+    controller.changeBottomIndex(1);
+
+    await Future<void>.delayed(Duration.zero);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    final focused =
+        await _mapTabKey.currentState?.focusPostPlace(post) ?? false;
+    if (!focused && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
+        const SnackBar(content: Text('店舗の位置を地図で表示できませんでした')),
+      );
+    }
   }
 
   void _closePostEditor({
@@ -126,11 +148,11 @@ class _AppShellPageState extends State<AppShellPage> {
         final pages = [
           _HomePage(
             controller: controller,
-            onOpenPlace: _openPlaceSheet,
-            onOpenPostDetail: _openPostDetail,
+            onOpenPostDetail: (post) => _focusPostPlaceOnMap(post, controller),
             onOpenFriends: () => _openFriendsPage(controller.friendCandidates),
           ),
           _MapTab(
+            key: _mapTabKey,
             mapPins: controller.mapPins,
             controller: controller,
             onPlaceTap: _openPlaceSheet,
@@ -320,12 +342,10 @@ class _AppShellPageState extends State<AppShellPage> {
 class _HomePage extends StatefulWidget {
   const _HomePage({
     required this.controller,
-    required this.onOpenPlace,
     required this.onOpenPostDetail,
     required this.onOpenFriends,
   });
   final AppShellController controller;
-  final ValueChanged<MapPin> onOpenPlace;
   final ValueChanged<FeedPost> onOpenPostDetail;
   final VoidCallback onOpenFriends;
 
@@ -404,6 +424,7 @@ class _FeedTab extends StatelessWidget {
 
 class _MapTab extends StatefulWidget {
   const _MapTab({
+    super.key,
     required this.mapPins,
     required this.controller,
     required this.onPlaceTap,
@@ -820,6 +841,79 @@ class _MapTabState extends State<_MapTab> {
         CameraPosition(target: LatLng(lat, lng), zoom: nextZoom),
       ),
     );
+  }
+
+  Future<bool> focusPostPlace(FeedPost post) async {
+    final target = await _resolvePostPlaceTarget(post);
+    if (target == null) return false;
+
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    widget.controller.clearPlaceSuggestions();
+    _activeKeyword = null;
+    if (_searchExpanded) {
+      _setSearchExpanded(false);
+    }
+
+    final controller = await _waitForMapController();
+    if (controller == null) return false;
+
+    final nextZoom = _lastZoom < 16 ? 16.0 : _lastZoom;
+    await controller.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: target, zoom: nextZoom),
+      ),
+    );
+    _lastCameraTarget = target;
+    _lastZoom = nextZoom;
+    await _refreshViewportPins();
+    await _update3dOverlayPositionsForVisiblePins();
+    return true;
+  }
+
+  Future<GoogleMapController?> _waitForMapController() async {
+    for (var i = 0; i < 10; i++) {
+      final controller = _mapController;
+      if (controller != null) return controller;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return null;
+    }
+    return _mapController;
+  }
+
+  Future<LatLng?> _resolvePostPlaceTarget(FeedPost post) async {
+    final placeId = (post.placeGoogleId ?? '').trim();
+    if (placeId.isNotEmpty) {
+      for (final pin in widget.controller.mapPins) {
+        if (pin.id == placeId && pin.latitude != null && pin.longitude != null) {
+          return LatLng(pin.latitude!, pin.longitude!);
+        }
+      }
+
+      try {
+        final detail = await widget.controller.getPlaceDetail(placeId);
+        final lat = detail.latitude;
+        final lng = detail.longitude;
+        if (lat != null && lng != null) {
+          return LatLng(lat, lng);
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[MapTab] resolve post place target failed: $e\n$st');
+        }
+      }
+    }
+
+    final placeName = post.placeName.trim();
+    if (placeName.isEmpty) return null;
+    for (final pin in widget.controller.mapPins) {
+      if (pin.placeName == placeName &&
+          pin.latitude != null &&
+          pin.longitude != null) {
+        return LatLng(pin.latitude!, pin.longitude!);
+      }
+    }
+    return null;
   }
 
   void _onSearchChanged(String value) {
