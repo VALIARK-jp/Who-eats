@@ -112,6 +112,7 @@ class ProfileOverview {
     required this.avatarUrl,
     required this.followers,
     required this.following,
+    required this.friends,
     required this.pinnedShots,
     required this.recentShots,
   });
@@ -122,6 +123,7 @@ class ProfileOverview {
   final String avatarUrl;
   final int followers;
   final int following;
+  final int friends;
   final List<String> pinnedShots;
   final List<String> recentShots;
 }

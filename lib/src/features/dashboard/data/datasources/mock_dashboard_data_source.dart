@@ -148,6 +148,7 @@ class MockDashboardDataSource {
     avatarUrl: '',
     followers: 498,
     following: 342,
+    friends: 120,
     pinnedShots: [
       'https://images.unsplash.com/photo-1604908177225-06b39e6d7f4a',
       'https://images.unsplash.com/photo-1598214886806-c87b84b7078b',

@@ -316,6 +316,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
         avatarUrl: iconUrl ?? base.avatarUrl,
         followers: base.followers,
         following: base.following,
+        friends: base.friends,
         pinnedShots: base.pinnedShots,
         recentShots: base.recentShots,
       );
@@ -330,6 +331,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       avatarUrl: base.avatarUrl,
       followers: base.followers,
       following: base.following,
+      friends: base.friends,
       pinnedShots: base.pinnedShots,
       recentShots: base.recentShots,
     );

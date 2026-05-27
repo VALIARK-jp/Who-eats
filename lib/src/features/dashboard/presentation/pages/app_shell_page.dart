@@ -1854,11 +1854,7 @@ class _ProfilePage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _StatTile(label: 'フォロー', value: profile.following),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _StatTile(label: 'フォロワー', value: profile.followers),
+                child: _StatTile(label: '友達', value: profile.friends),
               ),
             ],
           ),
