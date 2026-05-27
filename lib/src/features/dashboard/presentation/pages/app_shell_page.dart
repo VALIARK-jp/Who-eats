@@ -13,11 +13,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/web/google_maps_loader.dart';
-import '../../../auth/application/auth_session.dart';
 import '../../../auth/presentation/login_page.dart';
 import '../../../auth/presentation/signup_page.dart';
 import '../../../../core/supabase/post_submit_service.dart';
-import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
@@ -32,6 +30,7 @@ import '../widgets/orange_glow_button.dart';
 import '../widgets/calendar_record_view.dart';
 import '../widgets/profile_food_grid.dart';
 import '../widgets/app_state_view.dart';
+import 'profile_settings_page.dart';
 
 class AppShellPage extends StatefulWidget {
   const AppShellPage({super.key});
@@ -1606,7 +1605,7 @@ class FriendSearchPage extends StatelessWidget {
                 ),
               );
             },
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemCount: top.length,
           ),
         ),
@@ -1772,65 +1771,13 @@ class _RecordPage extends StatelessWidget {
   }
 }
 
-Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('ログアウト'),
-      content: const Text('ログアウトしますか？'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('キャンセル'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('ログアウト'),
-        ),
-      ],
-    ),
-  );
-  if (ok != true || !context.mounted) return;
-  try {
-    await signOutCurrentUser();
-  } catch (e) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('ログアウトに失敗しました: $e')));
-  }
-}
-
 class _ProfilePage extends StatelessWidget {
   const _ProfilePage({required this.profile, required this.controller});
   final ProfileOverview profile;
   final AppShellController controller;
 
-  Future<void> _editIcon(BuildContext context) async {
-    final file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1024,
-      imageQuality: 86,
-    );
-    if (file == null) return;
-    try {
-      await ProfileIconService().uploadAndSaveProfileIcon(File(file.path));
-      await controller.initialize();
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('プロフィールアイコンを更新しました')));
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('アイコン更新に失敗しました: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final signedIn = Supabase.instance.client.auth.currentUser != null;
     final initial = profile.name.isNotEmpty
         ? profile.name.characters.first.toUpperCase()
         : '?';
@@ -1844,9 +1791,24 @@ class _ProfilePage extends StatelessWidget {
           120 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
-          const Text(
-            'プロフィール',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'プロフィール',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ProfileSettingsPage(controller: controller),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Row(
@@ -1879,16 +1841,6 @@ class _ProfilePage extends StatelessWidget {
                   ],
                 ),
               ),
-              if (AppConfig.hasSupabase && signedIn)
-                OutlinedButton(
-                  onPressed: () => _editIcon(context),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: const Text('アイコン編集'),
-                ),
             ],
           ),
           if (profile.bio.isNotEmpty) ...[
@@ -1916,16 +1868,6 @@ class _ProfilePage extends StatelessWidget {
           const SizedBox(height: 12),
           const Text('投稿一覧', style: TextStyle(fontWeight: FontWeight.w900)),
           ProfileFoodGrid(urls: profile.recentShots),
-          if (AppConfig.hasSupabase && signedIn) ...[
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => _confirmAndSignOutFromProfile(context),
-                child: const Text('ログアウト'),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -2774,7 +2716,7 @@ class PostDetailPage extends StatelessWidget {
                               height: 300,
                               width: double.infinity,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
+                              errorBuilder: (_, _, _) => Container(
                                 height: 300,
                                 width: double.infinity,
                                 color: AppColors.cardElevated,

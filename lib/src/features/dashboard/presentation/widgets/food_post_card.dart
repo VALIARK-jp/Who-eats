@@ -146,7 +146,7 @@ class _PhotoBlock extends StatelessWidget {
             height: 260,
             width: double.infinity,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
+            errorBuilder: (_, _, _) => Container(
               height: 260,
               width: double.infinity,
               color: AppColors.cardElevated,
