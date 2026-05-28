@@ -10,6 +10,9 @@ abstract final class SupabaseTables {
   static String get posts => _prefixed('posts');
   static String get places => _prefixed('places');
   static String get postImages => _prefixed('post_images');
+  static String get follows => _prefixed('follows');
+  static String get postReactions => _prefixed('post_reactions');
+  static String get postComments => _prefixed('post_comments');
 
   static String _prefixed(String base) {
     final p = AppConfig.dbTablePrefix;

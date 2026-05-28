@@ -64,10 +64,38 @@ class AutocompletePlacesUseCase {
   );
 }
 
-class GetFriendCandidatesUseCase {
-  const GetFriendCandidatesUseCase(this._repository);
+class GetFriendsUseCase {
+  const GetFriendsUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<FriendCandidate>> call() => _repository.getFriendCandidates();
+  Future<List<FriendCandidate>> call() => _repository.getFriends();
+}
+
+class GetFriendRecommendationsUseCase {
+  const GetFriendRecommendationsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getFriendRecommendations();
+}
+
+class GetIncomingFriendRequestsUseCase {
+  const GetIncomingFriendRequestsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getIncomingFriendRequests();
+}
+
+class GetOutgoingPendingFollowsUseCase {
+  const GetOutgoingPendingFollowsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getOutgoingPendingFollows();
+}
+
+class FollowUserUseCase {
+  const FollowUserUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<bool> call(String targetUserId) =>
+      _repository.followUser(targetUserId);
 }
 
 class GetRecordSummaryUseCase {

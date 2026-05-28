@@ -8,7 +8,11 @@ class AppShellController extends ChangeNotifier {
   AppShellController({
     required GetHomeFeedUseCase getHomeFeedUseCase,
     required GetMapPinsUseCase getMapPinsUseCase,
-    required GetFriendCandidatesUseCase getFriendCandidatesUseCase,
+    required GetFriendsUseCase getFriendsUseCase,
+    required GetFriendRecommendationsUseCase getFriendRecommendationsUseCase,
+    required GetIncomingFriendRequestsUseCase getIncomingFriendRequestsUseCase,
+    required GetOutgoingPendingFollowsUseCase getOutgoingPendingFollowsUseCase,
+    required FollowUserUseCase followUserUseCase,
     required GetRecordSummaryUseCase getRecordSummaryUseCase,
     required GetProfileOverviewUseCase getProfileOverviewUseCase,
     required GetNotificationsUseCase getNotificationsUseCase,
@@ -20,7 +24,11 @@ class AppShellController extends ChangeNotifier {
     required ResolvePlacePinFromCoordinateUseCase resolvePlacePinFromCoordinateUseCase,
   }) : _getHomeFeedUseCase = getHomeFeedUseCase,
        _getMapPinsUseCase = getMapPinsUseCase,
-       _getFriendCandidatesUseCase = getFriendCandidatesUseCase,
+       _getFriendsUseCase = getFriendsUseCase,
+       _getFriendRecommendationsUseCase = getFriendRecommendationsUseCase,
+       _getIncomingFriendRequestsUseCase = getIncomingFriendRequestsUseCase,
+       _getOutgoingPendingFollowsUseCase = getOutgoingPendingFollowsUseCase,
+       _followUserUseCase = followUserUseCase,
        _getRecordSummaryUseCase = getRecordSummaryUseCase,
        _getProfileOverviewUseCase = getProfileOverviewUseCase,
        _getNotificationsUseCase = getNotificationsUseCase,
@@ -33,7 +41,11 @@ class AppShellController extends ChangeNotifier {
 
   final GetHomeFeedUseCase _getHomeFeedUseCase;
   final GetMapPinsUseCase _getMapPinsUseCase;
-  final GetFriendCandidatesUseCase _getFriendCandidatesUseCase;
+  final GetFriendsUseCase _getFriendsUseCase;
+  final GetFriendRecommendationsUseCase _getFriendRecommendationsUseCase;
+  final GetIncomingFriendRequestsUseCase _getIncomingFriendRequestsUseCase;
+  final GetOutgoingPendingFollowsUseCase _getOutgoingPendingFollowsUseCase;
+  final FollowUserUseCase _followUserUseCase;
   final GetRecordSummaryUseCase _getRecordSummaryUseCase;
   final GetProfileOverviewUseCase _getProfileOverviewUseCase;
   final GetNotificationsUseCase _getNotificationsUseCase;
@@ -50,7 +62,10 @@ class AppShellController extends ChangeNotifier {
 
   List<FeedPost> feed = [];
   List<MapPin> mapPins = [];
-  List<FriendCandidate> friendCandidates = [];
+  List<FriendCandidate> friends = [];
+  List<FriendCandidate> incomingFriendRequests = [];
+  List<FriendCandidate> outgoingPendingFollows = [];
+  List<FriendCandidate> friendRecommendations = [];
   RecordSummary? recordSummary;
   ProfileOverview? profileOverview;
   List<AppNotification> notifications = [];
@@ -76,7 +91,7 @@ class AppShellController extends ChangeNotifier {
       centerLat: deviceLatitude,
       centerLng: deviceLongitude,
     );
-    friendCandidates = await _getFriendCandidatesUseCase();
+    await refreshFriendLists();
     recordSummary = await _getRecordSummaryUseCase();
     profileOverview = await _getProfileOverviewUseCase();
     notifications = await _getNotificationsUseCase();
@@ -197,6 +212,21 @@ class AppShellController extends ChangeNotifier {
   Future<MapPin?> resolvePlacePinFromCoordinate(double lat, double lng) {
     _log('resolveFromCoord lat=$lat lng=$lng');
     return _resolvePlacePinFromCoordinateUseCase(lat, lng);
+  }
+
+  Future<void> refreshFriendLists() async {
+    friends = await _getFriendsUseCase();
+    incomingFriendRequests = await _getIncomingFriendRequestsUseCase();
+    outgoingPendingFollows = await _getOutgoingPendingFollowsUseCase();
+    friendRecommendations = await _getFriendRecommendationsUseCase();
+    notifyListeners();
+  }
+
+  /// フォローする。相互フォローになったら true。
+  Future<bool> followUser(String targetUserId) async {
+    final becameFriend = await _followUserUseCase(targetUserId);
+    await refreshFriendLists();
+    return becameFriend;
   }
 
   void _log(String message) {

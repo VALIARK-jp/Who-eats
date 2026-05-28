@@ -17,7 +17,20 @@ abstract interface class DashboardRepository {
     double? biasLat,
     double? biasLng,
   });
-  Future<List<FriendCandidate>> getFriendCandidates();
+  /// 相互フォロー済みの友達一覧。
+  Future<List<FriendCandidate>> getFriends();
+
+  /// まだ友達でないおすすめ候補（共通友達数付き）。
+  Future<List<FriendCandidate>> getFriendRecommendations();
+
+  /// 相手からフォローされていて、フォロー返しで友達になれる一覧。
+  Future<List<FriendCandidate>> getIncomingFriendRequests();
+
+  /// 自分がフォロー済みで、相手のフォロー返し待ち一覧。
+  Future<List<FriendCandidate>> getOutgoingPendingFollows();
+
+  /// フォローする。戻り値 true = この操作で相互フォロー（友達）になった。
+  Future<bool> followUser(String targetUserId);
   Future<RecordSummary> getRecordSummary();
   Future<ProfileOverview> getProfileOverview();
   Future<List<AppNotification>> getNotifications();

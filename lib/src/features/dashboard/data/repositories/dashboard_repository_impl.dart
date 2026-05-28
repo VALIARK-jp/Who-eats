@@ -1,13 +1,12 @@
 import '../../domain/entities/app_entities.dart';
 import '../../domain/repositories/dashboard_repository.dart';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../datasources/mock_dashboard_data_source.dart';
 import '../datasources/remote/google_places_data_source.dart';
 import '../datasources/remote/map_api_data_source.dart';
 import '../datasources/supabase_map_pins_data_source.dart';
+import '../datasources/supabase_social_data_source.dart';
 import '../../../../core/config/app_config.dart';
-import '../../../../core/supabase/supabase_tables.dart';
 
 class DashboardRepositoryImpl implements DashboardRepository {
   DashboardRepositoryImpl({
@@ -15,45 +14,72 @@ class DashboardRepositoryImpl implements DashboardRepository {
     MapApiDataSource? mapApiDataSource,
     GooglePlacesDataSource? googlePlacesDataSource,
     SupabaseMapPinsDataSource? supabaseMapPinsDataSource,
+    SupabaseSocialDataSource? supabaseSocialDataSource,
   }) : _dataSource = dataSource,
        _mapApiDataSource = mapApiDataSource,
        _googlePlacesDataSource = googlePlacesDataSource,
        _supabaseMapPins =
-           supabaseMapPinsDataSource ?? SupabaseMapPinsDataSource();
+           supabaseMapPinsDataSource ?? SupabaseMapPinsDataSource(),
+       _social = supabaseSocialDataSource ?? SupabaseSocialDataSource();
 
   final MockDashboardDataSource _dataSource;
   final MapApiDataSource? _mapApiDataSource;
   final GooglePlacesDataSource? _googlePlacesDataSource;
   final SupabaseMapPinsDataSource _supabaseMapPins;
-  SupabaseClient get _supabase => Supabase.instance.client;
+  final SupabaseSocialDataSource _social;
 
   static const _defaultMapLat = 35.6595;
   static const _defaultMapLng = 139.7005;
   static const _initialMapRadiusMeters = 6000;
 
-  bool get _hasAuthUser => _supabase.auth.currentUser != null;
-
-  /// ログイン済み + Supabase 設定時は DB 実データのみ（モック店・モック投稿に戻さない）。
-  bool get _preferSupabaseData => AppConfig.hasSupabase && _hasAuthUser;
+  bool get _useSupabase => AppConfig.hasSupabase;
 
   @override
-  Future<PostDraft> createPostDraft() => _dataSource.createPostDraft();
+  Future<PostDraft> createPostDraft() async {
+    if (_useSupabase) {
+      return const PostDraft(
+        photoUrl: '',
+        placeName: '',
+        note: '',
+        withWho: '',
+      );
+    }
+    return _dataSource.createPostDraft();
+  }
 
   @override
-  Future<List<FriendCandidate>> getFriendCandidates() =>
-      _dataSource.getFriendCandidates();
+  Future<List<FriendCandidate>> getFriends() async {
+    if (!_useSupabase) return _dataSource.getFriendCandidates();
+    return _social.fetchFriends();
+  }
+
+  @override
+  Future<List<FriendCandidate>> getFriendRecommendations() async {
+    if (!_useSupabase) return const [];
+    return _social.fetchFriendRecommendations();
+  }
+
+  @override
+  Future<bool> followUser(String targetUserId) async {
+    if (!_useSupabase) return false;
+    return _social.followUser(targetUserId);
+  }
+
+  @override
+  Future<List<FriendCandidate>> getIncomingFriendRequests() async {
+    if (!_useSupabase) return const [];
+    return _social.fetchIncomingFriendRequests();
+  }
+
+  @override
+  Future<List<FriendCandidate>> getOutgoingPendingFollows() async {
+    if (!_useSupabase) return const [];
+    return _social.fetchOutgoingPendingFollows();
+  }
 
   @override
   Future<List<FeedPost>> getHomeFeed() async {
-    if (_preferSupabaseData) {
-      try {
-        // RLS (`posts_select_visible`) applies visibility + block rules.
-        return await _getHomeFeedFromSupabase();
-      } catch (e) {
-        _log('getHomeFeed supabase failed: $e');
-        return const [];
-      }
-    }
+    if (_useSupabase) return _social.fetchHomeFeed();
     return _dataSource.getHomeFeed();
   }
 
@@ -63,14 +89,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
     double? centerLng,
   }) async {
     _log('getMapPins start');
-    if (!_hasAuthUser) return const [];
+    if (!_useSupabase) return _dataSource.getMapPins();
 
     final lat = centerLat ?? _defaultMapLat;
     final lng = centerLng ?? _defaultMapLng;
+    final friendIds = await _social.fetchMutualFriendIds();
     final dbPins = await _supabaseMapPins.fetchPostedPinsAround(
       lat: lat,
       lng: lng,
       radiusMeters: _initialMapRadiusMeters,
+      mutualFriendIds: friendIds,
     );
     if (dbPins.isNotEmpty) {
       _log('getMapPins source=supabase count=${dbPins.length}');
@@ -126,12 +154,14 @@ class DashboardRepositoryImpl implements DashboardRepository {
   @override
   Future<List<MapPin>> searchMapPins(String keyword) async {
     _log('searchMapPins keyword=$keyword');
-    if (!_hasAuthUser) return const [];
+    if (!_useSupabase) return _dataSource.searchMapPins(keyword);
+    final friendIds = await _social.fetchMutualFriendIds();
     final dbPins = await _supabaseMapPins.fetchPostedPinsAround(
       lat: _defaultMapLat,
       lng: _defaultMapLng,
       radiusMeters: 12000,
       keyword: keyword,
+      mutualFriendIds: friendIds,
     );
 
     if (_googlePlacesDataSource != null) {
@@ -172,12 +202,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
     _log(
       'searchMapPinsAround lat=$lat lng=$lng radius=$radiusMeters keyword=${keyword ?? ''}',
     );
-    if (!_hasAuthUser) return const [];
+    if (!_useSupabase) {
+      return _dataSource.searchMapPins(keyword ?? 'restaurant');
+    }
+    final friendIds = await _social.fetchMutualFriendIds();
     final dbPins = await _supabaseMapPins.fetchPostedPinsAround(
       lat: lat,
       lng: lng,
       radiusMeters: radiusMeters,
       keyword: keyword,
+      mutualFriendIds: friendIds,
     );
 
     if (_googlePlacesDataSource != null) {
@@ -237,7 +271,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final isMockPlaceId = placeId.startsWith('m');
     _log('getPlaceDetail placeId=$placeId isMock=$isMockPlaceId');
 
-    final dbPosts = _hasAuthUser
+    final dbPosts = _useSupabase
         ? await _supabaseMapPins.fetchVisiblePlacePosts(
             placeGoogleId: placeId,
           )
@@ -281,7 +315,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       }
     }
 
-    if (_hasAuthUser) {
+    if (_useSupabase) {
       final fromDb = await _supabaseMapPins.fetchPlaceDetailShell(
         placeGoogleId: placeId,
       );
@@ -318,7 +352,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
       }
     }
 
-    if (isMockPlaceId && !_preferSupabaseData) {
+    if (isMockPlaceId && !_useSupabase) {
       _log('getPlaceDetail source=mock legacy id');
       return _dataSource.getPlaceDetail(placeId);
     }
@@ -345,7 +379,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
         _log('autocomplete google failed: $e');
       }
     }
-    if (_preferSupabaseData) {
+    if (_useSupabase) {
       _log('autocomplete source=empty');
       return const [];
     }
@@ -358,56 +392,22 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
-  Future<List<AppNotification>> getNotifications() =>
-      _dataSource.getNotifications();
-
-  @override
-  Future<ProfileOverview> getProfileOverview() async {
-    final base = await _dataSource.getProfileOverview();
-    final uid = _supabase.auth.currentUser?.id;
-    if (uid == null) return base;
-
-    try {
-      final row = await _supabase
-          .from(SupabaseTables.profiles)
-          .select('name, user_code, bio, icon_path')
-          .eq('id', uid)
-          .maybeSingle();
-      if (row == null) return base;
-
-      final name = (row['name'] ?? '').toString().trim();
-      final userCode = (row['user_code'] ?? '').toString().trim();
-      final bio = (row['bio'] ?? '').toString().trim();
-      final iconUrl = await _profileIconUrlFromRow(row);
-
-      return ProfileOverview(
-        name: name.isNotEmpty ? name : base.name,
-        userCode: userCode.isNotEmpty ? userCode : base.userCode,
-        bio: bio,
-        avatarUrl: iconUrl ?? base.avatarUrl,
-        followers: base.followers,
-        following: base.following,
-        pinnedShots: base.pinnedShots,
-        recentShots: base.recentShots,
-      );
-    } catch (e) {
-      _log('getProfileOverview profiles lookup failed: $e');
-    }
-
-    return ProfileOverview(
-      name: base.name,
-      userCode: base.userCode,
-      bio: base.bio,
-      avatarUrl: base.avatarUrl,
-      followers: base.followers,
-      following: base.following,
-      pinnedShots: base.pinnedShots,
-      recentShots: base.recentShots,
-    );
+  Future<List<AppNotification>> getNotifications() async {
+    if (!_useSupabase) return _dataSource.getNotifications();
+    return _social.fetchNotifications();
   }
 
   @override
-  Future<RecordSummary> getRecordSummary() => _dataSource.getRecordSummary();
+  Future<ProfileOverview> getProfileOverview() async {
+    if (!_useSupabase) return _dataSource.getProfileOverview();
+    return _social.fetchProfileOverview();
+  }
+
+  @override
+  Future<RecordSummary> getRecordSummary() async {
+    if (!_useSupabase) return _dataSource.getRecordSummary();
+    return _social.fetchRecordSummary();
+  }
 
   void _log(String message) {
     if (kDebugMode) debugPrint('[DashboardRepositoryImpl] $message');
@@ -427,130 +427,4 @@ class DashboardRepositoryImpl implements DashboardRepository {
     return merged.values.toList();
   }
 
-  Future<List<FeedPost>> _getHomeFeedFromSupabase() async {
-    if (_supabase.auth.currentUser?.id == null) return const [];
-
-    final tAuthor = SupabaseTables.postAuthorEmbed;
-    final tPlaces = SupabaseTables.places;
-    final tImages = SupabaseTables.postImages;
-    final rows = await _supabase
-        .from(SupabaseTables.posts)
-        .select('''
-          id,caption,created_at,post_type,
-          $tAuthor(name,icon_path,email),
-          $tPlaces(name,google_place_id),
-          $tImages(storage_path,display_order)
-        ''')
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false)
-        .limit(50);
-
-    final list = <FeedPost>[];
-    for (final raw in (rows as List<dynamic>)) {
-      final row = raw as Map<String, dynamic>;
-      final post = await _feedPostFromTimelineRow(row);
-      if (post != null) list.add(post);
-    }
-    return list;
-  }
-
-  Future<FeedPost?> _feedPostFromTimelineRow(Map<String, dynamic> row) async {
-    final tImages = SupabaseTables.postImages;
-    final images = (row[tImages] as List<dynamic>? ?? [])
-        .cast<Map<String, dynamic>>();
-    if (images.isEmpty) return null;
-    images.sort(
-      (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
-        ((b['display_order'] as num?) ?? 0),
-      ),
-    );
-    final storagePath = (images.first['storage_path'] ?? '').toString();
-    if (storagePath.isEmpty) return null;
-
-    String imageUrl;
-    try {
-      imageUrl = await _supabase.storage
-          .from('post-images')
-          .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-    } catch (e) {
-      _log('_feedPostFromTimelineRow signed url failed: $e');
-      return null;
-    }
-
-    final author =
-        _extractEmbeddedUser(row[SupabaseTables.profiles]) ??
-        _extractEmbeddedUser(row['users']) ??
-        _extractEmbeddedUser(row['whoeats_users']);
-    final displayName = (author?['name'] ?? '').toString().trim();
-    final email = (author?['email'] ?? '').toString();
-    final userName = displayName.isNotEmpty
-        ? displayName
-        : (email.isNotEmpty ? email.split('@').first : 'user');
-
-    final iconPath = (author?['icon_path'] ?? '').toString();
-    final userIconUrl = await _signedStorageOrAbsoluteUrl(iconPath);
-
-    final place =
-        _extractEmbeddedPlace(row[SupabaseTables.places]) ??
-        _extractEmbeddedPlace(row['places']);
-    final postType = (row['post_type'] ?? 'restaurant').toString();
-    final placeName = place != null
-        ? (place['name'] ?? '不明な店舗').toString()
-        : (postType == 'home' ? 'ホーム' : '不明な店舗');
-
-    return FeedPost(
-      id: row['id'].toString(),
-      userName: userName,
-      userIconUrl: userIconUrl,
-      placeName: placeName,
-      placeGoogleId: (place?['google_place_id'] ?? '').toString(),
-      caption: (row['caption'] ?? '').toString(),
-      imageUrl: imageUrl,
-      likes: 0,
-      comments: 0,
-      friendAvatars: const [],
-    );
-  }
-
-  Future<String?> _signedStorageOrAbsoluteUrl(String iconPath) async {
-    if (iconPath.isEmpty) return null;
-    if (iconPath.startsWith('http://') || iconPath.startsWith('https://')) {
-      return iconPath;
-    }
-    try {
-      return await _supabase.storage
-          .from('post-images')
-          .createSignedUrl(iconPath, 60 * 60 * 24 * 7);
-    } catch (e) {
-      _log('_signedStorageOrAbsoluteUrl failed: $e');
-      return null;
-    }
-  }
-
-  Map<String, dynamic>? _extractEmbeddedUser(dynamic raw) {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is List && raw.isNotEmpty && raw.first is Map<String, dynamic>) {
-      return raw.first as Map<String, dynamic>;
-    }
-    return null;
-  }
-
-  Future<String?> _profileIconUrlFromRow(Map<String, dynamic>? row) async {
-    final direct = (row?['icon_path'] ?? '').toString();
-    if (direct.startsWith('http://') || direct.startsWith('https://')) {
-      return direct;
-    }
-    if (direct.isEmpty) return null;
-    return _supabase.storage
-        .from('post-images')
-        .createSignedUrl(direct, 60 * 60 * 24 * 7);
-  }
-
-  Map<String, dynamic>? _extractEmbeddedPlace(dynamic raw) {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is List && raw.isNotEmpty && raw.first is Map<String, dynamic>) {
-      return raw.first as Map<String, dynamic>;
-    }
-    return null;
-  }
 }

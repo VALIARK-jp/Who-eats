@@ -102,12 +102,20 @@ class _AppShellPageState extends State<AppShellPage> {
     setState(() => _activePostDetail = null);
   }
 
-  void _openFriendsPage(List<FriendCandidate> candidates) {
+  void _openFriendsPage(AppShellController controller) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
           backgroundColor: AppColors.black,
-          body: _FriendsPage(candidates: candidates),
+          body: Consumer<AppShellController>(
+            builder: (_, ctrl, __) => _FriendsPage(
+              friends: ctrl.friends,
+              incoming: ctrl.incomingFriendRequests,
+              outgoing: ctrl.outgoingPendingFollows,
+              recommendations: ctrl.friendRecommendations,
+              onFollow: ctrl.followUser,
+            ),
+          ),
         ),
       ),
     );
@@ -128,7 +136,7 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPlace: _openPlaceSheet,
             onOpenPostDetail: _openPostDetail,
-            onOpenFriends: () => _openFriendsPage(controller.friendCandidates),
+            onOpenFriends: () => _openFriendsPage(controller),
           ),
           _MapTab(
             mapPins: controller.mapPins,
@@ -1303,8 +1311,19 @@ class _ZoomButton extends StatelessWidget {
 }
 
 class _FriendsPage extends StatefulWidget {
-  const _FriendsPage({required this.candidates});
-  final List<FriendCandidate> candidates;
+  const _FriendsPage({
+    required this.friends,
+    required this.incoming,
+    required this.outgoing,
+    required this.recommendations,
+    required this.onFollow,
+  });
+
+  final List<FriendCandidate> friends;
+  final List<FriendCandidate> incoming;
+  final List<FriendCandidate> outgoing;
+  final List<FriendCandidate> recommendations;
+  final Future<bool> Function(String userId) onFollow;
 
   @override
   State<_FriendsPage> createState() => _FriendsPageState();
@@ -1326,104 +1345,125 @@ class _FriendsPageState extends State<_FriendsPage> {
     ).showSnackBar(SnackBar(content: Text('${c.name} のプロフィールは未実装（MVP）')));
   }
 
+  void _onBackPressed() {
+    if (_searchByConnection) {
+      setState(() => _searchByConnection = false);
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _onBackPressed,
+            tooltip: _searchByConnection ? '友達一覧に戻る' : '戻る',
+            style: IconButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(40, 40),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _searchByConnection ? 'からむで探す' : '友達',
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool get _hasNoFriendsData =>
+      widget.friends.isEmpty &&
+      widget.incoming.isEmpty &&
+      widget.outgoing.isEmpty &&
+      widget.recommendations.isEmpty;
+
+  Widget _buildDiscoverButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: OrangeGlowButton(
+        width: double.infinity,
+        height: 42,
+        isEnabled: true,
+        borderRadius: 999,
+        onPressed: () => setState(() => _searchByConnection = true),
+        child: const Text(
+          'からむで探す',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.candidates.isEmpty) {
-      return SafeArea(
-        child: AppStateView(
-          type: AppStateType.empty,
-          title: '友達がいません',
-          message: 'まずはつながって、おすすめを広げよう。',
-        ),
-      );
-    }
     return SafeArea(
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.pop(context),
-                  style: IconButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(40, 40),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    '友達',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-                if (_searchByConnection)
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () =>
-                        setState(() => _searchByConnection = false),
-                  ),
-              ],
-            ),
-          ),
+          _buildHeader(),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '@user_codeで検索',
-                prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                suffixIcon: _searchController.text.trim().isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          if (!_searchByConnection)
+          if (!_searchByConnection) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: OrangeGlowButton(
-                width: double.infinity,
-                height: 42,
-                isEnabled: true,
-                borderRadius: 999,
-                onPressed: () => setState(() => _searchByConnection = true),
-                child: const Text(
-                  'からむで探す',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black,
-                  ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '@user_codeで検索',
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                  suffixIcon: _searchController.text.trim().isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                        )
+                      : null,
                 ),
               ),
             ),
-
-          const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            if (!_hasNoFriendsData) _buildDiscoverButton(),
+          ],
 
           Expanded(
             child: _searchByConnection
                 ? FriendSearchPage(
-                    candidates: widget.candidates,
+                    incoming: widget.incoming,
+                    outgoing: widget.outgoing,
+                    candidates: widget.recommendations,
                     onBack: () => setState(() => _searchByConnection = false),
                     onFriendTap: _onFriendTap,
+                    onFollow: widget.onFollow,
+                  )
+                : _hasNoFriendsData
+                ? Column(
+                    children: [
+                      const Expanded(
+                        child: AppStateView(
+                          type: AppStateType.empty,
+                          title: '友達がいません',
+                          message: '「からむで探す」から友達を見つけましょう。',
+                        ),
+                      ),
+                      _buildDiscoverButton(),
+                    ],
                   )
                 : FriendGrid(
-                    candidates: widget.candidates,
+                    candidates: widget.friends,
                     onFriendTap: _onFriendTap,
                   ),
           ),
@@ -1457,7 +1497,8 @@ class FriendGrid extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final item = candidates[index];
-        final showDot = item.isFollowing || item.mutualCount > 0;
+        final showDot =
+            item.isFriend || item.theyFollowMe || item.mutualCount > 0;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () => onFriendTap(item),
@@ -1487,21 +1528,28 @@ class FriendGrid extends StatelessWidget {
   }
 }
 
-/// 「からむで探す」検索UI（MVP: candidates の mock を並べる）
+/// 「からむで探す」: フォロー返し・承認待ち・おすすめ候補（🔶タグ行のみモック）。
 class FriendSearchPage extends StatelessWidget {
   const FriendSearchPage({
     super.key,
+    required this.incoming,
+    required this.outgoing,
     required this.candidates,
     required this.onBack,
     required this.onFriendTap,
+    required this.onFollow,
   });
 
+  final List<FriendCandidate> incoming;
+  final List<FriendCandidate> outgoing;
   final List<FriendCandidate> candidates;
   final VoidCallback onBack;
   final ValueChanged<FriendCandidate> onFriendTap;
+  final Future<bool> Function(String userId) onFollow;
 
   @override
   Widget build(BuildContext context) {
+    // 🔶 モック: DB 未整備（doc/mvp-mock-vs-real-data.md 参照）
     final recommendedTags = const ['グルメ', 'カフェ巡り', 'ラーメン', '焼肉', 'スイーツ', 'ランチ'];
 
     final sorted = [...candidates]
@@ -1512,6 +1560,48 @@ class FriendSearchPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (incoming.isNotEmpty) ...[
+          const Text(
+            'フォローされています',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'フォロー返しで友達（相互フォロー）になります',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...incoming.map((c) => _FriendCandidateRow(
+                candidate: c,
+                onFriendTap: onFriendTap,
+                onFollow: onFollow,
+              )),
+          const SizedBox(height: 18),
+        ],
+        if (outgoing.isNotEmpty) ...[
+          const Text(
+            '承認待ち',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '相手のフォロー返しを待っています',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...outgoing.map((c) => _FriendCandidateRow(
+                candidate: c,
+                onFriendTap: onFriendTap,
+                onFollow: onFollow,
+              )),
+          const SizedBox(height: 18),
+        ],
         const Text(
           '共通の友達が多い人',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
@@ -1524,7 +1614,8 @@ class FriendSearchPage extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             itemBuilder: (context, i) {
               final c = top[i];
-              final showDot = c.isFollowing || c.mutualCount > 0;
+              final showDot =
+                  c.isFriend || c.theyFollowMe || c.mutualCount > 0;
               return InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => onFriendTap(c),
@@ -1610,63 +1701,103 @@ class FriendSearchPage extends StatelessWidget {
         const SizedBox(height: 10),
 
         ...sorted.map(
-          (c) => InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => onFriendTap(c),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.blackElevated.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
+          (c) => _FriendCandidateRow(
+            candidate: c,
+            onFriendTap: onFriendTap,
+            onFollow: onFollow,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FriendCandidateRow extends StatelessWidget {
+  const _FriendCandidateRow({
+    required this.candidate,
+    required this.onFriendTap,
+    required this.onFollow,
+  });
+
+  final FriendCandidate candidate;
+  final ValueChanged<FriendCandidate> onFriendTap;
+  final Future<bool> Function(String userId) onFollow;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = candidate;
+    final subtitle = c.theyFollowMe && !c.iFollowThem
+        ? 'あなたをフォローしています'
+        : c.iFollowThem
+        ? 'フォロー返し待ち'
+        : '共通友達 ${c.mutualCount}人';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => onFriendTap(c),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.blackElevated.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            FriendAvatar(
+              displayName: c.name,
+              radius: 20,
+              showStatusDot:
+                  c.isFriend || c.theyFollowMe || c.mutualCount > 0,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FriendAvatar(
-                    displayName: c.name,
-                    radius: 20,
-                    showStatusDot: c.isFollowing || c.mutualCount > 0,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          c.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '共通友達 ${c.mutualCount}人',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    c.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
                   ),
-                  FilledButton(
-                    onPressed: () => onFriendTap(c),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.orange,
-                      foregroundColor: Colors.black,
-                      shape: const StadiumBorder(),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontWeight: FontWeight.w800,
                     ),
-                    child: Text(c.isFollowing ? 'フォロー中' : 'フォロー'),
                   ),
                 ],
               ),
             ),
-          ),
+            FilledButton(
+              onPressed: c.canFollow
+                  ? () async {
+                      final becameFriend = await onFollow(c.id);
+                      if (!context.mounted) return;
+                      final msg = becameFriend
+                          ? '${c.name} と友達になりました'
+                          : '${c.name} にフォローしました（相手のフォロー返しで友達になります）';
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(msg)));
+                    }
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.black,
+                shape: const StadiumBorder(),
+              ),
+              child: Text(c.actionLabel),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -1863,11 +1994,7 @@ class _ProfilePage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _StatTile(label: 'フォロー', value: profile.following),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _StatTile(label: 'フォロワー', value: profile.followers),
+                child: _StatTile(label: '友達', value: profile.friendCount),
               ),
             ],
           ),

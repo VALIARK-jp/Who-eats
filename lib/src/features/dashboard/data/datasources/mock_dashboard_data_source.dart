@@ -108,28 +108,28 @@ class MockDashboardDataSource {
       name: 'yuma_21',
       avatarUrl: '',
       mutualCount: 2,
-      isFollowing: false,
+      isFriend: false,
     ),
     FriendCandidate(
       id: 'f2',
       name: 'saya_27',
       avatarUrl: '',
       mutualCount: 4,
-      isFollowing: false,
+      isFriend: false,
     ),
     FriendCandidate(
       id: 'f3',
       name: 'mana_03',
       avatarUrl: '',
       mutualCount: 1,
-      isFollowing: true,
+      isFriend: true,
     ),
     FriendCandidate(
       id: 'f4',
       name: 'takumi_99',
       avatarUrl: '',
       mutualCount: 3,
-      isFollowing: false,
+      isFriend: false,
     ),
   ];
 
@@ -146,8 +146,7 @@ class MockDashboardDataSource {
     userCode: '@ryota',
     bio: '',
     avatarUrl: '',
-    followers: 498,
-    following: 342,
+    friendCount: 12,
     pinnedShots: [
       'https://images.unsplash.com/photo-1604908177225-06b39e6d7f4a',
       'https://images.unsplash.com/photo-1598214886806-c87b84b7078b',

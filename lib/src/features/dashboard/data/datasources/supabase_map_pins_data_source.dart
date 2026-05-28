@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/supabase/supabase_storage_urls.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../domain/entities/app_entities.dart';
 
@@ -21,25 +22,32 @@ class SupabaseMapPinsDataSource {
     double? lng,
     required int radiusMeters,
     String? keyword,
+    Set<String> mutualFriendIds = const {},
   }) async {
     final centerLat = lat ?? _defaultLat;
     final centerLng = lng ?? _defaultLng;
-    if (_client.auth.currentUser == null) return const [];
+    final isAnon = _client.auth.currentUser == null;
 
     try {
       final tPlaces = SupabaseTables.places;
       final tAuthor = SupabaseTables.postAuthorEmbed;
       final tImages = SupabaseTables.postImages;
-      final rows = await _client
+      var query = _client
           .from(SupabaseTables.posts)
           .select(
-            'id,caption,created_at,user_id,'
+            'id,caption,created_at,user_id,rating,'
             '$tAuthor(name,icon_path),'
             '$tPlaces!inner(google_place_id,name,latitude,longitude),'
             '$tImages(storage_path,display_order)',
           )
           .eq('post_type', 'restaurant')
-          .isFilter('deleted_at', null)
+          .isFilter('deleted_at', null);
+
+      if (isAnon) {
+        query = query.eq('visibility', 'public');
+      }
+
+      final rows = await query
           .order('created_at', ascending: false)
           .limit(300);
 
@@ -74,6 +82,10 @@ class SupabaseMapPinsDataSource {
             _extractEmbeddedMap(row['whoeats_users']);
         final userName = (author?['name'] ?? '').toString().trim();
         final avatarToken = _avatarToken(userName);
+        final postUserId = (row['user_id'] ?? '').toString();
+        final isFriendPost =
+            mutualFriendIds.isNotEmpty && mutualFriendIds.contains(postUserId);
+        final rating = (row['rating'] as num?)?.toDouble();
 
         final imageUrl = await _firstImageUrl(row[tImages]);
         final agg = aggregates.putIfAbsent(
@@ -89,6 +101,8 @@ class SupabaseMapPinsDataSource {
           caption: caption,
           imageUrl: imageUrl,
           avatarToken: avatarToken,
+          isFriendPost: isFriendPost,
+          rating: rating,
         );
       }
 
@@ -106,12 +120,11 @@ class SupabaseMapPinsDataSource {
     required String placeGoogleId,
     int limit = 24,
   }) async {
-    if (_client.auth.currentUser == null) return const [];
     try {
       final tPlaces = SupabaseTables.places;
       final tAuthor = SupabaseTables.postAuthorEmbed;
       final tImages = SupabaseTables.postImages;
-      final rows = await _client
+      var query = _client
           .from(SupabaseTables.posts)
           .select(
             'id,caption,created_at,'
@@ -121,7 +134,13 @@ class SupabaseMapPinsDataSource {
           )
           .eq('$tPlaces.google_place_id', placeGoogleId)
           .eq('post_type', 'restaurant')
-          .isFilter('deleted_at', null)
+          .isFilter('deleted_at', null);
+
+      if (_client.auth.currentUser == null) {
+        query = query.eq('visibility', 'public');
+      }
+
+      final rows = await query
           .order('created_at', ascending: false)
           .limit(limit);
 
@@ -158,7 +177,6 @@ class SupabaseMapPinsDataSource {
   Future<PlaceDetail?> fetchPlaceDetailShell({
     required String placeGoogleId,
   }) async {
-    if (_client.auth.currentUser == null) return null;
     try {
       final tPlaces = SupabaseTables.places;
       final placeRow = await _client
@@ -211,14 +229,7 @@ class SupabaseMapPinsDataSource {
       ),
     );
     final storagePath = (images.first['storage_path'] ?? '').toString();
-    if (storagePath.isEmpty) return '';
-    try {
-      return await _client.storage
-          .from('post-images')
-          .createSignedUrl(storagePath, 60 * 60 * 24);
-    } catch (_) {
-      return '';
-    }
+    return await SupabaseStorageUrls.signedPostImage(_client, storagePath) ?? '';
   }
 
   Map<String, dynamic>? _extractEmbeddedMap(dynamic raw) {
@@ -268,34 +279,45 @@ class _PlacePinAggregate {
   final double longitude;
   final List<String> _captions = [];
   final List<String> _imageUrls = [];
-  final List<String> _avatarTokens = [];
+  final List<String> _friendAvatarTokens = [];
+  final List<double> _ratings = [];
+  bool _hasFriendPost = false;
 
   void addPost({
     required String caption,
     required String imageUrl,
     required String avatarToken,
+    required bool isFriendPost,
+    double? rating,
   }) {
     if (caption.isNotEmpty) _captions.add(caption);
     if (imageUrl.isNotEmpty) _imageUrls.add(imageUrl);
-    if (!_avatarTokens.contains(avatarToken)) {
-      _avatarTokens.add(avatarToken);
+    if (isFriendPost) {
+      _hasFriendPost = true;
+      if (!_friendAvatarTokens.contains(avatarToken)) {
+        _friendAvatarTokens.add(avatarToken);
+      }
     }
+    if (rating != null && rating > 0) _ratings.add(rating);
   }
 
   MapPin toMapPin() {
     final comment = _captions.isNotEmpty
         ? _captions.first
-        : (_avatarTokens.length > 1
-              ? '${_avatarTokens.length}人が訪問'
+        : (_friendAvatarTokens.length > 1
+              ? '${_friendAvatarTokens.length}人の友達が訪問'
               : '投稿あり');
+    final avgRating = _ratings.isEmpty
+        ? 0.0
+        : _ratings.reduce((a, b) => a + b) / _ratings.length;
     return MapPin(
       id: googlePlaceId,
       placeName: placeName,
-      rating: 4.5,
+      rating: avgRating > 0 ? avgRating : 0,
       friendComment: comment,
       imageUrl: _imageUrls.isNotEmpty ? _imageUrls.first : '',
-      isFriendVisited: true,
-      friendAvatars: _avatarTokens.take(4).toList(),
+      isFriendVisited: _hasFriendPost,
+      friendAvatars: _friendAvatarTokens.take(4).toList(),
       latitude: latitude,
       longitude: longitude,
     );
