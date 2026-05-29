@@ -399,49 +399,26 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ProfileOverview> getProfileOverview() async {
-    final base = await _dataSource.getProfileOverview();
-    final uid = _supabase.auth.currentUser?.id;
-    if (uid == null) return base;
+    if (_useSupabase) return _social.fetchProfileOverview();
+    return _dataSource.getProfileOverview();
+  }
 
-    try {
-      final row = await _supabase
-          .from(SupabaseTables.profiles)
-          .select('name, user_code, bio, icon_path, avatar_url')
-          .eq('id', uid)
-          .maybeSingle();
-      if (row == null) return base;
+  @override
+  Future<List<FeedPost>> getFavoritePosts() async {
+    if (!_useSupabase) return const [];
+    return _social.fetchFavoritePosts();
+  }
 
-      final name = (row['name'] ?? '').toString().trim();
-      final userCode = (row['user_code'] ?? '').toString().trim();
-      final bio = (row['bio'] ?? '').toString().trim();
-      final iconUrl = await _profileIconUrlFromRow(row);
+  @override
+  Future<void> setProfilePostPinned(String postId, bool pin) async {
+    if (!_useSupabase) return;
+    await _social.setProfilePostPinned(postId, pin);
+  }
 
-      return ProfileOverview(
-        name: name.isNotEmpty ? name : base.name,
-        userCode: userCode.isNotEmpty ? userCode : base.userCode,
-        bio: bio,
-        avatarUrl: iconUrl ?? base.avatarUrl,
-        followers: base.followers,
-        following: base.following,
-        friends: base.friends,
-        pinnedShots: base.pinnedShots,
-        recentShots: base.recentShots,
-      );
-    } catch (e) {
-      _log('getProfileOverview profiles lookup failed: $e');
-    }
-
-    return ProfileOverview(
-      name: base.name,
-      userCode: base.userCode,
-      bio: base.bio,
-      avatarUrl: base.avatarUrl,
-      followers: base.followers,
-      following: base.following,
-      friends: base.friends,
-      pinnedShots: base.pinnedShots,
-      recentShots: base.recentShots,
-    );
+  @override
+  Future<bool> togglePostFavorite(String postId) async {
+    if (!_useSupabase) return false;
+    return _social.togglePostFavorite(postId);
   }
 
   @override

@@ -7,13 +7,19 @@ import '../../../../core/config/app_config.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../../auth/application/auth_session.dart';
+import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
-import '../widgets/profile_food_grid.dart';
+import 'favorite_posts_page.dart';
 
 class ProfileSettingsPage extends StatelessWidget {
-  const ProfileSettingsPage({super.key, required this.controller});
-  
+  const ProfileSettingsPage({
+    super.key,
+    required this.controller,
+    this.onOpenPostDetail,
+  });
+
   final AppShellController controller;
+  final ValueChanged<FeedPost>? onOpenPostDetail;
 
   Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -106,7 +112,16 @@ class ProfileSettingsPage extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => _FavoriteImagesEditPage(controller: controller),
+                    builder: (ctx) => FavoritePostsPage(
+                      controller: controller,
+                      onOpenPost: onOpenPostDetail == null
+                          ? null
+                          : (post) {
+                              Navigator.pop(ctx);
+                              Navigator.pop(context);
+                              onOpenPostDetail!(post);
+                            },
+                    ),
                   ),
                 );
               },
@@ -120,7 +135,7 @@ class ProfileSettingsPage extends StatelessWidget {
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('お気に入り画像を編集', style: TextStyle(fontSize: 16)),
+                  Text('お気に入りの投稿を見る', style: TextStyle(fontSize: 16)),
                   Icon(Icons.chevron_right),
                 ],
               ),
@@ -286,53 +301,3 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
   }
 }
 
-class _FavoriteImagesEditPage extends StatelessWidget {
-  const _FavoriteImagesEditPage({required this.controller});
-  final AppShellController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('お気に入り画像を編集'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          const Text(
-            'ピン留めする画像を設定します。',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text('プロフィール画面のトップに表示されるお気に入りの画像を選択してください。'),
-          const SizedBox(height: 16),
-          if (controller.profileOverview?.pinnedShots != null &&
-              controller.profileOverview!.pinnedShots.isNotEmpty)
-            ProfileFoodGrid(
-              urls: controller.profileOverview!.pinnedShots,
-            )
-          else
-            Container(
-              height: 120,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text('ピン留めされた画像はありません'),
-            ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('画像選択機能は現在開発中です')),
-              );
-            },
-            icon: const Icon(Icons.add_photo_alternate),
-            label: const Text('画像を選択・変更する'),
-          ),
-        ],
-      ),
-    );
-  }
-}

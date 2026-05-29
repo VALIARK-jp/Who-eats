@@ -33,6 +33,9 @@ abstract interface class DashboardRepository {
   Future<bool> followUser(String targetUserId);
   Future<RecordSummary> getRecordSummary();
   Future<ProfileOverview> getProfileOverview();
+  Future<List<FeedPost>> getFavoritePosts();
+  Future<void> setProfilePostPinned(String postId, bool pin);
+  Future<bool> togglePostFavorite(String postId);
   Future<List<AppNotification>> getNotifications();
   Future<PostDraft> createPostDraft();
 }

@@ -103,7 +103,7 @@ class _AppShellPageState extends State<AppShellPage> {
     setState(() => _activePostDetail = null);
   }
 
-  void _openFriendsPage(List<FriendCandidate> candidates) {
+  void _openFriendsPage() {
     if (AppConfig.hasSupabase &&
         Supabase.instance.client.auth.currentUser == null) {
       showDialog<void>(
@@ -217,7 +217,7 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPlace: _openPlaceSheet,
             onOpenPostDetail: _openPostDetail,
-            onOpenFriends: () => _openFriendsPage(controller),
+            onOpenFriends: _openFriendsPage,
           ),
           _MapTab(
             mapPins: controller.mapPins,
@@ -231,6 +231,7 @@ class _AppShellPageState extends State<AppShellPage> {
           _ProfilePage(
             profile: controller.profileOverview!,
             controller: controller,
+            onOpenPostDetail: _openPostDetail,
           ),
         ];
 
@@ -340,10 +341,20 @@ class _AppShellPageState extends State<AppShellPage> {
                   right: 0,
                   top: 0,
                   bottom: bottomOffset,
-                  child: PostDetailPage(
-                    post: _activePostDetail!,
-                    controller: controller,
-                    onClose: _closePostDetail,
+                  child: ListenableBuilder(
+                    listenable: controller,
+                    builder: (context, _) {
+                      final base = _activePostDetail!;
+                      final post = controller.feedPostById(base.id) ?? base;
+                      return PostDetailPage(
+                        post: post,
+                        controller: controller,
+                        onClose: _closePostDetail,
+                        onPostUpdated: (updated) {
+                          setState(() => _activePostDetail = updated);
+                        },
+                      );
+                    },
                   ),
                 ),
             ],
@@ -428,7 +439,11 @@ class _HomePageState extends State<_HomePage> {
     final controller = widget.controller;
     return Stack(
       children: [
-        _FeedTab(feed: controller.feed, onTapPost: widget.onOpenPostDetail),
+        _FeedTab(
+          feed: controller.feed,
+          controller: controller,
+          onTapPost: widget.onOpenPostDetail,
+        ),
         SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -466,8 +481,13 @@ class _HomePageState extends State<_HomePage> {
 }
 
 class _FeedTab extends StatelessWidget {
-  const _FeedTab({required this.feed, required this.onTapPost});
+  const _FeedTab({
+    required this.feed,
+    required this.controller,
+    required this.onTapPost,
+  });
   final List<FeedPost> feed;
+  final AppShellController controller;
   final ValueChanged<FeedPost> onTapPost;
 
   @override
@@ -485,7 +505,30 @@ class _FeedTab extends StatelessWidget {
       separatorBuilder: (_, _) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final post = feed[index];
-        return FoodPostCard(post: post, onTap: () => onTapPost(post));
+        final uid = controller.currentUserId;
+        final isOwn = uid != null && uid.isNotEmpty && post.userId == uid;
+        return FoodPostCard(
+          post: post,
+          currentUserId: uid,
+          onTap: () => onTapPost(post),
+          onTogglePin: isOwn
+              ? () async {
+                  final pin = !post.isPinnedOnMyProfile;
+                  try {
+                    await controller.setProfilePinForPost(post, pin);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.toString())),
+                      );
+                    }
+                  }
+                }
+              : null,
+          onToggleFavorite: !isOwn && uid != null
+              ? () => controller.togglePostFavoriteForPost(post)
+              : null,
+        );
       },
     );
   }
@@ -1946,9 +1989,37 @@ class _RecordPage extends StatelessWidget {
 }
 
 class _ProfilePage extends StatelessWidget {
-  const _ProfilePage({required this.profile, required this.controller});
+  const _ProfilePage({
+    required this.profile,
+    required this.controller,
+    required this.onOpenPostDetail,
+  });
   final ProfileOverview profile;
   final AppShellController controller;
+  final ValueChanged<FeedPost> onOpenPostDetail;
+
+  FeedPost _postFromThumb(ProfilePostThumb thumb, {required bool pinned}) {
+    final fromFeed = controller.feedPostById(thumb.postId);
+    if (fromFeed != null) return fromFeed;
+    final uid = controller.currentUserId ?? '';
+    return FeedPost(
+      id: thumb.postId,
+      userId: uid,
+      userName: profile.name,
+      userIconUrl: profile.avatarUrl.isNotEmpty ? profile.avatarUrl : null,
+      placeName: '',
+      caption: '',
+      imageUrl: thumb.imageUrl,
+      likes: 0,
+      comments: 0,
+      friendAvatars: const [],
+      isPinnedOnMyProfile: pinned,
+    );
+  }
+
+  void _openThumb(BuildContext context, ProfilePostThumb thumb, {required bool pinned}) {
+    onOpenPostDetail(_postFromThumb(thumb, pinned: pinned));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1977,7 +2048,10 @@ class _ProfilePage extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => ProfileSettingsPage(controller: controller),
+                      builder: (context) => ProfileSettingsPage(
+                        controller: controller,
+                        onOpenPostDetail: onOpenPostDetail,
+                      ),
                     ),
                   );
                 },
@@ -2034,10 +2108,16 @@ class _ProfilePage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text('ピン留めしたご飯', style: TextStyle(fontWeight: FontWeight.w900)),
-          ProfileFoodGrid(urls: profile.pinnedShots),
+          ProfileFoodGrid(
+            thumbs: profile.pinnedPosts,
+            onThumbTap: (t) => _openThumb(context, t, pinned: true),
+          ),
           const SizedBox(height: 12),
           const Text('投稿一覧', style: TextStyle(fontWeight: FontWeight.w900)),
-          ProfileFoodGrid(urls: profile.recentShots),
+          ProfileFoodGrid(
+            thumbs: profile.recentPosts,
+            onThumbTap: (t) => _openThumb(context, t, pinned: false),
+          ),
         ],
       ),
     );
@@ -2757,17 +2837,49 @@ class _PostCreationPageState extends State<PostCreationPage> {
 }
 
 /// MVPのための投稿詳細オーバーレイ（後続ToDoでUI精度を上げます）
-class PostDetailPage extends StatelessWidget {
+class PostDetailPage extends StatefulWidget {
   const PostDetailPage({
     super.key,
     required this.post,
     required this.controller,
     required this.onClose,
+    this.onPostUpdated,
   });
 
   final FeedPost post;
   final AppShellController controller;
   final VoidCallback onClose;
+  final ValueChanged<FeedPost>? onPostUpdated;
+
+  @override
+  State<PostDetailPage> createState() => _PostDetailPageState();
+}
+
+class _PostDetailPageState extends State<PostDetailPage> {
+  late FeedPost _post;
+  bool _actionBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _post = widget.post;
+  }
+
+  @override
+  void didUpdateWidget(covariant PostDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id == widget.post.id) {
+      _post = widget.post;
+    }
+  }
+
+  AppShellController get controller => widget.controller;
+  VoidCallback get onClose => widget.onClose;
+
+  bool get _isOwnPost {
+    final uid = controller.currentUserId;
+    return uid != null && uid.isNotEmpty && _post.userId == uid;
+  }
 
   Future<void> _openWebsite(BuildContext context, PlaceDetail? place) async {
     final raw =
@@ -2786,8 +2898,8 @@ class PostDetailPage extends StatelessWidget {
   }
 
   Future<void> _openGoogleMaps(BuildContext context, PlaceDetail? place) async {
-    final placeName = place?.placeName ?? post.placeName;
-    final placeId = post.placeGoogleId ?? place?.placeId ?? '';
+    final placeName = place?.placeName ?? _post.placeName;
+    final placeId = _post.placeGoogleId ?? place?.placeId ?? '';
     final rawUrl = (place?.googleMapsUrl ?? '').trim();
     final directUri = Uri.tryParse(rawUrl);
     final uri = directUri != null && directUri.hasScheme
@@ -2807,17 +2919,62 @@ class PostDetailPage extends StatelessWidget {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _togglePin() async {
+    if (_actionBusy || !_isOwnPost) return;
+    setState(() => _actionBusy = true);
+    try {
+      final updated = await controller.setProfilePinForPost(
+        _post,
+        !_post.isPinnedOnMyProfile,
+      );
+      setState(() => _post = updated);
+      widget.onPostUpdated?.call(updated);
+      if (!mounted) return;
+      _showSnack(
+        context,
+        updated.isPinnedOnMyProfile
+            ? 'プロフィールにピン留めしました'
+            : 'ピン留めを外しました',
+      );
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_actionBusy || _isOwnPost) return;
+    setState(() => _actionBusy = true);
+    try {
+      final updated = await controller.togglePostFavoriteForPost(_post);
+      setState(() => _post = updated);
+      widget.onPostUpdated?.call(updated);
+      if (!mounted) return;
+      _showSnack(
+        context,
+        updated.isFavoritedByMe
+            ? 'お気に入りに追加しました'
+            : 'お気に入りを外しました',
+      );
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final placeFuture = (post.placeGoogleId ?? '').isNotEmpty
-        ? controller.getPlaceDetail(post.placeGoogleId!)
+    final placeFuture = (_post.placeGoogleId ?? '').isNotEmpty
+        ? controller.getPlaceDetail(_post.placeGoogleId!)
         : Future<PlaceDetail?>.value(null);
-    final iconUrl = post.userIconUrl ?? '';
+    final iconUrl = _post.userIconUrl ?? '';
     final hasNetworkIcon =
         iconUrl.isNotEmpty &&
         (iconUrl.startsWith('http://') || iconUrl.startsWith('https://'));
-    final initial = post.userName.isNotEmpty
-        ? post.userName[0].toUpperCase()
+    final initial = _post.userName.isNotEmpty
+        ? _post.userName[0].toUpperCase()
         : '?';
 
     return Container(
@@ -2858,7 +3015,7 @@ class PostDetailPage extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          '@${post.userName}',
+                          '@${_post.userName}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -2867,13 +3024,36 @@ class PostDetailPage extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.more_vert,
-                          color: Colors.white70,
+                      if (_isOwnPost)
+                        IconButton(
+                          tooltip: _post.isPinnedOnMyProfile
+                              ? 'ピン留めを外す'
+                              : 'プロフィールにピン留め',
+                          onPressed: _actionBusy ? null : _togglePin,
+                          icon: Icon(
+                            _post.isPinnedOnMyProfile
+                                ? Icons.push_pin
+                                : Icons.push_pin_outlined,
+                            color: _post.isPinnedOnMyProfile
+                                ? AppColors.orangeAccent
+                                : Colors.white70,
+                          ),
+                        )
+                      else if (controller.currentUserId != null)
+                        IconButton(
+                          tooltip: _post.isFavoritedByMe
+                              ? 'お気に入りを外す'
+                              : 'お気に入り',
+                          onPressed: _actionBusy ? null : _toggleFavorite,
+                          icon: Icon(
+                            _post.isFavoritedByMe
+                                ? Icons.bookmark
+                                : Icons.bookmark_border,
+                            color: _post.isFavoritedByMe
+                                ? AppColors.orangeAccent
+                                : Colors.white70,
+                          ),
                         ),
-                        onPressed: () {},
-                      ),
                     ],
                   ),
                 ),
@@ -2886,7 +3066,7 @@ class PostDetailPage extends StatelessWidget {
                         child: Stack(
                           children: [
                             Image.network(
-                              post.imageUrl,
+                              _post.imageUrl,
                               height: 300,
                               width: double.infinity,
                               fit: BoxFit.cover,
@@ -2923,7 +3103,7 @@ class PostDetailPage extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    place?.placeName ?? post.placeName,
+                                    place?.placeName ?? _post.placeName,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w900,
                                       fontSize: 20,
@@ -2978,13 +3158,13 @@ class PostDetailPage extends StatelessWidget {
                       const SizedBox(height: 12),
                       _PostPlaceActionPanel(
                         place: place,
-                        fallbackPlaceName: post.placeName,
+                        fallbackPlaceName: _post.placeName,
                         onOpenWebsite: () => _openWebsite(context, place),
                         onOpenGoogleMaps: () => _openGoogleMaps(context, place),
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        post.caption,
+                        _post.caption,
                         style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           height: 1.25,
@@ -3000,7 +3180,7 @@ class PostDetailPage extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${post.likes}',
+                            '${_post.likes}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
@@ -3014,7 +3194,7 @@ class PostDetailPage extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${post.comments}',
+                            '${_post.comments}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
@@ -3024,7 +3204,7 @@ class PostDetailPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
                       FriendAvatarStack(
-                        avatarDisplays: post.friendAvatars,
+                        avatarDisplays: _post.friendAvatars,
                         maxVisible: 4,
                         avatarRadius: 16,
                       ),
