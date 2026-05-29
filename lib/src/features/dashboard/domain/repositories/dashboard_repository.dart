@@ -1,7 +1,7 @@
 import '../entities/app_entities.dart';
 
 abstract interface class DashboardRepository {
-  Future<List<FeedPost>> getHomeFeed();
+  Future<List<FeedPost>> getHomeFeed({FeedTimelineScope scope = FeedTimelineScope.all});
   Future<List<MapPin>> getMapPins({double? centerLat, double? centerLng});
   Future<List<MapPin>> searchMapPins(String keyword);
   Future<List<MapPin>> searchMapPinsAround({
@@ -31,6 +31,21 @@ abstract interface class DashboardRepository {
 
   /// フォローする。戻り値 true = この操作で相互フォロー（友達）になった。
   Future<bool> followUser(String targetUserId);
+
+  Future<void> unfollowUser(String targetUserId);
+  Future<bool> togglePostLike(String postId);
+  Future<List<PostComment>> getPostComments(String postId);
+  Future<PostComment> createPostComment(String postId, String body);
+  Future<void> deletePostComment(String commentId);
+  Future<List<FriendCandidate>> searchUsersByCode(String query);
+  Future<void> softDeletePost(String postId);
+  Future<List<RecordDayEntry>> getPostsForDay(DateTime dayLocal);
+  Future<FeedPost?> getFeedPostById(String postId);
+  Future<UserPublicProfile?> getUserPublicProfile(String userId);
+  Future<void> blockUser(String userId);
+  Future<void> unblockUser(String userId);
+  Future<List<PendingMealTag>> getPendingMealTags();
+
   Future<RecordSummary> getRecordSummary();
   Future<ProfileOverview> getProfileOverview();
   Future<List<FeedPost>> getFavoritePosts();

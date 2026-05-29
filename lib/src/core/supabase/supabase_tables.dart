@@ -15,6 +15,8 @@ abstract final class SupabaseTables {
   static String get postComments => _prefixed('post_comments');
   static String get profilePins => _prefixed('profile_pins');
   static String get postFavorites => _prefixed('post_favorites');
+  static String get postCompanions => _prefixed('post_companions');
+  static String get blocks => _prefixed('blocks');
 
   static String _prefixed(String base) {
     final p = AppConfig.dbTablePrefix;

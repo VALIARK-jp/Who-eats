@@ -1,3 +1,49 @@
+enum FeedTimelineScope { friends, near, all }
+
+extension FeedTimelineScopeX on FeedTimelineScope {
+  String get label {
+    switch (this) {
+      case FeedTimelineScope.friends:
+        return '友達';
+      case FeedTimelineScope.near:
+        return '近い';
+      case FeedTimelineScope.all:
+        return 'すべて';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case FeedTimelineScope.friends:
+        return '相互フォロー（友達）と自分の投稿だけ表示します。';
+      case FeedTimelineScope.near:
+        return '友達の投稿に加え、友達がフォローしている人（まだ友達ではない）の投稿も表示します。';
+      case FeedTimelineScope.all:
+        return '公開範囲とブロック設定に従い、閲覧できる投稿を広く表示します。';
+    }
+  }
+
+  String get storageValue => name;
+
+  static FeedTimelineScope fromStorage(String? value) {
+    return FeedTimelineScope.values.firstWhere(
+      (s) => s.name == value,
+      orElse: () => FeedTimelineScope.friends,
+    );
+  }
+}
+
+/// フィードなどから地図タブで特定店舗のピンへ飛ぶときのリクエスト。
+class MapPlaceFocus {
+  const MapPlaceFocus({
+    required this.placeGoogleId,
+    required this.placeName,
+  });
+
+  final String placeGoogleId;
+  final String placeName;
+}
+
 class FeedPost {
   const FeedPost({
     required this.id,
@@ -13,6 +59,12 @@ class FeedPost {
     required this.friendAvatars,
     this.isFavoritedByMe = false,
     this.isPinnedOnMyProfile = false,
+    this.likedByMe = false,
+    this.rating,
+    this.createdAt,
+    this.postType = 'restaurant',
+    this.companionAvatars = const [],
+    this.latestComment,
   });
 
   final String id;
@@ -28,10 +80,28 @@ class FeedPost {
   final List<String> friendAvatars;
   final bool isFavoritedByMe;
   final bool isPinnedOnMyProfile;
+  final bool likedByMe;
+  final int? rating;
+  final DateTime? createdAt;
+  final String postType;
+  final List<String> companionAvatars;
+  final PostComment? latestComment;
+
+  bool get isHomePost => postType == 'home';
 
   FeedPost copyWith({
     bool? isFavoritedByMe,
     bool? isPinnedOnMyProfile,
+    bool? likedByMe,
+    int? likes,
+    int? comments,
+    int? rating,
+    DateTime? createdAt,
+    String? postType,
+    List<String>? companionAvatars,
+    List<String>? friendAvatars,
+    PostComment? latestComment,
+    bool setLatestComment = false,
   }) {
     return FeedPost(
       id: id,
@@ -42,13 +112,109 @@ class FeedPost {
       placeGoogleId: placeGoogleId,
       caption: caption,
       imageUrl: imageUrl,
-      likes: likes,
-      comments: comments,
-      friendAvatars: friendAvatars,
+      likes: likes ?? this.likes,
+      comments: comments ?? this.comments,
+      friendAvatars: friendAvatars ?? this.friendAvatars,
       isFavoritedByMe: isFavoritedByMe ?? this.isFavoritedByMe,
       isPinnedOnMyProfile: isPinnedOnMyProfile ?? this.isPinnedOnMyProfile,
+      likedByMe: likedByMe ?? this.likedByMe,
+      rating: rating ?? this.rating,
+      createdAt: createdAt ?? this.createdAt,
+      postType: postType ?? this.postType,
+      companionAvatars: companionAvatars ?? this.companionAvatars,
+      latestComment: setLatestComment
+          ? latestComment
+          : (latestComment ?? this.latestComment),
     );
   }
+}
+
+class PostComment {
+  const PostComment({
+    required this.id,
+    required this.userId,
+    required this.userName,
+    required this.body,
+    required this.createdAt,
+    this.isMine = false,
+  });
+
+  final String id;
+  final String userId;
+  final String userName;
+  final String body;
+  final DateTime createdAt;
+  final bool isMine;
+}
+
+class RecordDayEntry {
+  const RecordDayEntry({
+    required this.postId,
+    required this.placeName,
+    required this.imageUrl,
+    required this.postType,
+    this.companionNames = const [],
+    this.rating,
+    this.caption = '',
+    this.userName = '',
+    this.userIconUrl,
+    this.placeGoogleId,
+    this.createdAt,
+  });
+
+  final String postId;
+  final String placeName;
+  final String imageUrl;
+  final String postType;
+  final List<String> companionNames;
+  final int? rating;
+  final String caption;
+  final String userName;
+  final String? userIconUrl;
+  final String? placeGoogleId;
+  final DateTime? createdAt;
+}
+
+class UserPublicProfile {
+  const UserPublicProfile({
+    required this.userId,
+    required this.name,
+    required this.userCode,
+    required this.bio,
+    required this.avatarUrl,
+    this.isFriend = false,
+    this.iFollowThem = false,
+    this.theyFollowMe = false,
+    this.isBlocked = false,
+    this.recentPosts = const [],
+  });
+
+  final String userId;
+  final String name;
+  final String userCode;
+  final String bio;
+  final String avatarUrl;
+  final bool isFriend;
+  final bool iFollowThem;
+  final bool theyFollowMe;
+  final bool isBlocked;
+  final List<ProfilePostThumb> recentPosts;
+}
+
+class PendingMealTag {
+  const PendingMealTag({
+    required this.sourcePostId,
+    required this.mealGroupId,
+    required this.inviterName,
+    required this.inviterIconUrl,
+    required this.placeName,
+  });
+
+  final String sourcePostId;
+  final String mealGroupId;
+  final String inviterName;
+  final String inviterIconUrl;
+  final String placeName;
 }
 
 class ProfilePostThumb {
@@ -136,15 +302,16 @@ class FriendCandidate {
   /// 自分が相手をフォロー済みだが、まだ相互ではない（承認待ち）。
   final bool iFollowThem;
 
-  /// 「友達になる」ボタンのラベル。
   String get actionLabel {
     if (isFriend) return '友達';
-    if (theyFollowMe && !iFollowThem) return '友達になる';
-    if (iFollowThem) return '承認待ち';
-    return '友達になる';
+    if (theyFollowMe && !iFollowThem) return '申請を承認';
+    if (iFollowThem) return '申請中';
+    return '友達申請';
   }
 
   bool get canFollow => !isFriend && !iFollowThem;
+
+  bool get canCancelRequest => iFollowThem && !isFriend;
 }
 
 class RecordSummary {
@@ -210,6 +377,11 @@ class PostDraft {
     required this.placeName,
     required this.note,
     required this.withWho,
+    this.rating,
+    this.companionUserIds = const [],
+    this.mealGroupId,
+    this.postType = 'restaurant',
+    this.visibility = 'friends',
   });
 
   final String photoUrl;
@@ -222,6 +394,43 @@ class PostDraft {
   final String placeName;
   final String note;
   final String withWho;
+  final int? rating;
+  final List<String> companionUserIds;
+  final String? mealGroupId;
+  final String postType;
+  final String visibility;
+
+  PostDraft copyWith({
+    String? photoUrl,
+    String? localImagePath,
+    String? placeGoogleId,
+    double? placeLatitude,
+    double? placeLongitude,
+    String? placeName,
+    String? note,
+    String? withWho,
+    int? rating,
+    List<String>? companionUserIds,
+    String? mealGroupId,
+    String? postType,
+    String? visibility,
+  }) {
+    return PostDraft(
+      photoUrl: photoUrl ?? this.photoUrl,
+      localImagePath: localImagePath ?? this.localImagePath,
+      placeGoogleId: placeGoogleId ?? this.placeGoogleId,
+      placeLatitude: placeLatitude ?? this.placeLatitude,
+      placeLongitude: placeLongitude ?? this.placeLongitude,
+      placeName: placeName ?? this.placeName,
+      note: note ?? this.note,
+      withWho: withWho ?? this.withWho,
+      rating: rating ?? this.rating,
+      companionUserIds: companionUserIds ?? this.companionUserIds,
+      mealGroupId: mealGroupId ?? this.mealGroupId,
+      postType: postType ?? this.postType,
+      visibility: visibility ?? this.visibility,
+    );
+  }
 }
 
 class PlacePostPreview {

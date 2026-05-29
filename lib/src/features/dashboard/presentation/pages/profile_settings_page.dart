@@ -104,6 +104,8 @@ class ProfileSettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          _FeedScopeSettingsSection(controller: controller),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 60,
@@ -152,6 +154,85 @@ class ProfileSettingsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FeedScopeSettingsSection extends StatefulWidget {
+  const _FeedScopeSettingsSection({required this.controller});
+
+  final AppShellController controller;
+
+  @override
+  State<_FeedScopeSettingsSection> createState() =>
+      _FeedScopeSettingsSectionState();
+}
+
+class _FeedScopeSettingsSectionState extends State<_FeedScopeSettingsSection> {
+  FeedTimelineScope? _selected;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    await widget.controller.loadFeedScopePreference();
+    if (!mounted) return;
+    setState(() {
+      _selected = widget.controller.feedTimelineScope;
+      _loading = false;
+    });
+  }
+
+  Future<void> _onSelect(FeedTimelineScope scope) async {
+    setState(() => _selected = scope);
+    await widget.controller.setDefaultFeedTimelineScope(scope);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('ホームの初期表示を「${scope.label}」にしました')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _selected == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ホームの初期表示',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'タイムラインを開いたときのデフォルトです。画面上部のチップでもいつでも切り替えられます。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        ...FeedTimelineScope.values.map(
+          (scope) => RadioListTile<FeedTimelineScope>(
+            value: scope,
+            groupValue: _selected,
+            onChanged: (v) {
+              if (v != null) _onSelect(v);
+            },
+            title: Text(scope.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(scope.description),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
     );
   }
 }

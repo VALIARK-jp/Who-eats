@@ -66,6 +66,86 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
+  Future<void> unfollowUser(String targetUserId) async {
+    if (!_useSupabase) return;
+    await _social.unfollowUser(targetUserId);
+  }
+
+  @override
+  Future<bool> togglePostLike(String postId) async {
+    if (!_useSupabase) return false;
+    return _social.togglePostLike(postId);
+  }
+
+  @override
+  Future<List<PostComment>> getPostComments(String postId) async {
+    if (!_useSupabase) return const [];
+    return _social.fetchPostComments(postId);
+  }
+
+  @override
+  Future<PostComment> createPostComment(String postId, String body) async {
+    if (!_useSupabase) {
+      throw StateError('comments require Supabase');
+    }
+    return _social.createPostComment(postId, body);
+  }
+
+  @override
+  Future<void> deletePostComment(String commentId) async {
+    if (!_useSupabase) return;
+    await _social.deletePostComment(commentId);
+  }
+
+  @override
+  Future<List<FriendCandidate>> searchUsersByCode(String query) async {
+    if (!_useSupabase) return const [];
+    return _social.searchUsersByCode(query);
+  }
+
+  @override
+  Future<void> softDeletePost(String postId) async {
+    if (!_useSupabase) return;
+    await _social.softDeletePost(postId);
+  }
+
+  @override
+  Future<List<RecordDayEntry>> getPostsForDay(DateTime dayLocal) async {
+    if (!_useSupabase) return const [];
+    return _social.fetchPostsForDay(dayLocal);
+  }
+
+  @override
+  Future<FeedPost?> getFeedPostById(String postId) async {
+    if (!_useSupabase) return null;
+    return _social.fetchFeedPostById(postId);
+  }
+
+  @override
+  Future<UserPublicProfile?> getUserPublicProfile(String userId) async {
+    if (!_useSupabase) return null;
+    return _social.fetchUserPublicProfile(userId);
+  }
+
+  @override
+  Future<void> blockUser(String userId) async {
+    if (!_useSupabase) return;
+    await _social.blockUser(userId);
+  }
+
+  @override
+  Future<void> unblockUser(String userId) async {
+    if (!_useSupabase) return;
+    await _social.unblockUser(userId);
+  }
+
+  @override
+  Future<List<PendingMealTag>> getPendingMealTags() async {
+    if (!_useSupabase) return const [];
+    return _social.listPendingMealTags();
+  }
+
+  @override
   Future<List<FriendCandidate>> getIncomingFriendRequests() async {
     if (!_useSupabase) return const [];
     return _social.fetchIncomingFriendRequests();
@@ -78,8 +158,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
-  Future<List<FeedPost>> getHomeFeed() async {
-    if (_useSupabase) return _social.fetchHomeFeed();
+  Future<List<FeedPost>> getHomeFeed({FeedTimelineScope scope = FeedTimelineScope.all}) async {
+    if (_useSupabase) return _social.fetchHomeFeed(scope: scope);
     return _dataSource.getHomeFeed();
   }
 

@@ -27,7 +27,8 @@ Who eats のダッシュボードで、**Supabase 実データ**と**意図的�
 | 「友達になる」フロー | `whoeats_follows` INSERT → `is_friends` で相互判定 | 要ログイン |
 | プロフィール（名前・ID・bio・アイコン） | `whoeats_users` | ゲスト表示 |
 | プロフィール（友達数） | 相互フォロー数 | 0 |
-| プロフィール（投稿グリッド） | 自分の `whoeats_posts` 画像 | 空 |
+| プロフィール（投稿グリッド） | 自分の `whoeats_posts` 画像 + **ピン留め**（`whoeats_profile_pins`） | 空 |
+| お気に入り投稿 | `whoeats_post_favorites` + 設定「お気に入りの投稿を見る」 | 要ログイン |
 | 記録（連続日数・今月の投稿日） | `streak_days` + 当月 `whoeats_posts` | ログイン促しメッセージ |
 | 通知 | RPC `list_inbox_notifications`（いいね・コメント） | 空 |
 | 店舗オートコンプリート | Google Places API | Google のみ（失敗時は空） |
@@ -100,9 +101,12 @@ UI ラベル: `友達` / `友達になる` / `承認待ち`（`FriendCandidate.a
 | DB スキーマ | `supabase/migrations/0001_init.sql` |
 | 未ログイン読取・友達 RPC | `supabase/migrations/202605280001_anon_read_and_social_rpc.sql` |
 | 友達申請 RPC | `supabase/migrations/202605280002_friend_follow_pending_rpc.sql` |
+| ピン留め・お気に入り | `supabase/migrations/202605280007_profile_pins_and_post_favorites.sql` |
+| **スプリント1 タスク表** | [sprint-1-active-20260529.md](./sprint-1-active-20260529.md) |
 
 ---
 
 ## 更新履歴
 
+- 2026-05-29: ピン留め・お気に入りを ✅ に追記。スプリント1タスク表リンク追加
 - 2026-05-28: 初版（実データ化後の残モック整理）
