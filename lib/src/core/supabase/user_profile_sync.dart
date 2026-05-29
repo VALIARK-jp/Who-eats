@@ -7,15 +7,21 @@ import 'supabase_tables.dart';
 ///
 /// Valiark 運用: デフォルトは `whoeats_users`（`id = auth.users.id`）。`0001_init` の
 /// `user_code` / `name` / `email` / `icon_path` など。`WHOEATS_SUPABASE_PROFILES_TABLE` で別表に切替可。
-Future<void> syncCurrentUserProfile() async {
+Future<void> syncCurrentUserProfile({
+  String? displayName,
+  String? iconUrl,
+}) async {
   final client = Supabase.instance.client;
   final user = client.auth.currentUser;
   if (user == null) return;
 
   final table = SupabaseTables.profiles;
 
-  final existing =
-      await client.from(table).select('id').eq('id', user.id).maybeSingle();
+  final existing = await client
+      .from(table)
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
   if (existing != null) {
     final email = user.email?.trim() ?? '';
     if (email.isNotEmpty) {
@@ -33,19 +39,21 @@ Future<void> syncCurrentUserProfile() async {
       ? email
       : '${user.id}@users.who-eats.placeholder';
 
-  final metaName = user.userMetadata?['name'];
-  final name = (metaName is String && metaName.trim().isNotEmpty)
-      ? metaName.trim()
+  final seedName = displayName?.trim();
+  final name = seedName != null && seedName.isNotEmpty
+      ? seedName
       : (email.contains('@') ? email.split('@').first : 'User');
 
-  final username = defaultUsernameFromAuthId(user.id);
+  final userCode = defaultUserCodeFromAuthId(user.id);
 
   try {
     await client.from(table).insert({
       'id': user.id,
-      'username': username,
+      'user_code': userCode,
       'name': name,
       'email': safeEmail,
+      if (iconUrl != null && iconUrl.trim().isNotEmpty)
+        'icon_path': iconUrl.trim(),
     });
   } on PostgrestException catch (e) {
     if (e.code == '23505') {
@@ -55,9 +63,9 @@ Future<void> syncCurrentUserProfile() async {
   }
 }
 
-/// `panda_profiles_username_format`: ^[A-Za-z0-9_]{3,30}$（先頭 w + UUID hex 29 文字 = 30）
-String defaultUsernameFromAuthId(String authUserId) {
+/// `users_user_code_format_check`: ^@[A-Za-z0-9_]+$（暫定 @w + UUID hex）
+String defaultUserCodeFromAuthId(String authUserId) {
   final hex = authUserId.replaceAll('-', '');
   final tail = hex.length >= 29 ? hex.substring(0, 29) : hex.padRight(29, '0');
-  return 'w$tail';
+  return '@w$tail';
 }

@@ -188,7 +188,15 @@ class _AppShellPageState extends State<AppShellPage> {
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
           backgroundColor: AppColors.black,
-          body: _FriendsPage(candidates: candidates),
+          body: Consumer<AppShellController>(
+            builder: (_, ctrl, __) => _FriendsPage(
+              friends: ctrl.friends,
+              incoming: ctrl.incomingFriendRequests,
+              outgoing: ctrl.outgoingPendingFollows,
+              recommendations: ctrl.friendRecommendations,
+              onFollow: ctrl.followUser,
+            ),
+          ),
         ),
       ),
     );
@@ -209,7 +217,7 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPlace: _openPlaceSheet,
             onOpenPostDetail: _openPostDetail,
-            onOpenFriends: () => _openFriendsPage(controller.friendCandidates),
+            onOpenFriends: () => _openFriendsPage(controller),
           ),
           _MapTab(
             mapPins: controller.mapPins,
@@ -520,7 +528,8 @@ class _MapTabState extends State<_MapTab> {
   GoogleMapController? _mapController;
   bool _edgeSwipeTriggered = false;
   double _edgeSwipeDelta = 0;
-  BitmapDescriptor? _microMarkerIcon;
+  BitmapDescriptor? _visitedMarkerIcon;
+  BitmapDescriptor? _unvisitedMarkerIcon;
   final Map<String, BitmapDescriptor> _clusterIconCache = {};
   final Set<String> _clusterIconLoading = {};
   final TextEditingController _searchController = TextEditingController();
@@ -1047,12 +1056,12 @@ class _MapTabState extends State<_MapTab> {
 
     return [
       for (int i = 0; i < pins.length; i++)
-        if (_visible3dPinOffsets.containsKey(pins[i].id))
+        if (_visible3dPinOffsets.containsKey(pins[i].id) &&
+            (postedIds.contains(pins[i].id) || pins[i].isFriendVisited))
           ..._buildSingle3dOverlayWithTapTarget(
             context,
             pins[i],
-            isPostedPin:
-                postedIds.contains(pins[i].id) || pins[i].isFriendVisited,
+            isPostedPin: true,
           ),
     ];
   }
@@ -1125,12 +1134,16 @@ class _MapTabState extends State<_MapTab> {
           Marker(
             markerId: MarkerId(pins[i].id),
             position: _latLngFor(pins[i], i),
-            icon:
-                _microMarkerIcon ??
-                BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueOrange,
-                ),
-            zIndexInt: 1,
+            icon: pins[i].isFriendVisited
+                ? (_visitedMarkerIcon ??
+                      BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueOrange,
+                      ))
+                : (_unvisitedMarkerIcon ??
+                      BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueAzure,
+                      )),
+            zIndexInt: pins[i].isFriendVisited ? 1 : 0,
             onTap: () async => _openMapBottomSheet(context, pins[i]),
           ),
       };
@@ -1179,8 +1192,8 @@ class _MapTabState extends State<_MapTab> {
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       zIndexInt: 3,
       infoWindow: InfoWindow(
-        title: 'この範囲に ${pins.length} 店',
-        snippet: visitedCount > 0 ? '来店ユーザーあり: $visitedCount 件' : '来店ユーザー情報なし',
+        title: '友達が来た店舗: $visitedCount件',
+        snippet: 'この範囲の全店舗: ${pins.length}店',
       ),
     );
   }
@@ -1217,23 +1230,38 @@ class _MapTabState extends State<_MapTab> {
   }
 
   Future<void> _prepareMarkerIcons() async {
-    final microBytes = await _drawMicroDotBytes(size: 8);
+    final visitedBytes = await _drawMicroDotBytes(
+      size: 24,
+      color: AppColors.orange.withValues(alpha: 0.85),
+    );
+    final unvisitedBytes = await _drawMicroDotBytes(
+      size: 16,
+      color: AppColors.gray.withValues(alpha: 0.65),
+    );
     if (!mounted) return;
     setState(() {
-      _microMarkerIcon = BitmapDescriptor.bytes(microBytes);
+      _visitedMarkerIcon = BitmapDescriptor.bytes(visitedBytes);
+      _unvisitedMarkerIcon = BitmapDescriptor.bytes(unvisitedBytes);
     });
   }
 
-  Future<Uint8List> _drawMicroDotBytes({required int size}) async {
+  Future<Uint8List> _drawMicroDotBytes({
+    required int size,
+    required Color color,
+  }) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final width = size.toDouble();
     final center = Offset(width / 2, width / 2);
     canvas.drawCircle(
       center,
-      width * 0.26,
-      Paint()..color = AppColors.orange.withValues(alpha: 0.67),
+      width * 0.28,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width * 0.08,
     );
+    canvas.drawCircle(center, width * 0.22, Paint()..color = color);
     final picture = recorder.endRecording();
     final image = await picture.toImage(width.toInt(), width.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -1250,14 +1278,18 @@ class _MapTabState extends State<_MapTab> {
     final width = size.toDouble();
     final center = Offset(width / 2, width / 2);
     final orange = AppColors.orange;
+    final baseColor =
+        visited > 0 ? AppColors.orange : AppColors.gray.withValues(alpha: 0.85);
 
     final glowPaint = Paint()
       ..color = orange.withValues(alpha: 0.24)
+      ..color = baseColor.withValues(alpha: 0.24)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
     canvas.drawCircle(center, width * 0.36, glowPaint);
 
     final corePaint = Paint()
       ..color = orange
+      ..color = baseColor
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, width * 0.26, corePaint);
 
@@ -1265,10 +1297,10 @@ class _MapTabState extends State<_MapTab> {
 
     final textPainter = TextPainter(
       text: TextSpan(
-        text: '$total',
+        text: '$visited',
         style: TextStyle(
           color: AppColors.blackElevated,
-          fontSize: width * 0.2,
+          fontSize: width * 0.26,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -1278,8 +1310,26 @@ class _MapTabState extends State<_MapTab> {
       canvas,
       Offset(
         center.dx - textPainter.width / 2,
-        center.dy - textPainter.height / 2,
+        center.dy - textPainter.height / 2 - (visited > 0 ? width * 0.05 : 0),
       ),
+    );
+
+    final visitedPainter = TextPainter(
+      text: TextSpan(
+        text: '友 $visited',
+        style: TextStyle(
+          color: visited > 0
+              ? AppColors.orangeHighlight
+              : AppColors.gray.withValues(alpha: 0.68),
+          fontSize: width * 0.13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    visitedPainter.paint(
+      canvas,
+      Offset(center.dx - visitedPainter.width / 2, center.dy + width * 0.08),
     );
 
     final avatarDots = visited.clamp(0, 8);
@@ -1291,6 +1341,7 @@ class _MapTabState extends State<_MapTab> {
       );
       canvas.drawCircle(dotCenter, width * 0.05, Paint()..color = Colors.white);
       canvas.drawCircle(dotCenter, width * 0.038, Paint()..color = orange);
+      canvas.drawCircle(dotCenter, width * 0.038, Paint()..color = baseColor);
     }
 
     final picture = recorder.endRecording();
@@ -1341,8 +1392,19 @@ class _ZoomButton extends StatelessWidget {
 }
 
 class _FriendsPage extends StatefulWidget {
-  const _FriendsPage({required this.candidates});
-  final List<FriendCandidate> candidates;
+  const _FriendsPage({
+    required this.friends,
+    required this.incoming,
+    required this.outgoing,
+    required this.recommendations,
+    required this.onFollow,
+  });
+
+  final List<FriendCandidate> friends;
+  final List<FriendCandidate> incoming;
+  final List<FriendCandidate> outgoing;
+  final List<FriendCandidate> recommendations;
+  final Future<bool> Function(String userId) onFollow;
 
   @override
   State<_FriendsPage> createState() => _FriendsPageState();
@@ -1364,104 +1426,125 @@ class _FriendsPageState extends State<_FriendsPage> {
     ).showSnackBar(SnackBar(content: Text('${c.name} のプロフィールは未実装（MVP）')));
   }
 
+  void _onBackPressed() {
+    if (_searchByConnection) {
+      setState(() => _searchByConnection = false);
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _onBackPressed,
+            tooltip: _searchByConnection ? '友達一覧に戻る' : '戻る',
+            style: IconButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(40, 40),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              _searchByConnection ? 'からむで探す' : '友達',
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool get _hasNoFriendsData =>
+      widget.friends.isEmpty &&
+      widget.incoming.isEmpty &&
+      widget.outgoing.isEmpty &&
+      widget.recommendations.isEmpty;
+
+  Widget _buildDiscoverButton() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: OrangeGlowButton(
+        width: double.infinity,
+        height: 42,
+        isEnabled: true,
+        borderRadius: 999,
+        onPressed: () => setState(() => _searchByConnection = true),
+        child: const Text(
+          'からむで探す',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.candidates.isEmpty) {
-      return SafeArea(
-        child: AppStateView(
-          type: AppStateType.empty,
-          title: '友達がいません',
-          message: 'まずはつながって、おすすめを広げよう。',
-        ),
-      );
-    }
     return SafeArea(
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.pop(context),
-                  style: IconButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(40, 40),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    '友達',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-                if (_searchByConnection)
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                    onPressed: () =>
-                        setState(() => _searchByConnection = false),
-                  ),
-              ],
-            ),
-          ),
+          _buildHeader(),
 
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '@user_codeで検索',
-                prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                suffixIcon: _searchController.text.trim().isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          if (!_searchByConnection)
+          if (!_searchByConnection) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: OrangeGlowButton(
-                width: double.infinity,
-                height: 42,
-                isEnabled: true,
-                borderRadius: 999,
-                onPressed: () => setState(() => _searchByConnection = true),
-                child: const Text(
-                  'からむで探す',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black,
-                  ),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: '@user_codeで検索',
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                  suffixIcon: _searchController.text.trim().isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                        )
+                      : null,
                 ),
               ),
             ),
-
-          const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            if (!_hasNoFriendsData) _buildDiscoverButton(),
+          ],
 
           Expanded(
             child: _searchByConnection
                 ? FriendSearchPage(
-                    candidates: widget.candidates,
+                    incoming: widget.incoming,
+                    outgoing: widget.outgoing,
+                    candidates: widget.recommendations,
                     onBack: () => setState(() => _searchByConnection = false),
                     onFriendTap: _onFriendTap,
+                    onFollow: widget.onFollow,
+                  )
+                : _hasNoFriendsData
+                ? Column(
+                    children: [
+                      const Expanded(
+                        child: AppStateView(
+                          type: AppStateType.empty,
+                          title: '友達がいません',
+                          message: '「からむで探す」から友達を見つけましょう。',
+                        ),
+                      ),
+                      _buildDiscoverButton(),
+                    ],
                   )
                 : FriendGrid(
-                    candidates: widget.candidates,
+                    candidates: widget.friends,
                     onFriendTap: _onFriendTap,
                   ),
           ),
@@ -1495,7 +1578,8 @@ class FriendGrid extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final item = candidates[index];
-        final showDot = item.isFollowing || item.mutualCount > 0;
+        final showDot =
+            item.isFriend || item.theyFollowMe || item.mutualCount > 0;
         return InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () => onFriendTap(item),
@@ -1525,21 +1609,28 @@ class FriendGrid extends StatelessWidget {
   }
 }
 
-/// 「からむで探す」検索UI（MVP: candidates の mock を並べる）
+/// 「からむで探す」: フォロー返し・承認待ち・おすすめ候補（🔶タグ行のみモック）。
 class FriendSearchPage extends StatelessWidget {
   const FriendSearchPage({
     super.key,
+    required this.incoming,
+    required this.outgoing,
     required this.candidates,
     required this.onBack,
     required this.onFriendTap,
+    required this.onFollow,
   });
 
+  final List<FriendCandidate> incoming;
+  final List<FriendCandidate> outgoing;
   final List<FriendCandidate> candidates;
   final VoidCallback onBack;
   final ValueChanged<FriendCandidate> onFriendTap;
+  final Future<bool> Function(String userId) onFollow;
 
   @override
   Widget build(BuildContext context) {
+    // 🔶 モック: DB 未整備（doc/mvp-mock-vs-real-data.md 参照）
     final recommendedTags = const ['グルメ', 'カフェ巡り', 'ラーメン', '焼肉', 'スイーツ', 'ランチ'];
 
     final sorted = [...candidates]
@@ -1550,6 +1641,48 @@ class FriendSearchPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (incoming.isNotEmpty) ...[
+          const Text(
+            'フォローされています',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'フォロー返しで友達（相互フォロー）になります',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...incoming.map((c) => _FriendCandidateRow(
+                candidate: c,
+                onFriendTap: onFriendTap,
+                onFollow: onFollow,
+              )),
+          const SizedBox(height: 18),
+        ],
+        if (outgoing.isNotEmpty) ...[
+          const Text(
+            '承認待ち',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '相手のフォロー返しを待っています',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...outgoing.map((c) => _FriendCandidateRow(
+                candidate: c,
+                onFriendTap: onFriendTap,
+                onFollow: onFollow,
+              )),
+          const SizedBox(height: 18),
+        ],
         const Text(
           '共通の友達が多い人',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
@@ -1562,7 +1695,8 @@ class FriendSearchPage extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             itemBuilder: (context, i) {
               final c = top[i];
-              final showDot = c.isFollowing || c.mutualCount > 0;
+              final showDot =
+                  c.isFriend || c.theyFollowMe || c.mutualCount > 0;
               return InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => onFriendTap(c),
@@ -1648,63 +1782,103 @@ class FriendSearchPage extends StatelessWidget {
         const SizedBox(height: 10),
 
         ...sorted.map(
-          (c) => InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => onFriendTap(c),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.blackElevated.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
+          (c) => _FriendCandidateRow(
+            candidate: c,
+            onFriendTap: onFriendTap,
+            onFollow: onFollow,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FriendCandidateRow extends StatelessWidget {
+  const _FriendCandidateRow({
+    required this.candidate,
+    required this.onFriendTap,
+    required this.onFollow,
+  });
+
+  final FriendCandidate candidate;
+  final ValueChanged<FriendCandidate> onFriendTap;
+  final Future<bool> Function(String userId) onFollow;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = candidate;
+    final subtitle = c.theyFollowMe && !c.iFollowThem
+        ? 'あなたをフォローしています'
+        : c.iFollowThem
+        ? 'フォロー返し待ち'
+        : '共通友達 ${c.mutualCount}人';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => onFriendTap(c),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.blackElevated.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            FriendAvatar(
+              displayName: c.name,
+              radius: 20,
+              showStatusDot:
+                  c.isFriend || c.theyFollowMe || c.mutualCount > 0,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FriendAvatar(
-                    displayName: c.name,
-                    radius: 20,
-                    showStatusDot: c.isFollowing || c.mutualCount > 0,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          c.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '共通友達 ${c.mutualCount}人',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    c.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
                   ),
-                  FilledButton(
-                    onPressed: () => onFriendTap(c),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.orange,
-                      foregroundColor: Colors.black,
-                      shape: const StadiumBorder(),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontWeight: FontWeight.w800,
                     ),
-                    child: Text(c.isFollowing ? 'フォロー中' : 'フォロー'),
                   ),
                 ],
               ),
             ),
-          ),
+            FilledButton(
+              onPressed: c.canFollow
+                  ? () async {
+                      final becameFriend = await onFollow(c.id);
+                      if (!context.mounted) return;
+                      final msg = becameFriend
+                          ? '${c.name} と友達になりました'
+                          : '${c.name} にフォローしました（相手のフォロー返しで友達になります）';
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(msg)));
+                    }
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.black,
+                shape: const StadiumBorder(),
+              ),
+              child: Text(c.actionLabel),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -2596,10 +2770,12 @@ class PostDetailPage extends StatelessWidget {
   final VoidCallback onClose;
 
   Future<void> _openWebsite(BuildContext context, PlaceDetail? place) async {
-    final raw = (((place?.websiteUrl ?? '').trim().isNotEmpty
-            ? place?.websiteUrl
-            : place?.googleMapsUrl) ??
-        '').trim();
+    final raw =
+        (((place?.websiteUrl ?? '').trim().isNotEmpty
+                    ? place?.websiteUrl
+                    : place?.googleMapsUrl) ??
+                '')
+            .trim();
     final uri = Uri.tryParse(raw);
     if (raw.isEmpty || uri == null || !uri.hasScheme) {
       _showSnack(context, '店舗サイトが見つかりません');
@@ -2626,7 +2802,9 @@ class PostDetailPage extends StatelessWidget {
   }
 
   void _showSnack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -2882,8 +3060,8 @@ class _PostPlaceActionPanel extends StatelessWidget {
     final openLabel = place?.openNow == null
         ? null
         : place!.openNow!
-            ? '営業中'
-            : '営業時間外';
+        ? '営業中'
+        : '営業時間外';
     final placeName = (place?.placeName ?? fallbackPlaceName).trim();
 
     return Container(
@@ -2898,7 +3076,11 @@ class _PostPlaceActionPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.storefront_outlined, size: 18, color: AppColors.orange),
+              const Icon(
+                Icons.storefront_outlined,
+                size: 18,
+                color: AppColors.orange,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2912,7 +3094,9 @@ class _PostPlaceActionPanel extends StatelessWidget {
                 Text(
                   openLabel,
                   style: TextStyle(
-                    color: place!.openNow! ? AppColors.orangeHighlight : Colors.white70,
+                    color: place!.openNow!
+                        ? AppColors.orangeHighlight
+                        : Colors.white70,
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),

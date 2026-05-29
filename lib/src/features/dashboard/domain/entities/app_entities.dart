@@ -78,14 +78,36 @@ class FriendCandidate {
     required this.name,
     required this.avatarUrl,
     required this.mutualCount,
-    required this.isFollowing,
+    required this.isFriend,
+    this.theyFollowMe = false,
+    this.iFollowThem = false,
   });
 
   final String id;
   final String name;
   final String avatarUrl;
+
+  /// 共通の友達（相互フォロー）の人数。おすすめ候補用。
   final int mutualCount;
-  final bool isFollowing;
+
+  /// 相互フォロー済み（友達）なら true。
+  final bool isFriend;
+
+  /// 相手が自分をフォロー済み（フォロー返しで友達になれる）。
+  final bool theyFollowMe;
+
+  /// 自分が相手をフォロー済みだが、まだ相互ではない（承認待ち）。
+  final bool iFollowThem;
+
+  /// 「友達になる」ボタンのラベル。
+  String get actionLabel {
+    if (isFriend) return '友達';
+    if (theyFollowMe && !iFollowThem) return '友達になる';
+    if (iFollowThem) return '承認待ち';
+    return '友達になる';
+  }
+
+  bool get canFollow => !isFriend && !iFollowThem;
 }
 
 class RecordSummary {
