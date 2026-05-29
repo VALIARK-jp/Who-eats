@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/config/app_config.dart';
 import '../../../../core/location/device_location.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/usecases/dashboard_usecases.dart';
@@ -15,6 +17,9 @@ class AppShellController extends ChangeNotifier {
     required FollowUserUseCase followUserUseCase,
     required GetRecordSummaryUseCase getRecordSummaryUseCase,
     required GetProfileOverviewUseCase getProfileOverviewUseCase,
+    required GetFavoritePostsUseCase getFavoritePostsUseCase,
+    required SetProfilePostPinnedUseCase setProfilePostPinnedUseCase,
+    required TogglePostFavoriteUseCase togglePostFavoriteUseCase,
     required GetNotificationsUseCase getNotificationsUseCase,
     required CreatePostDraftUseCase createPostDraftUseCase,
     required GetPlaceDetailUseCase getPlaceDetailUseCase,
@@ -31,6 +36,9 @@ class AppShellController extends ChangeNotifier {
        _followUserUseCase = followUserUseCase,
        _getRecordSummaryUseCase = getRecordSummaryUseCase,
        _getProfileOverviewUseCase = getProfileOverviewUseCase,
+       _getFavoritePostsUseCase = getFavoritePostsUseCase,
+       _setProfilePostPinnedUseCase = setProfilePostPinnedUseCase,
+       _togglePostFavoriteUseCase = togglePostFavoriteUseCase,
        _getNotificationsUseCase = getNotificationsUseCase,
        _createPostDraftUseCase = createPostDraftUseCase,
        _getPlaceDetailUseCase = getPlaceDetailUseCase,
@@ -48,6 +56,9 @@ class AppShellController extends ChangeNotifier {
   final FollowUserUseCase _followUserUseCase;
   final GetRecordSummaryUseCase _getRecordSummaryUseCase;
   final GetProfileOverviewUseCase _getProfileOverviewUseCase;
+  final GetFavoritePostsUseCase _getFavoritePostsUseCase;
+  final SetProfilePostPinnedUseCase _setProfilePostPinnedUseCase;
+  final TogglePostFavoriteUseCase _togglePostFavoriteUseCase;
   final GetNotificationsUseCase _getNotificationsUseCase;
   final CreatePostDraftUseCase _createPostDraftUseCase;
   final GetPlaceDetailUseCase _getPlaceDetailUseCase;
@@ -75,6 +86,47 @@ class AppShellController extends ChangeNotifier {
   Map<String, String> postedPlaceUserIcons = <String, String>{};
   double? deviceLatitude;
   double? deviceLongitude;
+
+  String? get currentUserId {
+    if (!AppConfig.hasSupabase) return null;
+    return Supabase.instance.client.auth.currentUser?.id;
+  }
+
+  FeedPost? feedPostById(String postId) {
+    for (final p in feed) {
+      if (p.id == postId) return p;
+    }
+    return null;
+  }
+
+  Future<void> refreshProfileOverview() async {
+    profileOverview = await _getProfileOverviewUseCase();
+    notifyListeners();
+  }
+
+  Future<List<FeedPost>> loadFavoritePosts() => _getFavoritePostsUseCase();
+
+  Future<FeedPost> togglePostFavoriteForPost(FeedPost post) async {
+    final favorited = await _togglePostFavoriteUseCase(post.id);
+    final updated = post.copyWith(isFavoritedByMe: favorited);
+    feed = [
+      for (final p in feed)
+        if (p.id == post.id) updated else p,
+    ];
+    notifyListeners();
+    return updated;
+  }
+
+  Future<FeedPost> setProfilePinForPost(FeedPost post, bool pin) async {
+    await _setProfilePostPinnedUseCase(post.id, pin);
+    final updated = post.copyWith(isPinnedOnMyProfile: pin);
+    feed = [
+      for (final p in feed)
+        if (p.id == post.id) updated else p,
+    ];
+    await refreshProfileOverview();
+    return updated;
+  }
 
   Future<void> initialize() async {
     _log('initialize start');

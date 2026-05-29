@@ -399,8 +399,26 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<ProfileOverview> getProfileOverview() async {
-    if (!_useSupabase) return _dataSource.getProfileOverview();
-    return _social.fetchProfileOverview();
+    if (_useSupabase) return _social.fetchProfileOverview();
+    return _dataSource.getProfileOverview();
+  }
+
+  @override
+  Future<List<FeedPost>> getFavoritePosts() async {
+    if (!_useSupabase) return const [];
+    return _social.fetchFavoritePosts();
+  }
+
+  @override
+  Future<void> setProfilePostPinned(String postId, bool pin) async {
+    if (!_useSupabase) return;
+    await _social.setProfilePostPinned(postId, pin);
+  }
+
+  @override
+  Future<bool> togglePostFavorite(String postId) async {
+    if (!_useSupabase) return false;
+    return _social.togglePostFavorite(postId);
   }
 
   @override

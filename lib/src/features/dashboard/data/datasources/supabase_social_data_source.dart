@@ -210,6 +210,8 @@ class SupabaseSocialDataSource {
       );
 
       final friendIds = await fetchMutualFriendIds();
+      final favoriteIds = await _fetchMyFavoritePostIds();
+      final pinnedIds = await _fetchMyPinnedPostIds();
       final list = <FeedPost>[];
       for (final row in rawRows) {
         final postId = row['id'].toString();
@@ -218,6 +220,8 @@ class SupabaseSocialDataSource {
           likes: reactionCounts[postId] ?? 0,
           comments: commentCounts[postId] ?? 0,
           friendIds: friendIds,
+          isFavoritedByMe: favoriteIds.contains(postId),
+          isPinnedOnMyProfile: pinnedIds.contains(postId),
         );
         if (post != null) list.add(post);
       }
@@ -255,11 +259,138 @@ class SupabaseSocialDataSource {
     }
   }
 
+  Future<Set<String>> _fetchMyFavoritePostIds() async {
+    final uid = _uid;
+    if (uid == null) return {};
+    try {
+      final rows = await _client
+          .from(SupabaseTables.postFavorites)
+          .select('post_id')
+          .eq('user_id', uid);
+      return (rows as List<dynamic>)
+          .map((r) => (r as Map<String, dynamic>)['post_id'].toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<Set<String>> _fetchMyPinnedPostIds() async {
+    final uid = _uid;
+    if (uid == null) return {};
+    try {
+      final rows = await _client
+          .from(SupabaseTables.profilePins)
+          .select('post_id')
+          .eq('user_id', uid);
+      return (rows as List<dynamic>)
+          .map((r) => (r as Map<String, dynamic>)['post_id'].toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> setProfilePostPinned(String postId, bool pin) async {
+    if (_uid == null) throw StateError('Not signed in');
+    await _client.rpc('set_profile_post_pinned', params: {
+      'p_post_id': postId,
+      'p_pin': pin,
+    });
+  }
+
+  Future<bool> togglePostFavorite(String postId) async {
+    if (_uid == null) throw StateError('Not signed in');
+    final result = await _client.rpc(
+      'toggle_post_favorite',
+      params: {'p_post_id': postId},
+    );
+    return result == true;
+  }
+
+  Future<List<FeedPost>> fetchFavoritePosts() async {
+    final uid = _uid;
+    if (uid == null) return const [];
+
+    try {
+      final favRows = await _client
+          .from(SupabaseTables.postFavorites)
+          .select('post_id, created_at')
+          .eq('user_id', uid)
+          .order('created_at', ascending: false);
+
+      final orderedIds = <String>[];
+      for (final raw in (favRows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        final id = (row['post_id'] ?? '').toString();
+        if (id.isNotEmpty) orderedIds.add(id);
+      }
+      if (orderedIds.isEmpty) return const [];
+
+      final tAuthor = SupabaseTables.postAuthorEmbed;
+      final tPlaces = SupabaseTables.places;
+      final tImages = SupabaseTables.postImages;
+      final rows = await _client
+          .from(SupabaseTables.posts)
+          .select('''
+            id,caption,created_at,post_type,user_id,
+            $tAuthor(name,icon_path,email),
+            $tPlaces(name,google_place_id),
+            $tImages(storage_path,display_order)
+          ''')
+          .inFilter('id', orderedIds)
+          .isFilter('deleted_at', null);
+
+      final byId = <String, Map<String, dynamic>>{};
+      for (final raw in (rows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        byId[row['id'].toString()] = row;
+      }
+
+      final postIds = orderedIds.where(byId.containsKey).toList();
+      final reactionCounts = await _countByPostId(
+        SupabaseTables.postReactions,
+        postIds,
+      );
+      final commentCounts = await _countByPostId(
+        SupabaseTables.postComments,
+        postIds,
+        deletedFilter: true,
+      );
+      final friendIds = await fetchMutualFriendIds();
+
+      final list = <FeedPost>[];
+      for (final id in orderedIds) {
+        final row = byId[id];
+        if (row == null) continue;
+        final post = await _feedPostFromRow(
+          row,
+          likes: reactionCounts[id] ?? 0,
+          comments: commentCounts[id] ?? 0,
+          friendIds: friendIds,
+          isFavoritedByMe: true,
+          isPinnedOnMyProfile: false,
+        );
+        if (post != null) list.add(post);
+      }
+      return list;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[SupabaseSocialDataSource] fetchFavoritePosts: $e\n$st');
+      }
+      return const [];
+    }
+  }
+
   Future<FeedPost?> _feedPostFromRow(
     Map<String, dynamic> row, {
     required int likes,
     required int comments,
     required Set<String> friendIds,
+    bool isFavoritedByMe = false,
+    bool isPinnedOnMyProfile = false,
   }) async {
     final tImages = SupabaseTables.postImages;
     final images = (row[tImages] as List<dynamic>? ?? [])
@@ -308,16 +439,40 @@ class SupabaseSocialDataSource {
 
     return FeedPost(
       id: row['id'].toString(),
+      userId: postUserId,
       userName: userName,
       userIconUrl: userIconUrl,
       placeName: placeName,
-      placeGoogleId: (place?['google_place_id'] ?? '').toString(),
+      placeGoogleId: (place?['google_place_id'] ?? '').toString().isEmpty
+          ? null
+          : (place?['google_place_id'] ?? '').toString(),
       caption: (row['caption'] ?? '').toString(),
       imageUrl: imageUrl,
       likes: likes,
       comments: comments,
       friendAvatars: friendAvatars,
+      isFavoritedByMe: isFavoritedByMe,
+      isPinnedOnMyProfile: isPinnedOnMyProfile,
     );
+  }
+
+  Future<({int followers, int following})> _followCounts(String uid) async {
+    try {
+      final followersRes = await _client
+          .from(SupabaseTables.follows)
+          .select('follower_id')
+          .eq('following_id', uid);
+      final followingRes = await _client
+          .from(SupabaseTables.follows)
+          .select('following_id')
+          .eq('follower_id', uid);
+      return (
+        followers: (followersRes as List<dynamic>).length,
+        following: (followingRes as List<dynamic>).length,
+      );
+    } catch (_) {
+      return (followers: 0, following: 0);
+    }
   }
 
   Future<ProfileOverview> fetchProfileOverview() async {
@@ -326,9 +481,11 @@ class SupabaseSocialDataSource {
       userCode: '',
       bio: '',
       avatarUrl: '',
-      friendCount: 0,
-      pinnedShots: [],
-      recentShots: [],
+      followers: 0,
+      following: 0,
+      friends: 0,
+      pinnedPosts: [],
+      recentPosts: [],
     );
 
     final uid = _uid;
@@ -342,7 +499,9 @@ class SupabaseSocialDataSource {
           .maybeSingle();
 
       final friends = await fetchFriends();
-      final shots = await _fetchMyPostImageUrls(uid, limit: 12);
+      final counts = await _followCounts(uid);
+      final pinnedPosts = await _fetchProfilePostThumbs(uid, pinnedOnly: true);
+      final recentPosts = await _fetchProfilePostThumbs(uid, pinnedOnly: false);
 
       if (row == null) {
         return ProfileOverview(
@@ -350,9 +509,11 @@ class SupabaseSocialDataSource {
           userCode: '',
           bio: '',
           avatarUrl: '',
-          friendCount: friends.length,
-          pinnedShots: shots.take(3).toList(),
-          recentShots: shots,
+          followers: counts.followers,
+          following: counts.following,
+          friends: friends.length,
+          pinnedPosts: pinnedPosts,
+          recentPosts: recentPosts,
         );
       }
 
@@ -368,9 +529,11 @@ class SupabaseSocialDataSource {
         userCode: userCode,
         bio: bio,
         avatarUrl: avatarUrl,
-        friendCount: friends.length,
-        pinnedShots: shots.take(3).toList(),
-        recentShots: shots,
+        followers: counts.followers,
+        following: counts.following,
+        friends: friends.length,
+        pinnedPosts: pinnedPosts,
+        recentPosts: recentPosts,
       );
     } catch (e, st) {
       if (kDebugMode) {
@@ -380,34 +543,57 @@ class SupabaseSocialDataSource {
     }
   }
 
-  Future<List<String>> _fetchMyPostImageUrls(String uid, {int limit = 12}) async {
+  Future<List<ProfilePostThumb>> _fetchProfilePostThumbs(
+    String uid, {
+    required bool pinnedOnly,
+    int limit = 24,
+  }) async {
     try {
-      final tImages = SupabaseTables.postImages;
-      final rows = await _client
-          .from(SupabaseTables.posts)
-          .select('id, $tImages(storage_path, display_order)')
-          .eq('user_id', uid)
-          .isFilter('deleted_at', null)
-          .order('created_at', ascending: false)
-          .limit(limit);
+      final pinRows = await _client
+          .from(SupabaseTables.profilePins)
+          .select('post_id')
+          .eq('user_id', uid);
+      final pinnedIds = (pinRows as List<dynamic>)
+          .map((r) => (r['post_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toSet();
 
-      final urls = <String>[];
+      final tImages = SupabaseTables.postImages;
+      var query = _client
+          .from(SupabaseTables.posts)
+          .select('id, created_at, $tImages(storage_path, display_order)')
+          .eq('user_id', uid)
+          .isFilter('deleted_at', null);
+
+      final rows = await query.order('created_at', ascending: false).limit(limit * 2);
+
+      final thumbs = <ProfilePostThumb>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
+        final postId = row['id'].toString();
+        final isPinned = pinnedIds.contains(postId);
+        if (pinnedOnly != isPinned) continue;
+
         final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
         if (images.isEmpty) continue;
         images.sort(
           (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
-            ((b['display_order'] as num?) ?? 0),
+            (b['display_order'] as num?) ?? 0,
           ),
         );
         final path = (images.first['storage_path'] ?? '').toString();
         final url = await SupabaseStorageUrls.signedPostImage(_client, path);
-        if (url != null && url.isNotEmpty) urls.add(url);
+        if (url == null || url.isEmpty) continue;
+        thumbs.add(ProfilePostThumb(postId: postId, imageUrl: url));
+        final cap = pinnedOnly ? 3 : limit;
+        if (thumbs.length >= cap) break;
       }
-      return urls;
-    } catch (_) {
+      return thumbs;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[SupabaseSocialDataSource] _fetchProfilePostThumbs: $e\n$st');
+      }
       return const [];
     }
   }

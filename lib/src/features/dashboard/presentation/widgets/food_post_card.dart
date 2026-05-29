@@ -12,10 +12,16 @@ class FoodPostCard extends StatelessWidget {
     super.key,
     required this.post,
     this.onTap,
+    this.currentUserId,
+    this.onToggleFavorite,
+    this.onTogglePin,
   });
 
   final FeedPost post;
   final VoidCallback? onTap;
+  final String? currentUserId;
+  final VoidCallback? onToggleFavorite;
+  final VoidCallback? onTogglePin;
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +41,12 @@ class FoodPostCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _TopRow(post: post),
+              _TopRow(
+                post: post,
+                currentUserId: currentUserId,
+                onToggleFavorite: onToggleFavorite,
+                onTogglePin: onTogglePin,
+              ),
               const SizedBox(height: 10),
               _PhotoBlock(post: post),
               const SizedBox(height: 10),
@@ -70,12 +81,22 @@ class FoodPostCard extends StatelessWidget {
 }
 
 class _TopRow extends StatelessWidget {
-  const _TopRow({required this.post});
+  const _TopRow({
+    required this.post,
+    this.currentUserId,
+    this.onToggleFavorite,
+    this.onTogglePin,
+  });
 
   final FeedPost post;
+  final String? currentUserId;
+  final VoidCallback? onToggleFavorite;
+  final VoidCallback? onTogglePin;
 
   @override
   Widget build(BuildContext context) {
+    final uid = currentUserId ?? '';
+    final isOwn = uid.isNotEmpty && post.userId == uid;
     final hasNetwork = post.userIconUrl != null &&
         post.userIconUrl!.isNotEmpty &&
         (post.userIconUrl!.startsWith('http://') ||
@@ -92,6 +113,36 @@ class _TopRow extends StatelessWidget {
           child: hasNetwork ? null : Text(initial, style: const TextStyle(fontWeight: FontWeight.w800)),
         ),
         const SizedBox(width: 10),
+        if (isOwn && onTogglePin != null)
+          IconButton(
+            tooltip: post.isPinnedOnMyProfile ? 'ピン留めを外す' : 'プロフィールにピン留め',
+            onPressed: onTogglePin,
+            icon: Icon(
+              post.isPinnedOnMyProfile ? Icons.push_pin : Icons.push_pin_outlined,
+              size: 20,
+              color: post.isPinnedOnMyProfile
+                  ? AppColors.orangeAccent
+                  : Colors.white70,
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          )
+        else if (!isOwn && onToggleFavorite != null)
+          IconButton(
+            tooltip: post.isFavoritedByMe ? 'お気に入りを外す' : 'お気に入り',
+            onPressed: onToggleFavorite,
+            icon: Icon(
+              post.isFavoritedByMe ? Icons.bookmark : Icons.bookmark_border,
+              size: 20,
+              color: post.isFavoritedByMe
+                  ? AppColors.orangeAccent
+                  : Colors.white70,
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,7 +197,7 @@ class _PhotoBlock extends StatelessWidget {
             height: 260,
             width: double.infinity,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
+            errorBuilder: (_, _, _) => Container(
               height: 260,
               width: double.infinity,
               color: AppColors.cardElevated,

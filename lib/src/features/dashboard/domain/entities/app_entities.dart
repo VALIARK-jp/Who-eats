@@ -1,6 +1,7 @@
 class FeedPost {
   const FeedPost({
     required this.id,
+    required this.userId,
     required this.userName,
     this.userIconUrl,
     required this.placeName,
@@ -10,9 +11,12 @@ class FeedPost {
     required this.likes,
     required this.comments,
     required this.friendAvatars,
+    this.isFavoritedByMe = false,
+    this.isPinnedOnMyProfile = false,
   });
 
   final String id;
+  final String userId;
   final String userName;
   final String? userIconUrl;
   final String placeName;
@@ -22,6 +26,39 @@ class FeedPost {
   final int likes;
   final int comments;
   final List<String> friendAvatars;
+  final bool isFavoritedByMe;
+  final bool isPinnedOnMyProfile;
+
+  FeedPost copyWith({
+    bool? isFavoritedByMe,
+    bool? isPinnedOnMyProfile,
+  }) {
+    return FeedPost(
+      id: id,
+      userId: userId,
+      userName: userName,
+      userIconUrl: userIconUrl,
+      placeName: placeName,
+      placeGoogleId: placeGoogleId,
+      caption: caption,
+      imageUrl: imageUrl,
+      likes: likes,
+      comments: comments,
+      friendAvatars: friendAvatars,
+      isFavoritedByMe: isFavoritedByMe ?? this.isFavoritedByMe,
+      isPinnedOnMyProfile: isPinnedOnMyProfile ?? this.isPinnedOnMyProfile,
+    );
+  }
+}
+
+class ProfilePostThumb {
+  const ProfilePostThumb({
+    required this.postId,
+    required this.imageUrl,
+  });
+
+  final String postId;
+  final String imageUrl;
 }
 
 class MapPin {
@@ -132,20 +169,28 @@ class ProfileOverview {
     required this.userCode,
     required this.bio,
     required this.avatarUrl,
-    required this.friendCount,
-    required this.pinnedShots,
-    required this.recentShots,
+    required this.followers,
+    required this.following,
+    required this.friends,
+    required this.pinnedPosts,
+    required this.recentPosts,
   });
 
   final String name;
   final String userCode;
   final String bio;
   final String avatarUrl;
+  final int followers;
+  final int following;
+  final int friends;
+  final List<ProfilePostThumb> pinnedPosts;
+  final List<ProfilePostThumb> recentPosts;
 
-  /// 相互フォロー（友達）の人数のみ。
-  final int friendCount;
-  final List<String> pinnedShots;
-  final List<String> recentShots;
+  List<String> get pinnedShots =>
+      pinnedPosts.map((p) => p.imageUrl).where((u) => u.isNotEmpty).toList();
+
+  List<String> get recentShots =>
+      recentPosts.map((p) => p.imageUrl).where((u) => u.isNotEmpty).toList();
 }
 
 class AppNotification {

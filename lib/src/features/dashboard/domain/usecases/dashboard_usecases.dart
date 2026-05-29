@@ -110,6 +110,25 @@ class GetProfileOverviewUseCase {
   Future<ProfileOverview> call() => _repository.getProfileOverview();
 }
 
+class GetFavoritePostsUseCase {
+  const GetFavoritePostsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FeedPost>> call() => _repository.getFavoritePosts();
+}
+
+class SetProfilePostPinnedUseCase {
+  const SetProfilePostPinnedUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(String postId, bool pin) =>
+      _repository.setProfilePostPinned(postId, pin);
+}
+
+class TogglePostFavoriteUseCase {
+  const TogglePostFavoriteUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<bool> call(String postId) => _repository.togglePostFavorite(postId);
+}
+
 class GetNotificationsUseCase {
   const GetNotificationsUseCase(this._repository);
   final DashboardRepository _repository;

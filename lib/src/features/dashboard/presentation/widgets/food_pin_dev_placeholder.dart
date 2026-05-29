@@ -33,13 +33,13 @@ class FoodPinDevPlaceholder extends StatelessWidget {
       headIcon = Image.network(
         iconUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _defaultHeadIcon(),
+        errorBuilder: (_, _, _) => _defaultHeadIcon(),
       );
     } else if (iconAsset != null && iconAsset.isNotEmpty) {
       headIcon = Image.asset(
         iconAsset,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _defaultHeadIcon(),
+        errorBuilder: (_, _, _) => _defaultHeadIcon(),
       );
     } else {
       headIcon = _defaultHeadIcon();

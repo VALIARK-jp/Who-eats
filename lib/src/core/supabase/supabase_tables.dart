@@ -13,6 +13,8 @@ abstract final class SupabaseTables {
   static String get follows => _prefixed('follows');
   static String get postReactions => _prefixed('post_reactions');
   static String get postComments => _prefixed('post_comments');
+  static String get profilePins => _prefixed('profile_pins');
+  static String get postFavorites => _prefixed('post_favorites');
 
   static String _prefixed(String base) {
     final p = AppConfig.dbTablePrefix;
