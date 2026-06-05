@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Who eats - 中間発表スライド</title>
+    <link rel="icon" type="image/png" href="assets/images/icon.PNG">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@500;700&display=swap" rel="stylesheet">
@@ -147,7 +148,7 @@ body {
 }
 .slide-container.slide--title-page {
   justify-content: stretch;
-  padding: 32px 44px 36px;
+  padding: 0;
 }
 
 /* 各スライド共通ロゴ（表紙除く） */
@@ -427,16 +428,40 @@ body {
 /* UIサムネイル列 */
 .ui-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
+  align-items: start;
 }
-.ui-strip .image-wrapper {
-  height: 100%;
-  min-height: 160px;
-  max-height: 220px;
+.ui-strip .flow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.ui-strip .flow-card h3 {
+  font-size: 18px;
+  margin: 0;
+  color: #ff007f;
+  text-align: left;
+}
+.ui-strip .flow-card p {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  margin: 0 !important;
+  color: #e2e8f0;
+}
+.ui-strip .flow-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: top center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 /* 2カラム進捗 */
@@ -518,65 +543,49 @@ body {
   height: auto !important;
 }
 
-/* 表紙：左＝テキスト、右＝ポスター */
+/* 表紙：ロゴを全面表示 */
 #slide1 .hero-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 36px;
+  display: block;
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
-  align-items: stretch;
 }
-#slide1 .hero-left {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-#slide1 .hero-brand-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 14px;
-}
-#slide1 .hero-logo-mark {
-  width: 76px;
-  height: 76px;
-  border-radius: 18px;
-  object-fit: cover;
-  flex-shrink: 0;
-  border: 2px solid #ff007f;
-  box-shadow: 0 0 20px rgba(255, 0, 127, 0.5);
-}
-#slide1 .hero-brand-row .en-title {
-  font-size: 58px;
-  margin-bottom: 0;
-  line-height: 1.05;
-}
-#slide1 .hero-left .subtitle {
-  margin: 0 0 12px;
-  font-size: 22px;
-  text-align: left;
-}
-#slide1 .hero-left p { margin-bottom: 10px; text-align: left; }
-#slide1 .hero-right {
+#slide1 .hero-full {
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 100%;
   min-height: 0;
-  border-radius: 16px;
+  border-radius: 0;
   overflow: hidden;
-  border: 1px solid #333;
-  background: #0a0a0a;
-  box-shadow: 0 0 24px rgba(255, 170, 0, 0.12);
+  background: #000;
 }
-#slide1 .hero-poster {
+#slide1 .hero-logo-full {
   width: 100%;
   height: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
+}
+#slide1 .hero-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 36px;
+  text-align: center;
+  color: #ffffff;
+  text-shadow: 0 0 18px rgba(255, 0, 127, 0.45);
+  pointer-events: none;
+}
+#slide1 .hero-caption .hero-caption-main {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+#slide1 .hero-caption .hero-caption-sub {
+  margin-top: 10px;
+  font-size: 18px;
+  color: #ffcc88;
+  font-weight: 700;
 }
 
 /* 社会課題：中央に利用イメージを大きく */
@@ -640,6 +649,59 @@ body {
 }
 #slide4 .tiled-content { gap: 18px; }
 
+/* Slide 5 は4枚のスマホ画像をしっかり見せるため縦に伸ばす */
+#slide5 {
+  height: auto;
+  min-height: 980px;
+}
+#slide5 .content-area {
+  padding-bottom: 0;
+  justify-content: flex-start;
+}
+#slide5 .ui-strip {
+  align-items: stretch;
+}
+#slide5 .ui-strip .flow-card h3,
+#slide5 .ui-strip .flow-card p {
+  display: none;
+}
+#slide5 .ui-strip .flow-card img {
+  height: 660px;
+}
+
+/* ポスター表示 */
+#slide11 {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  background: #000;
+  align-items: stretch;
+  justify-content: stretch;
+}
+#slide11::before,
+#slide11::after {
+  display: none;
+}
+#slide11 .content-area {
+  margin-top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+#slide11 .poster-full {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+#slide11 .poster-full img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 p:last-child { margin-bottom: 0; }
 </style>
 
@@ -670,27 +732,19 @@ p:last-child { margin-bottom: 0; }
 <!-- Slide 1: 表紙 -->
 <div class="slide-container slide--title-page" id="slide1">
     <div class="hero-split">
-        <div class="hero-left">
-            <div class="hero-brand-row">
-                <img src="assets/images/logo.PNG" alt="Who eats" class="hero-logo-mark">
-                <h1 class="en-title">Who eats</h1>
+        <div class="hero-full">
+            <img src="assets/images/logo.jpg" alt="Who eats ロゴ" class="hero-logo-full">
+            <div class="hero-caption">
+                <div class="hero-caption-main">大阪大学基礎工学部情報科学科 B2 PBL 1班</div>
+                <div class="hero-caption-sub">Who eats</div>
             </div>
-            <p class="subtitle">続く食の記録で、偏らない食生活を。</p>
-            <p style="font-size: 17px; font-weight: 700; color: #a1a1aa;">一人暮らし大学生の食生活を、友達との共有と地図で支える食事SNS</p>
-            <p style="font-weight: 700; color: #ffaa00; font-family: 'Poppins', sans-serif; font-size: 17px; letter-spacing: 0.5px; margin-top: 20px;">
-                Flutter / Supabase / PostgreSQL / Google Maps
-            </p>
-            <p style="font-size: 15px; color: #a1a1aa;">基礎工学 PBL（情報工学 A）— 1班 · 中間発表</p>
-        </div>
-        <div class="hero-right">
-            <img src="assets/images/poster.png" alt="Who eats ポスター" class="hero-poster">
         </div>
     </div>
 </div>
 
 <!-- Slide 2: 社会課題 -->
 <div class="slide-container" id="slide2">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">社会課題：一人暮らしと偏食</h2>
     <div class="content-area slide2-layout">
         <p class="slide2-lead">食事管理が「完全な自己責任」へ — 一人暮らしで食生活が崩れやすい</p>
@@ -713,7 +767,7 @@ p:last-child { margin-bottom: 0; }
 
 <!-- Slide 3: 既存サービスの限界 -->
 <div class="slide-container" id="slide3">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">既存サービスの限界とポジショニング</h2>
     <div class="content-area">
         <div class="table-layout">
@@ -759,7 +813,7 @@ p:last-child { margin-bottom: 0; }
 
 <!-- Slide 4: 解決案 -->
 <div class="slide-container" id="slide4">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">解決案：食事投稿 SNS + 地図</h2>
     <div class="content-area">
         <div class="callout-band">
@@ -788,7 +842,7 @@ p:last-child { margin-bottom: 0; }
 
 <!-- Slide 5: 体験フロー -->
 <div class="slide-container" id="slide5">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">ユーザー体験フロー<span class="slide-title-sub">実装済み・デモ可能</span></h2>
     <div class="content-area" style="justify-content: flex-start;">
         <div class="step-row">
@@ -810,17 +864,31 @@ p:last-child { margin-bottom: 0; }
             </div>
         </div>
         <div class="ui-strip">
-            <div class="image-wrapper"><img src="https://placehold.co/400x700/0a0a0a/ff007f?text=Post" alt="投稿"></div>
-            <div class="image-wrapper"><img src="https://placehold.co/400x700/0a0a0a/ff007f?text=Feed" alt="フィード"></div>
-            <div class="image-wrapper"><img src="https://placehold.co/400x700/0a0a0a/ffaa00?text=Map" alt="地図"></div>
-            <div class="image-wrapper"><img src="https://placehold.co/400x700/0a0a0a/ffaa00?text=Profile" alt="プロフィール"></div>
+            <div class="flow-card">
+                <h3>1. 記録・投稿</h3>
+                <p>写真でサクッと投稿</p>
+                <img src="assets/images/profile.png" alt="記録・投稿画面">
+            </div>
+            <div class="flow-card">
+                <h3>2. 共有・反応</h3>
+                <p>友達フィードで交流</p>
+                <img src="assets/images/feed.png" alt="共有・反応画面">
+            </div>
+            <div class="flow-card">
+                <h3>3. 選択肢の拡大</h3>
+                <p>地図で友達のお店を発見</p>
+                <img src="assets/images/map.png" alt="選択肢の拡大画面">
+            </div>
+            <div class="flow-card">
+                <img src="assets/images/report.png" alt="振り返り画面">
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Slide 6: システム構成図 -->
 <div class="slide-container" id="slide6">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">システム構成</h2>
     <div class="content-area">
         <div class="two-column diagram-split">
@@ -872,7 +940,7 @@ flowchart TB
 
 <!-- Slide 7: データフロー -->
 <div class="slide-container" id="slide7">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">データフロー：投稿からフィード・地図表示まで</h2>
     <div class="content-area">
         <div class="two-column diagram-split" style="grid-template-columns: 1.05fr 0.95fr;">
@@ -908,7 +976,7 @@ flowchart TD
 
 <!-- Slide 8: セキュリティ・信頼性 -->
 <div class="slide-container" id="slide8">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">信頼性とセキュリティ設計</h2>
     <div class="content-area">
         <p style="font-size: 17px; margin-bottom: 18px; text-align: center;">信頼性は「友達ベースのサービス設計」と「DBレベルの技術設計」の2層で担保します。</p>
@@ -935,7 +1003,7 @@ flowchart TD
 
 <!-- Slide 9: DB設計とクリーンアーキテクチャ -->
 <div class="slide-container" id="slide9">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">DB設計とクリーンアーキテクチャ</h2>
     <div class="content-area">
         <div class="two-column diagram-split">
@@ -983,7 +1051,7 @@ erDiagram
 
 <!-- Slide 10: 進捗・Phase 1・スケジュール -->
 <div class="slide-container" id="slide10">
-    <img src="assets/images/logo.PNG" alt="Who eats" class="slide-logo">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
     <h2 class="slide-title">進捗・Phase 1・今後のスケジュール</h2>
     <div class="content-area" style="justify-content: flex-start;">
         <div class="progress-grid">
@@ -1033,6 +1101,15 @@ erDiagram
         <p style="text-align: center; font-size: 15px; color: #a1a1aa; margin-top: 8px; margin-bottom: 0;">
             「続く食の記録で、偏らない食生活を支える」
         </p>
+    </div>
+</div>
+
+<!-- Slide 11: アプリポスター -->
+<div class="slide-container" id="slide11">
+    <div class="content-area">
+        <div class="poster-full">
+            <img src="assets/images/poster.jpg" alt="Who eats アプリポスター">
+        </div>
     </div>
 </div>
 

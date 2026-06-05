@@ -531,11 +531,9 @@ class SupabaseSocialDataSource {
 
   Future<void> softDeletePost(String postId) async {
     if (_uid == null) throw StateError('Not signed in');
-    await _client
-        .from(SupabaseTables.posts)
-        .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
-        .eq('id', postId)
-        .eq('user_id', _uid!);
+    await _client.rpc('soft_delete_post', params: {
+      'p_post_id': postId,
+    });
   }
 
   Future<List<RecordDayEntry>> fetchPostsForDay(DateTime dayLocal) async {

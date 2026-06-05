@@ -47,13 +47,26 @@ class _AppShellPageState extends State<AppShellPage> {
   FeedPost? _activePostDetail;
   String? _activeUserProfileId;
   StreamSubscription<AuthState>? _authSub;
+  AppShellController? _controller;
+  int? _lastAuthUserHash;
 
   @override
   void initState() {
     super.initState();
     if (AppConfig.hasSupabase) {
-      _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
-        if (mounted) setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _controller = context.read<AppShellController>();
+        _lastAuthUserHash = Supabase.instance.client.auth.currentUser?.id.hashCode;
+        _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
+          AuthState data,
+        ) {
+          final newHash = data.session?.user.id.hashCode;
+          if (newHash == _lastAuthUserHash) return;
+          _lastAuthUserHash = newHash;
+          unawaited(_handleAuthChanged());
+        });
+        unawaited(_handleAuthChanged());
       });
     }
   }
@@ -62,6 +75,23 @@ class _AppShellPageState extends State<AppShellPage> {
   void dispose() {
     _authSub?.cancel();
     super.dispose();
+  }
+
+  Future<void> _handleAuthChanged() async {
+    if (!mounted) return;
+    final controller = _controller;
+    if (controller == null) return;
+    controller.changeBottomIndex(0);
+    controller.clearPostDraft();
+    controller.clearPendingPostDraft();
+    _activePlaceSheetPin = null;
+    _activePostDetail = null;
+    _activeUserProfileId = null;
+    _postEditorOpen = false;
+    setState(() {});
+    await controller.initialize();
+    if (!mounted) return;
+    setState(() {});
   }
 
   bool _showsSignedInGate(int bottomIndex) {
@@ -216,7 +246,7 @@ class _AppShellPageState extends State<AppShellPage> {
         builder: (context) => Scaffold(
           backgroundColor: AppColors.black,
           body: Consumer<AppShellController>(
-            builder: (_, ctrl, __) => _FriendsPage(
+            builder: (_, ctrl, child) => _FriendsPage(
               controller: ctrl,
               friends: ctrl.friends,
               incoming: ctrl.incomingFriendRequests,
@@ -248,6 +278,12 @@ class _AppShellPageState extends State<AppShellPage> {
             onOpenPlaceFromPost: (post) => _openPlaceFromPost(post, controller),
             onOpenPostDetail: _openPostDetail,
             onOpenFriends: _openFriendsPage,
+            onOpenDraft: () {
+              if (controller.postDraft != null) {
+                controller.changeBottomIndex(0);
+                _openPostEditor();
+              }
+            },
           ),
           _MapTab(
             mapPins: controller.mapPins,
@@ -256,7 +292,18 @@ class _AppShellPageState extends State<AppShellPage> {
             onSearchExpansionChanged: (_) {},
             onEdgeSwipeBack: () {},
           ),
-          _CameraPage(onShot: () => _onCameraPressed(context, controller)),
+          _CameraPage(
+            onShot: () => _startNewPostFlow(
+              context,
+              controller,
+              source: ImageSource.camera,
+            ),
+            onGalleryPressed: () => _startNewPostFlow(
+              context,
+              controller,
+              source: ImageSource.gallery,
+            ),
+          ),
           _RecordPage(
             summary: controller.recordSummary!,
             controller: controller,
@@ -405,54 +452,51 @@ class _AppShellPageState extends State<AppShellPage> {
           bottomNavigationBar: FloatingBottomNav(
             selectedIndex: controller.bottomIndex,
             onTabSelected: (index) => controller.changeBottomIndex(index),
-            onCameraPressed: () => controller.changeBottomIndex(2),
+            onCameraPressed: () =>
+                _startNewPostFlow(context, controller, source: ImageSource.camera),
           ),
         );
       },
     );
   }
 
-  Future<void> _onCameraPressed(
+  Future<void> _startNewPostFlow(
     BuildContext context,
     AppShellController controller,
+    {required ImageSource source}
   ) async {
-    if (AppConfig.hasSupabase) {
-      // 位置取得は時間がかかることがある。先にやるとカメラタブの真っ黒画面のまま長く待つことになるので、
-      // 先にカメラ／ピッカーを開き、撮影後に位置と最寄り店を解決する。
-      final file = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1600,
-        imageQuality: 88,
-      );
-      if (file == null) return;
+    // 画像の選択は先に行い、その後で現在地から最寄り店を補完する。
+    final file = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      imageQuality: 88,
+    );
+    if (file == null) return;
 
-      final loc = await controller.ensureDeviceLocation();
-      MapPin? nearest;
-      if (loc != null) {
-        nearest = await controller.resolvePlacePinFromCoordinate(
-          loc.lat,
-          loc.lng,
-        );
-      }
-
-      controller.setPostDraft(
-        PostDraft(
-          photoUrl: '',
-          localImagePath: file.path,
-          placeGoogleId: nearest?.id,
-          placeLatitude: nearest?.latitude,
-          placeLongitude: nearest?.longitude,
-          placeName: nearest?.placeName ?? '最寄り店を取得できませんでした',
-          note: '',
-          withWho: '',
-        ),
+    final loc = await controller.ensureDeviceLocation();
+    MapPin? nearest;
+    if (loc != null) {
+      nearest = await controller.resolvePlacePinFromCoordinate(
+        loc.lat,
+        loc.lng,
       );
-    } else {
-      await controller.openCameraFlow();
     }
 
+    controller.setPostDraft(
+      PostDraft(
+        photoUrl: '',
+        localImagePath: file.path,
+        placeGoogleId: nearest?.id,
+        placeLatitude: nearest?.latitude,
+        placeLongitude: nearest?.longitude,
+        placeName: nearest?.placeName ?? '',
+        note: '',
+        withWho: '',
+      ),
+    );
+
     if (!context.mounted || controller.postDraft == null) return;
-    // 撮影後もタブ2のままだと画面全体が黒ベースのままなので、編集シートはホーム上に載せる。
+    // 編集シートはホーム上に載せる。
     controller.changeBottomIndex(0);
     await Future<void>.delayed(Duration.zero);
     if (!context.mounted || controller.postDraft == null) return;
@@ -466,11 +510,13 @@ class _HomePage extends StatefulWidget {
     required this.onOpenPlaceFromPost,
     required this.onOpenPostDetail,
     required this.onOpenFriends,
+    required this.onOpenDraft,
   });
   final AppShellController controller;
   final ValueChanged<FeedPost> onOpenPlaceFromPost;
   final ValueChanged<FeedPost> onOpenPostDetail;
   final VoidCallback onOpenFriends;
+  final VoidCallback onOpenDraft;
 
   @override
   State<_HomePage> createState() => _HomePageState();
@@ -561,7 +607,7 @@ class _HomePageState extends State<_HomePage> {
                       onTap: () {
                         controller.setPostDraft(controller.pendingPostDraft!);
                         controller.clearPendingPostDraft();
-                        widget.controller.changeBottomIndex(0);
+                        widget.onOpenDraft();
                       },
                     ),
                   ),
@@ -593,7 +639,7 @@ class _HomePageState extends State<_HomePage> {
                             mealGroupId: tag.mealGroupId,
                           ),
                         );
-                        controller.changeBottomIndex(2);
+                        widget.onOpenDraft();
                       },
                     ),
                   ),
@@ -622,6 +668,14 @@ class _FeedTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = controller.currentUserId;
+    final myPosts = uid == null
+        ? const <FeedPost>[]
+        : feed.where((post) => post.userId == uid).toList();
+    final otherPosts = uid == null
+        ? feed
+        : feed.where((post) => post.userId != uid).toList();
+
     if (feed.isEmpty) {
       return AppStateView(
         type: AppStateType.empty,
@@ -629,51 +683,117 @@ class _FeedTab extends StatelessWidget {
         message: '撮影して、みんなの「おすすめ」を広げよう。',
       );
     }
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.fromLTRB(16, 220, 16, 120),
-      itemCount: feed.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 14),
-      itemBuilder: (context, index) {
-        final post = feed[index];
-        final uid = controller.currentUserId;
-        final isOwn = uid != null && uid.isNotEmpty && post.userId == uid;
-        return FoodPostCard(
-          post: post,
-          currentUserId: uid,
-          onTap: () => onTapPost(post),
-          onOpenPlace: () => onOpenPlaceFromPost(post),
-          onToggleLike: uid != null
-              ? () async {
-                  try {
-                    await controller.togglePostLikeForPost(post);
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$e')),
-                      );
+      children: [
+        if (myPosts.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.cardElevated.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.orange.withValues(alpha: 0.42)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.orange.withValues(alpha: 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.person_pin_circle_outlined,
+                  color: AppColors.orangeAccent,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'My Post',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${myPosts.length}件',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final post in myPosts) ...[
+            FoodPostCard(
+              post: post,
+              currentUserId: uid,
+              onTap: () => onTapPost(post),
+              onOpenPlace: () => onOpenPlaceFromPost(post),
+              onToggleLike: uid != null
+                  ? () async {
+                      try {
+                        await controller.togglePostLikeForPost(post);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('$e')),
+                          );
+                        }
+                      }
                     }
+                  : null,
+              onTogglePin: () async {
+                final pin = !post.isPinnedOnMyProfile;
+                try {
+                  await controller.setProfilePinForPost(post, pin);
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.toString())),
+                    );
                   }
                 }
-              : null,
-          onTogglePin: isOwn
-              ? () async {
-                  final pin = !post.isPinnedOnMyProfile;
-                  try {
-                    await controller.setProfilePinForPost(post, pin);
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(e.toString())),
-                      );
+              },
+              onToggleFavorite: null,
+            ),
+            const SizedBox(height: 14),
+          ],
+          const SizedBox(height: 4),
+        ],
+        for (var i = 0; i < otherPosts.length; i++) ...[
+          FoodPostCard(
+            post: otherPosts[i],
+            currentUserId: uid,
+            onTap: () => onTapPost(otherPosts[i]),
+            onOpenPlace: () => onOpenPlaceFromPost(otherPosts[i]),
+            onToggleLike: uid != null
+                ? () async {
+                    try {
+                      await controller.togglePostLikeForPost(otherPosts[i]);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('$e')),
+                        );
+                      }
                     }
                   }
-                }
-              : null,
-          onToggleFavorite: !isOwn && uid != null
-              ? () => controller.togglePostFavoriteForPost(post)
-              : null,
-        );
-      },
+                : null,
+            onTogglePin: null,
+            onToggleFavorite: uid != null
+                ? () => controller.togglePostFavoriteForPost(otherPosts[i])
+                : null,
+          ),
+          if (i != otherPosts.length - 1) const SizedBox(height: 14),
+        ],
+      ],
     );
   }
 }
@@ -2208,8 +2328,12 @@ class _FriendCandidateRow extends StatelessWidget {
 }
 
 class _CameraPage extends StatelessWidget {
-  const _CameraPage({required this.onShot});
+  const _CameraPage({
+    required this.onShot,
+    required this.onGalleryPressed,
+  });
   final VoidCallback onShot;
+  final VoidCallback onGalleryPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -2249,6 +2373,15 @@ class _CameraPage extends StatelessWidget {
                     height: 1.35,
                   ),
                   textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: 220,
+                child: OutlinedButton.icon(
+                  onPressed: onGalleryPressed,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('ギャラリーから選ぶ'),
                 ),
               ),
             ],
@@ -2925,21 +3058,30 @@ class _PostCreationPageState extends State<PostCreationPage> {
   late final TextEditingController _placeController;
   late String _postType;
   late String _visibility;
+  String? _localImagePath;
+  String? _photoUrl;
   bool _submitting = false;
   String? _selectedPlaceGoogleId;
   double? _selectedPlaceLat;
   double? _selectedPlaceLng;
+  String _selectedPlaceName = '';
   int? _rating;
   final Set<String> _companionIds = {};
+  Timer? _placeSearchDebounce;
+  bool _suppressPlaceChange = false;
+  bool _resolvingPlace = false;
 
   @override
   void initState() {
     super.initState();
     _captionController = TextEditingController(text: widget.draft.note);
     _placeController = TextEditingController(text: widget.draft.placeName);
+    _localImagePath = widget.draft.localImagePath;
+    _photoUrl = widget.draft.photoUrl;
     _selectedPlaceGoogleId = widget.draft.placeGoogleId;
     _selectedPlaceLat = widget.draft.placeLatitude;
     _selectedPlaceLng = widget.draft.placeLongitude;
+    _selectedPlaceName = widget.draft.placeName;
     _postType = widget.draft.postType;
     _visibility = widget.draft.visibility;
     _rating = widget.draft.rating;
@@ -2948,6 +3090,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
 
   @override
   void dispose() {
+    _placeSearchDebounce?.cancel();
     _captionController.dispose();
     _placeController.dispose();
     super.dispose();
@@ -2964,15 +3107,135 @@ class _PostCreationPageState extends State<PostCreationPage> {
     }
   }
 
+  String _currentPlaceName() {
+    final text = _placeController.text.trim();
+    if (text.isNotEmpty) return text;
+    return _selectedPlaceName;
+  }
+
+  String _currentCaption() => _captionController.text.trim();
+
+  PostDraft _currentDraft() {
+    return widget.draft.copyWith(
+      photoUrl: _photoUrl ?? widget.draft.photoUrl,
+      localImagePath: _localImagePath ?? widget.draft.localImagePath,
+      placeGoogleId: _selectedPlaceGoogleId,
+      placeLatitude: _selectedPlaceLat,
+      placeLongitude: _selectedPlaceLng,
+      placeName: _currentPlaceName(),
+      note: _currentCaption(),
+      withWho: widget.draft.withWho,
+      rating: _rating,
+      companionUserIds: _companionIds.toList(),
+      mealGroupId: widget.draft.mealGroupId,
+      postType: _postType,
+      visibility: _visibility,
+    );
+  }
+
+  void _clearPlaceSuggestions() {
+    widget.controller.clearPlaceSuggestions();
+  }
+
+  void _schedulePlaceSearch(String query) {
+    _placeSearchDebounce?.cancel();
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _clearPlaceSuggestions();
+      return;
+    }
+    _placeSearchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      widget.controller.searchPlaceSuggestions(trimmed);
+    });
+  }
+
+  void _onPlaceChanged(String value) {
+    if (_suppressPlaceChange) return;
+    setState(() {
+      _selectedPlaceGoogleId = null;
+      _selectedPlaceLat = null;
+      _selectedPlaceLng = null;
+      _selectedPlaceName = value;
+    });
+    _schedulePlaceSearch(value);
+  }
+
+  Future<void> _choosePlaceSuggestion(PlaceSuggestion suggestion) async {
+    if (_resolvingPlace) return;
+    _placeSearchDebounce?.cancel();
+    _clearPlaceSuggestions();
+    setState(() => _resolvingPlace = true);
+    try {
+      final detail = await widget.controller.getPlaceDetail(suggestion.placeId);
+      if (!mounted) return;
+      final resolvedName = detail.placeName.isNotEmpty
+          ? detail.placeName
+          : suggestion.description;
+      _suppressPlaceChange = true;
+      _placeController.text = resolvedName;
+      _selectedPlaceGoogleId = detail.placeId;
+      _selectedPlaceLat = detail.latitude;
+      _selectedPlaceLng = detail.longitude;
+      _selectedPlaceName = resolvedName;
+      setState(() {});
+      unawaited(
+        Future<void>.delayed(Duration.zero, () {
+          if (mounted) _suppressPlaceChange = false;
+        }),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _suppressPlaceChange = true;
+      _placeController.text = suggestion.description;
+      _selectedPlaceGoogleId = suggestion.placeId;
+      _selectedPlaceLat = null;
+      _selectedPlaceLng = null;
+      _selectedPlaceName = suggestion.description;
+      setState(() {});
+      unawaited(
+        Future<void>.delayed(Duration.zero, () {
+          if (mounted) _suppressPlaceChange = false;
+        }),
+      );
+    } finally {
+      if (mounted) setState(() => _resolvingPlace = false);
+    }
+  }
+
+  Future<void> _replaceImage(ImageSource source) async {
+    final file = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      imageQuality: 88,
+    );
+    if (file == null || !mounted) return;
+    setState(() {
+      _localImagePath = file.path;
+      _photoUrl = '';
+    });
+  }
+
   Future<void> _submit(BuildContext context) async {
     if (_submitting) return;
+    final draft = _currentDraft();
     if (AppConfig.hasSupabase) {
-      final path = widget.draft.localImagePath;
+      final path = _localImagePath;
       if (path == null || path.isEmpty) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('カメラで撮影した写真が必要です')));
+        ).showSnackBar(const SnackBar(content: Text('写真が必要です')));
+        return;
+      }
+      if (_postType == 'restaurant' &&
+          (_selectedPlaceGoogleId == null ||
+              _selectedPlaceLat == null ||
+              _selectedPlaceLng == null)) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('店名の候補を選択してください')),
+        );
         return;
       }
       setState(() => _submitting = true);
@@ -2985,7 +3248,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
               ? _selectedPlaceGoogleId
               : null,
           restaurantPlaceName: _postType == 'restaurant'
-              ? _placeController.text.trim()
+              ? _currentPlaceName()
               : null,
           restaurantPlaceLatitude:
               _postType == 'restaurant' ? _selectedPlaceLat : null,
@@ -3009,16 +3272,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
         ).showSnackBar(const SnackBar(content: Text('投稿しました')));
       } catch (e) {
         if (!context.mounted) return;
-        widget.controller.setPendingPostDraft(
-          widget.draft.copyWith(
-            note: _captionController.text.trim(),
-            postType: _postType,
-            visibility: _visibility,
-            rating: _rating,
-            companionUserIds: _companionIds.toList(),
-            localImagePath: path,
-          ),
-        );
+        widget.controller.setPendingPostDraft(draft);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('投稿に失敗しました: $e')));
@@ -3040,6 +3294,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     const actionAreaHeight = 84.0;
+    final suggestions = widget.controller.placeSuggestions;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -3074,33 +3329,146 @@ class _PostCreationPageState extends State<PostCreationPage> {
                     child: SizedBox(
                       height: 200,
                       width: double.infinity,
-                      child: widget.draft.localImagePath != null
+                      child: _localImagePath != null
                           ? Image.file(
-                              File(widget.draft.localImagePath!),
+                              File(_localImagePath!),
                               fit: BoxFit.cover,
                             )
-                          : Image.network(
-                              widget.draft.photoUrl,
-                              fit: BoxFit.cover,
-                            ),
+                          : (_photoUrl?.isNotEmpty == true
+                              ? Image.network(_photoUrl!, fit: BoxFit.cover)
+                              : Container(
+                                  color: AppColors.gray.withValues(alpha: 0.35),
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.photo_outlined,
+                                    size: 42,
+                                    color: Colors.white70,
+                                  ),
+                                )),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _placeController,
-                    readOnly: true,
-                    decoration: const InputDecoration(
-                      labelText: '店名（現在地から最寄り）',
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _replaceImage(ImageSource.gallery),
+                          icon: const Icon(Icons.photo_library_outlined),
+                          label: const Text('ギャラリー'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _replaceImage(ImageSource.camera),
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          label: const Text('撮り直す'),
+                        ),
+                      ),
+                    ],
                   ),
-                  if (_postType == 'restaurant' && _selectedPlaceGoogleId == null)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        '位置情報または最寄り店の解決に失敗したため、外食投稿できません。',
-                        style: TextStyle(fontSize: 12, color: Colors.orange),
+                  const SizedBox(height: 10),
+                  if (_postType == 'restaurant') ...[
+                    TextField(
+                      controller: _placeController,
+                      onChanged: _onPlaceChanged,
+                      decoration: InputDecoration(
+                        labelText: '店名',
+                        hintText: '店名を入力すると候補が出ます',
+                        suffixIcon: _resolvingPlace
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : (_placeController.text.isNotEmpty
+                                ? IconButton(
+                                    tooltip: '入力を消す',
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _placeSearchDebounce?.cancel();
+                                      _suppressPlaceChange = true;
+                                      _placeController.clear();
+                                      setState(() {
+                                        _selectedPlaceGoogleId = null;
+                                        _selectedPlaceLat = null;
+                                        _selectedPlaceLng = null;
+                                        _selectedPlaceName = '';
+                                      });
+                                      _clearPlaceSuggestions();
+                                      unawaited(
+                                        Future<void>.delayed(Duration.zero, () {
+                                          if (mounted) {
+                                            _suppressPlaceChange = false;
+                                          }
+                                        }),
+                                      );
+                                    },
+                                  )
+                                : null),
                       ),
                     ),
+                    if (_selectedPlaceGoogleId == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          '候補を選ぶと、店名と位置情報が自動で入ります。',
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
+                        ),
+                      ),
+                    if (_selectedPlaceGoogleId == null &&
+                        _placeController.text.trim().isNotEmpty &&
+                        suggestions.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.blackElevated,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        constraints: const BoxConstraints(maxHeight: 180),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: suggestions.length,
+                          separatorBuilder: (_, _) => Divider(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                          itemBuilder: (context, index) {
+                            final suggestion = suggestions[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                suggestion.description,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              leading: const Icon(
+                                Icons.place_outlined,
+                                size: 18,
+                                color: AppColors.orange,
+                              ),
+                              onTap: () => _choosePlaceSuggestion(suggestion),
+                            );
+                          },
+                        ),
+                      ),
+                    if (_selectedPlaceGoogleId == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          '位置情報または最寄り店の解決に失敗したため、外食投稿できません。',
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
+                        ),
+                      ),
+                  ],
                   TextField(
                     controller: _captionController,
                     decoration: InputDecoration(
