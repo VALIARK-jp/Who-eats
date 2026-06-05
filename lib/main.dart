@@ -11,6 +11,7 @@ import 'src/core/config/app_config.dart';
 import 'src/core/web/google_maps_loader.dart';
 import 'src/features/auth/valiark_auth_config.dart';
 
+
 bool _isSupabaseOfflineNoise(Object error) {
   final s = error.toString();
   return s.contains('Failed host lookup') && s.contains('supabase');

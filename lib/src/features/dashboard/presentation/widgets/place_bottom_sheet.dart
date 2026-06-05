@@ -170,7 +170,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                     width: 112,
                     height: 92,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       width: 112,
                       height: 92,
                       color: AppColors.cardElevated,
@@ -339,7 +339,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: widget.pin.friendAvatars.isEmpty ? 1 : widget.pin.friendAvatars.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (_, i) {
             if (widget.pin.friendAvatars.isEmpty) {
               return const CircleAvatar(
@@ -369,7 +369,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: (detail.posts.isNotEmpty ? detail.posts.length : 5).clamp(1, 6),
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (_, i) {
             final imageUrl =
                 i < detail.posts.length ? (detail.posts[i].imageUrl ?? '') : '';
@@ -390,7 +390,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                 imageUrl,
                 width: 108,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                errorBuilder: (_, _, _) => Container(
                   width: 108,
                   decoration: BoxDecoration(
                     color: AppColors.cardElevated,
@@ -451,7 +451,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                             width: 56,
                             height: 56,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               width: 56,
                               height: 56,
                               color: AppColors.cardElevated,
@@ -567,7 +567,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                 : Image.network(
                     url,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       color: AppColors.cardElevated,
                       alignment: Alignment.center,
                       child: const Icon(Icons.photo_outlined),

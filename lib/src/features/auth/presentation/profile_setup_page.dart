@@ -160,7 +160,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         'name': name,
         'user_code': userCode,
         'bio': bio.isEmpty ? null : bio,
-        if (iconPath != null) 'icon_path': iconPath,
+        'icon_path': ?iconPath,
       }).eq('id', user.id);
 
       await ProfileOnboardingStore.setCompleted(user.id);

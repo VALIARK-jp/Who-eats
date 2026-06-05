@@ -5,17 +5,18 @@ import '../../../../core/theme/app_theme.dart';
 import 'friend_avatar.dart';
 import 'glass_panel.dart';
 
-/// Calendar-style record view.
-///
-/// MVP: domain model only has monthly shots + basic nutrition stats.
-/// Daily details are represented with light mock placeholders.
+/// Calendar-style record view with real day data from Supabase.
 class CalendarRecordView extends StatefulWidget {
   const CalendarRecordView({
     super.key,
     required this.summary,
+    required this.loadDayEntries,
+    required this.onOpenPost,
   });
 
   final RecordSummary summary;
+  final Future<List<RecordDayEntry>> Function(DateTime dayLocal) loadDayEntries;
+  final Future<void> Function(RecordDayEntry entry) onOpenPost;
 
   @override
   State<CalendarRecordView> createState() => _CalendarRecordViewState();
@@ -23,22 +24,38 @@ class CalendarRecordView extends StatefulWidget {
 
 class _CalendarRecordViewState extends State<CalendarRecordView> {
   late final Set<String> _activeDays;
-  String _selectedDay = '1';
+  late String _selectedDay;
+  List<RecordDayEntry> _dayEntries = [];
+  bool _loadingDay = false;
 
   @override
   void initState() {
     super.initState();
     _activeDays = widget.summary.monthlyShots.toSet();
+    final now = DateTime.now();
     _selectedDay = widget.summary.monthlyShots.isNotEmpty
         ? widget.summary.monthlyShots.first
-        : '1';
+        : '${now.day}';
+    _loadSelectedDay();
+  }
+
+  Future<void> _loadSelectedDay() async {
+    setState(() => _loadingDay = true);
+    final day = int.tryParse(_selectedDay) ?? 1;
+    final now = DateTime.now();
+    final date = DateTime(now.year, now.month, day);
+    final entries = await widget.loadDayEntries(date);
+    if (!mounted) return;
+    setState(() {
+      _dayEntries = entries;
+      _loadingDay = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final days = List.generate(31, (i) => '${i + 1}');
     final active = _activeDays.contains(_selectedDay);
-    final selectedIndex = days.indexOf(_selectedDay);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
@@ -74,15 +91,18 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                   final isActive = _activeDays.contains(d);
                   final isSelected = d == _selectedDay;
                   return GestureDetector(
-                    onTap: () => setState(() => _selectedDay = d),
+                    onTap: () {
+                      setState(() => _selectedDay = d);
+                      _loadSelectedDay();
+                    },
                     child: Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isSelected
                             ? AppColors.orange
                             : isActive
-                                ? AppColors.orange.withValues(alpha: 0.35)
-                                : AppColors.cardElevated,
+                            ? AppColors.orange.withValues(alpha: 0.35)
+                            : AppColors.cardElevated,
                         border: Border.all(
                           color: isSelected
                               ? AppColors.orangeAccent.withValues(alpha: 0.65)
@@ -143,59 +163,92 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
               ),
               const SizedBox(height: 4),
               Text(
-                '${active ? (selectedIndex % 3) + 1 : 0}回',
+                '${_dayEntries.length}回',
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 22,
                 ),
               ),
-              const SizedBox(height: 12),
-              const Text(
-                '訪れたお店',
-                style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (int k = 0; k < (active ? 3 : 0); k++)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+              if (_loadingDay)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: LinearProgressIndicator(minHeight: 2),
+                )
+              else if (_dayEntries.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  '訪れたお店・自炊',
+                  style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in _dayEntries)
+                      GestureDetector(
+                        onTap: () => widget.onOpenPost(entry),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.blackElevated.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (entry.imageUrl.isNotEmpty)
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    entry.imageUrl,
+                                    width: 24,
+                                    height: 24,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              if (entry.imageUrl.isNotEmpty)
+                                const SizedBox(width: 6),
+                              Text(
+                                entry.placeName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.blackElevated.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: AppColors.border),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '一緒に行った友達',
+                  style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (final name in _dayEntries
+                        .expand((e) => e.companionNames)
+                        .toSet()
+                        .take(6))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: FriendAvatar(
+                          displayName: name.isNotEmpty ? name[0] : '?',
+                          radius: 16,
+                          showStatusDot: true,
+                        ),
                       ),
-                      child: Text(
-                        ['and people udagawa', '恵比寿焼肉', '渋谷らーめん本舗'][k],
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                '一緒に行った友達',
-                style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  for (int i = 0; i < (active ? 3 : 0); i++)
-                    Padding(
-                      padding: EdgeInsets.only(left: i == 0 ? 0 : 6),
-                      child: FriendAvatar(
-                        displayName: ['H', 'R', 'M'][i],
-                        radius: 16,
-                        showStatusDot: true,
-                      ),
-                    ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -208,20 +261,45 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
             children: [
               const Text('栄養サマリ', style: TextStyle(fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.blackElevated.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Text(
+                  '準備中 — 栄養・AI分析は今後のアップデートで提供予定です',
+                  style: TextStyle(
+                    color: AppColors.textSubtle,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: _Kpi(label: '平均カロリー', value: '${widget.summary.caloriesAvg} kcal'),
+                    child: _Kpi(
+                      label: '連続記録',
+                      value: '${widget.summary.streakDays}日',
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: _Kpi(label: '平均タンパク質', value: '${widget.summary.proteinAvg} g'),
+                    child: _Kpi(
+                      label: '今月の投稿',
+                      value: '${widget.summary.monthlyShots.length}日',
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
               const Text(
-                'AI提案',
+                'メモ',
                 style: TextStyle(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
@@ -251,4 +329,3 @@ class _Kpi extends StatelessWidget {
     );
   }
 }
-

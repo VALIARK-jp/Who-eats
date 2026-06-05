@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Who eats - 中間発表スライド</title>
+    <link rel="icon" type="image/png" href="assets/images/icon.PNG">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&family=Poppins:wght@500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+/* 1. THE SETUP */
+* {
+  box-sizing: border-box;
+}
+
+p {
+  margin: 0;
+  margin-bottom: 15px;
+}
+
+body {
+  background-color: #000000; /* アプリに合わせた完全な黒 */
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 1fr;
+  margin: 0;
+  min-height: 100vh;
+  padding: 20px 0;
+  place-items: center;
+}
+
+.slide-container {
+  align-items: stretch;
+  background-color: #0d0d0d;
+  border-radius: 20px;
+  border: 1px solid #333333;
+  box-shadow: 0 10px 40px rgba(255, 0, 127, 0.1);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Noto Sans JP', sans-serif;
+  height: 720px;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 36px 48px 40px;
+  position: relative;
+  width: 1280px;
+}
+
+/* Background Design - ネオングラデーションの光彩 */
+.slide-container::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  right: -100px;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(255, 0, 127, 0.15) 0%, rgba(0,0,0,0) 70%); /* ネオンピンク */
+  border-radius: 50%;
+  z-index: 0;
+  pointer-events: none;
+}
+.slide-container::after {
+  content: '';
+  position: absolute;
+  bottom: -150px;
+  left: -150px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(255, 170, 0, 0.15) 0%, rgba(0,0,0,0) 70%); /* ネオンオレンジ */
+  border-radius: 50%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slide-container > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 2. CONSISTENT TYPOGRAPHY */
+.slide-container h1,
+.slide-container h2,
+.slide-container h3 {
+  color: #ffffff;
+  font-weight: 700;
+  margin: 0;
+}
+
+.slide-container h1, .en-title {
+  font-family: 'Poppins', sans-serif;
+  /* アプリロゴ風のグラデーションテキスト */
+  background: linear-gradient(to right, #ff007f, #ffaa00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 20px rgba(255, 0, 127, 0.3);
+}
+
+.slide-container p,
+.slide-container li,
+.slide-container .subtitle,
+.slide-container th,
+.slide-container td {
+  color: #e2e8f0; /* 白に近いグレーで読みやすく */
+  font-family: 'Noto Sans JP', sans-serif;
+}
+
+/* Font Sizes */
+.slide-container h1 { font-size: 72px; letter-spacing: -1px; margin-bottom: 8px;}
+.slide-container .slide-title {
+  flex-shrink: 0;
+  font-size: 34px;
+  line-height: 1.25;
+  margin-bottom: 0;
+  text-align: left;
+  width: 100%;
+  border-bottom: 2px solid #ff007f;
+  padding-bottom: 8px;
+  text-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
+}
+.slide-container .slide-title .slide-title-sub {
+  display: block;
+  font-size: 16px;
+  color: #ffaa00;
+  margin-top: 6px;
+  font-weight: 700;
+}
+.slide-container h3 { font-size: 22px; margin-bottom: 10px; }
+
+.slide-container p,
+.slide-container li,
+.slide-container th,
+.slide-container td { font-size: 18px; line-height: 1.6; }
+
+.slide-container .subtitle { font-size: 24px; margin: 10px auto 30px; font-weight: 700; color: #e2e8f0;}
+
+.slide-container .content-area {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+  margin-top: 20px;
+}
+.slide-container.slide--title-page {
+  justify-content: stretch;
+  padding: 0;
+}
+
+/* 各スライド共通ロゴ（表紙除く） */
+.slide-logo {
+  position: absolute;
+  top: 30px;
+  right: 44px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  object-fit: cover;
+  z-index: 5;
+  border: 2px solid #ff007f;
+  box-shadow: 0 0 14px rgba(255, 0, 127, 0.45);
+}
+.slide-container:not(#slide1) .slide-title {
+  padding-right: 70px;
+}
+
+/* 3. LAYOUT DEFINITIONS */
+.title-layout { text-align: center; width: 100%; }
+
+.two-column {
+  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 50px;
+  width: 100%;
+}
+
+.image-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  width: 100%;
+  border: 1px solid #333;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #1a1a1a;
+}
+.image-wrapper img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+.two-column .image-wrapper img { object-fit: contain; }
+
+.tiled-content {
+  align-items: stretch;
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  width: 100%;
+}
+
+.tile {
+  background-color: #111111;
+  border-radius: 16px;
+  border: 1px solid #333333;
+  border-top: 4px solid #ff007f;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding: 18px 14px;
+  text-align: center;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.tile h3 { font-size: 18px; margin-bottom: 8px; }
+.tile p { font-size: 14px !important; line-height: 1.45 !important; margin-bottom: 0 !important; }
+.tile .icon {
+  background: linear-gradient(to bottom right, #ff007f, #ffaa00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 36px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 10px rgba(255, 170, 0, 0.4));
+}
+
+.bullet-list { max-width: 1000px; width: 100%; }
+.bullet-list ul { list-style: none; margin: 0; padding: 0; }
+.bullet-list li {
+  margin-bottom: 16px;
+  padding-left: 44px;
+  position: relative;
+  font-size: 16px;
+}
+.bullet-list li:last-child { margin-bottom: 0; }
+.bullet-list i {
+  color: #ff007f;
+  font-size: 28px;
+  left: 0;
+  margin-top: 2px;
+  position: absolute;
+  top: 0;
+}
+.bullet-list li strong { color: #ffffff; display: block; margin-bottom: 5px;}
+
+/* Table Layout */
+.table-layout { width: 100%; }
+.table-layout table { border-collapse: collapse; width: 100%; background: #111111; border-radius: 12px; overflow: hidden; border: 1px solid #333;}
+.table-layout th, .table-layout td {
+  border-bottom: 1px solid #333;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 15px;
+  line-height: 1.4;
+  vertical-align: top;
+}
+.table-layout th {
+  background-color: #222222;
+  color: #ffaa00;
+  font-weight: 700;
+  font-size: 16px;
+  border-bottom: 2px solid #ff007f;
+}
+.table-layout tr:last-child td { border-bottom: none; }
+.table-layout .highlight-row { background-color: rgba(255, 0, 127, 0.1); font-weight: 700;}
+.table-layout .highlight-row td { color: #ffffff !important; }
+
+/* Timeline Layout（.timeline-line を除いた .timeline-item のみ交互配置） */
+.timeline-layout {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+}
+.timeline-layout .timeline-line {
+  background: linear-gradient(to right, #ff007f, #ffaa00);
+  height: 2px;
+  left: 0;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-1px);
+  width: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+.timeline-item {
+  position: relative;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+}
+.timeline-item::after {
+  background-color: #000;
+  border-radius: 50%;
+  border: 3px solid #ffaa00;
+  box-shadow: 0 0 8px rgba(255, 170, 0, 0.8);
+  content: '';
+  height: 14px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  z-index: 1;
+}
+.timeline-item .content-wrapper {
+  left: 0;
+  position: absolute;
+  width: 100%;
+  padding: 0 4px;
+}
+.timeline-layout > .timeline-item:nth-child(2n) .content-wrapper {
+  bottom: 50%;
+  margin-bottom: 22px;
+  top: auto;
+}
+.timeline-layout > .timeline-item:nth-child(2n+1):not(.timeline-line) .content-wrapper {
+  margin-top: 22px;
+  top: 50%;
+  bottom: auto;
+}
+.timeline-item h3 {
+  color: #ff007f;
+  font-size: 16px;
+  margin-bottom: 4px;
+  text-shadow: 0 0 8px rgba(255,0,127,0.5);
+}
+.timeline-item p { font-size: 13px !important; margin-bottom: 0 !important; line-height: 1.35 !important; }
+
+/* 横並びステップ（スライド5用） */
+.step-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+.step-card {
+  background: #111;
+  border: 1px solid #333;
+  border-top: 3px solid #ff007f;
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+}
+.step-card h3 { font-size: 15px; margin-bottom: 6px; color: #ff007f; }
+.step-card p { font-size: 12px !important; margin: 0 !important; line-height: 1.35 !important; color: #cbd5e1; }
+.step-card:nth-child(3),
+.step-card:nth-child(4) { border-top-color: #ffaa00; }
+.step-card:nth-child(3) h3,
+.step-card:nth-child(4) h3 { color: #ffaa00; }
+
+/* ロードマップ（スライド10用・横一列） */
+.roadmap-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+.roadmap-card {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+.roadmap-card.highlight {
+  border-color: #ffaa00;
+  box-shadow: 0 0 16px rgba(255, 170, 0, 0.25);
+}
+.roadmap-card h3 { font-size: 15px; margin-bottom: 6px; color: #ff007f; }
+.roadmap-card.highlight h3 { color: #ffaa00; font-size: 17px; }
+.roadmap-card p { font-size: 12px !important; margin: 0 !important; line-height: 1.4 !important; }
+
+/* 図・ダイアグラム */
+.diagram-box {
+  height: 100%;
+  max-height: 420px;
+  min-height: 280px;
+  padding: 12px;
+  background: transparent;
+}
+.two-column.diagram-split {
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: stretch;
+  height: 100%;
+}
+.two-column.diagram-split > div:first-child {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* 帯・注釈 */
+.callout-band {
+  font-size: 14px;
+  text-align: center;
+  margin-bottom: 14px;
+  padding: 10px 16px;
+  background: rgba(255,0,127,0.08);
+  border-radius: 10px;
+  border: 1px solid #ff007f;
+  color: #e2e8f0;
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+.callout-band p { margin-bottom: 0 !important; }
+.lead-text {
+  font-size: 17px;
+  text-align: center;
+  margin-bottom: 16px;
+  font-weight: 700;
+  color: #ffcc88;
+  flex-shrink: 0;
+}
+.lead-text p { margin-bottom: 0 !important; }
+
+/* UIサムネイル列 */
+.ui-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: start;
+}
+.ui-strip .flow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.ui-strip .flow-card h3 {
+  font-size: 18px;
+  margin: 0;
+  color: #ff007f;
+  text-align: left;
+}
+.ui-strip .flow-card p {
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+  margin: 0 !important;
+  color: #e2e8f0;
+}
+.ui-strip .flow-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: top center;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+/* 2カラム進捗 */
+.progress-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 14px;
+}
+.progress-panel {
+  background: #111;
+  border-radius: 12px;
+  border: 1px solid #333;
+  padding: 16px 18px;
+  min-height: 0;
+}
+.progress-panel h3 { font-size: 17px; margin-bottom: 10px; }
+.progress-panel ul {
+  font-size: 13px;
+  line-height: 1.55;
+  padding-left: 18px;
+  margin: 0;
+  color: #e2e8f0;
+}
+.progress-panel.pink { border-top: 4px solid #ff007f; }
+.progress-panel.orange { border-top: 4px solid #ffaa00; }
+.progress-panel.orange h3 { color: #ffaa00; }
+.progress-panel.pink h3 { color: #ff007f; }
+
+/* セキュリティ2カラム */
+.security-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.security-panel {
+  background: #111;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 1px solid #333;
+}
+.security-panel.pink { border-top: 4px solid #ff007f; }
+.security-panel.orange { border-top: 4px solid #ffaa00; }
+.security-panel h3 { font-size: 20px; text-align: center; margin-bottom: 14px; }
+.security-panel ul { padding-left: 28px; margin: 0; }
+.security-panel li { font-size: 14px; margin-bottom: 12px; line-height: 1.45; }
+.security-panel li:last-child { margin-bottom: 0; }
+
+/* Full Background Image */
+.full-bg-image { background-position: center; background-size: cover; }
+.full-bg-image .content-overlay {
+  text-align: center;
+  background: rgba(10, 10, 10, 0.9);
+  padding: 50px;
+  border-radius: 20px;
+  max-width: 900px;
+  border: 1px solid #ffaa00;
+  box-shadow: 0 0 30px rgba(255, 170, 0, 0.2);
+}
+.full-bg-image h2 { font-size: 50px; margin-bottom: 20px; border-bottom: none; text-align: center; color: #ffffff;}
+
+/* Mermaid用のスタイル調整 */
+.mermaid {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: transparent;
+}
+.mermaid svg {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  height: auto !important;
+}
+
+/* 表紙：ロゴを全面表示 */
+#slide1 .hero-split {
+  display: block;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#slide1 .hero-full {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+  overflow: hidden;
+  background: #000;
+}
+#slide1 .hero-logo-full {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+#slide1 .hero-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 36px;
+  text-align: center;
+  color: #ffffff;
+  text-shadow: 0 0 18px rgba(255, 0, 127, 0.45);
+  pointer-events: none;
+}
+#slide1 .hero-caption .hero-caption-main {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+#slide1 .hero-caption .hero-caption-sub {
+  margin-top: 10px;
+  font-size: 18px;
+  color: #ffcc88;
+  font-weight: 700;
+}
+
+/* 社会課題：中央に利用イメージを大きく */
+#slide2 .slide-title { margin-bottom: 0; }
+#slide2 .content-area.slide2-layout {
+  justify-content: flex-start;
+  gap: 10px;
+}
+#slide2 .slide2-lead {
+  flex-shrink: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffaa00;
+  text-align: center;
+  margin: 0;
+}
+#slide2 .slide2-hero {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+}
+#slide2 .slide2-hero img {
+  max-width: 98%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  box-shadow: 0 8px 36px rgba(0, 0, 0, 0.55);
+}
+#slide2 .slide2-footer {
+  flex-shrink: 0;
+  width: 100%;
+}
+#slide2 .issue-list.compact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 28px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+#slide2 .issue-list.compact li { margin-bottom: 2px; }
+#slide2 .pbl-note.compact {
+  font-size: 13px;
+  padding: 8px 14px;
+  margin: 0;
+  text-align: center;
+  background: rgba(255, 170, 0, 0.1);
+  border-left: none;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 170, 0, 0.35);
+  color: #ffcc88;
+  font-weight: 700;
+}
+#slide4 .tiled-content { gap: 18px; }
+
+/* Slide 5 は4枚のスマホ画像をしっかり見せるため縦に伸ばす */
+#slide5 {
+  height: auto;
+  min-height: 980px;
+}
+#slide5 .content-area {
+  padding-bottom: 0;
+  justify-content: flex-start;
+}
+#slide5 .ui-strip {
+  align-items: stretch;
+}
+#slide5 .ui-strip .flow-card h3,
+#slide5 .ui-strip .flow-card p {
+  display: none;
+}
+#slide5 .ui-strip .flow-card img {
+  height: 660px;
+}
+
+/* ポスター表示 */
+#slide11 {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+  background: #000;
+  align-items: stretch;
+  justify-content: stretch;
+}
+#slide11::before,
+#slide11::after {
+  display: none;
+}
+#slide11 .content-area {
+  margin-top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+#slide11 .poster-full {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+#slide11 .poster-full img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+p:last-child { margin-bottom: 0; }
+</style>
+
+<!-- Mermaid.jsの読み込み -->
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ 
+    startOnLoad: true, 
+    theme: 'dark', // ダークテーマに変更
+    themeVariables: {
+      primaryColor: '#1a1a1a',        // ノード背景
+      primaryTextColor: '#ffffff',    // テキスト色
+      primaryBorderColor: '#ff007f',  // ピンク枠線
+      lineColor: '#ffaa00',           // 矢印はオレンジ
+      secondaryColor: '#222222',
+      tertiaryColor: '#000000',
+      clusterBkg: '#0d0d0d',          // サブグラフの背景
+      clusterBorder: '#ffaa00',       // サブグラフの枠線
+      mainBkg: '#1a1a1a',
+      nodeBorder: '#ff007f'
+    }
+  });
+</script>
+
+</head>
+<body>
+
+<!-- Slide 1: 表紙 -->
+<div class="slide-container slide--title-page" id="slide1">
+    <div class="hero-split">
+        <div class="hero-full">
+            <img src="assets/images/logo.jpg" alt="Who eats ロゴ" class="hero-logo-full">
+            <div class="hero-caption">
+                <div class="hero-caption-main">大阪大学基礎工学部情報科学科 B2 PBL 1班</div>
+                <div class="hero-caption-sub">Who eats</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 2: 社会課題 -->
+<div class="slide-container" id="slide2">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">社会課題：一人暮らしと偏食</h2>
+    <div class="content-area slide2-layout">
+        <p class="slide2-lead">食事管理が「完全な自己責任」へ — 一人暮らしで食生活が崩れやすい</p>
+        <div class="slide2-hero">
+            <img src="assets/images/use_image.png" alt="Who eats 利用イメージ（大学生の食生活）">
+        </div>
+        <div class="slide2-footer">
+            <ul class="issue-list compact">
+                <li><strong>自炊が続かない</strong> — 手間・コストで挫折しやすい</li>
+                <li><strong>外食・コンビニに偏る</strong> — 同じ店・同じ弁当になりがち</li>
+                <li><strong>振り返りができない</strong> — 何を食べたか見えない</li>
+                <li><strong>一人記録は続かない</strong> — 習慣化しにくい</li>
+            </ul>
+            <p class="pbl-note compact">
+                切実性：大学生の「食生活の乱れと偏食」／普遍性：単身生活開始時に広く発生
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 3: 既存サービスの限界 -->
+<div class="slide-container" id="slide3">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">既存サービスの限界とポジショニング</h2>
+    <div class="content-area">
+        <div class="table-layout">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 20%;">アプローチ</th>
+                        <th style="width: 20%;">代表例</th>
+                        <th style="width: 25%;">強み</th>
+                        <th style="width: 35%;">Who eatsが解決する限界</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>カロリー・献立管理</strong></td>
+                        <td>あすけん 等</td>
+                        <td>詳細な栄養素の管理と指導</td>
+                        <td>入力負担が極めて高く、<strong>続けるハードルが高い</strong></td>
+                    </tr>
+                    <tr>
+                        <td><strong>グルメ・地図</strong></td>
+                        <td>Google Maps<br>食べログ</td>
+                        <td>圧倒的な店舗情報とレビュー数</td>
+                        <td>不特定多数の評価であり、<strong>自分に近い人の体験が見えない</strong></td>
+                    </tr>
+                    <tr>
+                        <td><strong>一般 SNS</strong></td>
+                        <td>Instagram<br>X (Twitter)</td>
+                        <td>写真一枚で気軽に投稿できる</td>
+                        <td>情報が流れてしまい、<strong>食生活として振り返りにくい</strong></td>
+                    </tr>
+                    <tr class="highlight-row">
+                        <td><strong style="color: #ff007f;">Who eats</strong></td>
+                        <td style="color: #ff007f;">本アプリ</td>
+                        <td style="color: #ff007f;">食生活・偏食を主題に、友達の記録 + 地図</td>
+                        <td style="color: #ffaa00;">「知らない星5より、友達の一枚」— 続く記録で偏りに気づく</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 4: 解決案 -->
+<div class="slide-container" id="slide4">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">解決案：食事投稿 SNS + 地図</h2>
+    <div class="content-area">
+        <div class="callout-band">
+            <p><strong style="color: #ff007f;">経緯：</strong> 自炊管理アプリ → <strong>続かない</strong> → 写真投稿＋友達共有の <strong>SNS 型</strong>（<strong>偏食を防ぐ・続く記録</strong>が目的）</p>
+        </div>
+        <p class="lead-text">自炊・外食を同じ流れで投稿し、共有することで食の記録を続けやすくする</p>
+        <div class="tiled-content">
+            <div class="tile">
+                <div class="icon"><i class="fa-solid fa-camera-retro"></i></div>
+                <h3>気軽な食事投稿</h3>
+                <p>自炊も外食も、写真と短いコメントだけで記録。カロリー入力の重さを排除し、SNS感覚で「続く記録」を実現します。</p>
+            </div>
+            <div class="tile">
+                <div class="icon"><i class="fa-solid fa-users"></i></div>
+                <h3>友達フィード</h3>
+                <p>友達の食事から刺激を受け、継続の動機づけに。いいねやコメントの反応が、一人作業の孤独感を解消します。</p>
+            </div>
+            <div class="tile">
+                <div class="icon"><i class="fa-solid fa-map-location-dot"></i></div>
+                <h3>地図ピンによる発見</h3>
+                <p>外食投稿は地図上のピンに。友達が実際に行った信頼できる店を見つけることで、コンビニへの偏りを防ぎます。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 5: 体験フロー -->
+<div class="slide-container" id="slide5">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">ユーザー体験フロー<span class="slide-title-sub">実装済み・デモ可能</span></h2>
+    <div class="content-area" style="justify-content: flex-start;">
+        <div class="step-row">
+            <div class="step-card">
+                <h3>1. 記録・投稿</h3>
+                <p>写真でサクッと投稿</p>
+            </div>
+            <div class="step-card">
+                <h3>2. 共有・反応</h3>
+                <p>友達フィードで交流</p>
+            </div>
+            <div class="step-card">
+                <h3>3. 選択肢の拡大</h3>
+                <p>地図で友達のお店を発見</p>
+            </div>
+            <div class="step-card">
+                <h3>4. 振り返り</h3>
+                <p>記録タブで偏食に気づく</p>
+            </div>
+        </div>
+        <div class="ui-strip">
+            <div class="flow-card">
+                <h3>1. 記録・投稿</h3>
+                <p>写真でサクッと投稿</p>
+                <img src="assets/images/profile.png" alt="記録・投稿画面">
+            </div>
+            <div class="flow-card">
+                <h3>2. 共有・反応</h3>
+                <p>友達フィードで交流</p>
+                <img src="assets/images/feed.png" alt="共有・反応画面">
+            </div>
+            <div class="flow-card">
+                <h3>3. 選択肢の拡大</h3>
+                <p>地図で友達のお店を発見</p>
+                <img src="assets/images/map.png" alt="選択肢の拡大画面">
+            </div>
+            <div class="flow-card">
+                <img src="assets/images/report.png" alt="振り返り画面">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 6: システム構成図 -->
+<div class="slide-container" id="slide6">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">システム構成</h2>
+    <div class="content-area">
+        <div class="two-column diagram-split">
+            <div>
+                <p style="font-size: 16px; margin-bottom: 16px;">フロントエンドだけで完結させず、BaaS と外部 API を接続しています。</p>
+                <div class="bullet-list">
+                    <ul>
+                        <li><i class="fa-solid fa-mobile-screen"></i> <strong>Client: Flutter</strong><br>UI・状態管理・ユースケース</li>
+                        <li><i class="fa-solid fa-server"></i> <strong>Backend: Supabase</strong><br>Auth / PostgreSQL / Storage / RLS</li>
+                        <li><i class="fa-solid fa-map" style="color: #ffaa00;"></i> <strong>Google Maps Platform</strong><br>地図表示・Places API</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="image-wrapper diagram-box" style="border: 1px solid #333;">
+                <div class="mermaid">
+flowchart TB
+  subgraph Client["Client: Flutter"]
+    UI["Presentation"]
+    Controller["Controller"]
+    UseCase["UseCases"]
+  end
+
+  subgraph Data["Data Layer"]
+    RepoImpl["Repository"]
+    SupabaseDS["Supabase DS"]
+    GoogleDS["Google APIs DS"]
+  end
+
+  subgraph Backend["Supabase & External"]
+    Auth["Auth"]
+    DB[("PostgreSQL")]
+    Storage["Storage"]
+    Maps["Google Maps"]
+  end
+
+  UI --> Controller --> UseCase
+  UseCase --> RepoImpl
+  RepoImpl --> SupabaseDS
+  RepoImpl --> GoogleDS
+  SupabaseDS --> Auth
+  SupabaseDS --> DB
+  SupabaseDS --> Storage
+  GoogleDS --> Maps
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 7: データフロー -->
+<div class="slide-container" id="slide7">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">データフロー：投稿からフィード・地図表示まで</h2>
+    <div class="content-area">
+        <div class="two-column diagram-split" style="grid-template-columns: 1.05fr 0.95fr;">
+            <div class="image-wrapper diagram-box" style="border: 1px solid #333;">
+                <div class="mermaid">
+flowchart TD
+  A["ユーザー投稿"] --> B{"タイプ判定"}
+  B -->|"外食"| C["Places API検索"]
+  B -->|"自炊"| D["Home投稿"]
+  C --> E[("places\n(DB)")]
+  D --> F[("posts\n(DB)")]
+  E --> F
+  A --> G["Storageへ画像UP"]
+  G --> H[("post_images\n(DB)")]
+  F --> I{"RLS判定\n(公開範囲/ブロック)"}
+  H --> I
+  I --> J["友達フィード\n地図ピン表示"]
+                </div>
+            </div>
+            <div>
+                <p style="font-size: 18px; font-weight: 700; color: #ffaa00; margin-bottom: 14px;">1回の投稿を、多角的に再利用するデータ設計</p>
+                <div class="bullet-list">
+                    <ul>
+                        <li><i class="fa-solid fa-image"></i> <strong>画像の分離保存</strong><br>画像本体は Storage へ保存し、DB には `storage_path` のみを保持して軽量化。</li>
+                        <li><i class="fa-solid fa-utensils"></i> <strong>自炊と外食の統合管理</strong><br>外食投稿は Places API の店舗情報と紐付け(`place_id`)永続化。自炊は `place_id = null` として同じ `posts` テーブルへ。</li>
+                        <li><i class="fa-solid fa-filter" style="color: #ffaa00;"></i> <strong>安全な表示制御</strong><br>保存されたデータは、常に Row Level Security (RLS) を通過し、閲覧権限のある投稿だけがホームフィードや地図に配信されます。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 8: セキュリティ・信頼性 -->
+<div class="slide-container" id="slide8">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">信頼性とセキュリティ設計</h2>
+    <div class="content-area">
+        <p style="font-size: 17px; margin-bottom: 18px; text-align: center;">信頼性は「友達ベースのサービス設計」と「DBレベルの技術設計」の2層で担保します。</p>
+        <div class="security-grid">
+            <div class="security-panel pink">
+                <h3>サービス設計上の制御</h3>
+                <ul>
+                    <li><strong>相互フォロー</strong> — 友人関係に基づく情報を優先</li>
+                    <li><strong>公開範囲</strong> — Public / Friends / Private</li>
+                    <li><strong>ブロック</strong> — 双方向に表示・反応を制限</li>
+                </ul>
+            </div>
+            <div class="security-panel orange">
+                <h3>技術基盤での実装</h3>
+                <ul>
+                    <li><strong>RLS</strong> — DB 側で `auth.uid()` 等を判定</li>
+                    <li><strong>RPC</strong> — 2ホップ取得等をサーバー側集計</li>
+                    <li><strong>API キー</strong> — `.env` と `dart-define` で管理</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 9: DB設計とクリーンアーキテクチャ -->
+<div class="slide-container" id="slide9">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">DB設計とクリーンアーキテクチャ</h2>
+    <div class="content-area">
+        <div class="two-column diagram-split">
+            <div>
+                <p style="font-size: 16px; margin-bottom: 16px;">将来の AI 分析や機能拡張に耐えうる分離設計を行っています。</p>
+                <div class="bullet-list">
+                    <ul>
+                        <li><i class="fa-solid fa-layer-group"></i> <strong>レイヤーアーキテクチャ</strong><br>Presentation, Domain, Repository, DataSource に層を分離。UIとDB接続を直接結びつけない。</li>
+                        <li><i class="fa-solid fa-plug" style="color: #ffaa00;"></i> <strong>Mock DataSource の準備</strong><br>API制限やネットワーク障害時でもデモを継続できるフォールバック機構。</li>
+                        <li><i class="fa-solid fa-table"></i> <strong>正規化された拡張可能DB</strong><br><code>users</code>, <code>posts</code>, <code>places</code> 等に正規化し、将来の「AIによる食事傾向分析」の基盤とする。</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="image-wrapper diagram-box" style="border: 1px solid #333;">
+                <div class="mermaid">
+erDiagram
+  USERS ||--o{ POSTS : creates
+  USERS ||--o{ FOLLOWS : requests
+  PLACES ||--o{ POSTS : used_by
+  POSTS ||--o{ POST_IMAGES : has
+  POSTS ||--o{ COMMENTS : has
+  POSTS ||--o{ REACTIONS : receives
+
+  USERS {
+    uuid id
+    text name
+    text visibility
+  }
+  POSTS {
+    uuid id
+    uuid user_id
+    uuid place_id
+    text post_type
+  }
+  PLACES {
+    uuid id
+    text google_place_id
+    double lat_lng
+  }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 10: 進捗・Phase 1・スケジュール -->
+<div class="slide-container" id="slide10">
+    <img src="assets/images/icon.PNG" alt="Who eats" class="slide-logo">
+    <h2 class="slide-title">進捗・Phase 1・今後のスケジュール</h2>
+    <div class="content-area" style="justify-content: flex-start;">
+        <div class="progress-grid">
+            <div class="progress-panel pink">
+                <h3><i class="fa-solid fa-circle-check"></i> 実装済み（デモ可能）</h3>
+                <ul>
+                    <li>ログイン・食事投稿（外食／自炊）</li>
+                    <li>いいね・コメント・フォロー／友達</li>
+                    <li>フィード（友達／近い／すべて）</li>
+                    <li>地図・店詳細・記録タブ</li>
+                </ul>
+            </div>
+            <div class="progress-panel orange">
+                <h3><i class="fa-solid fa-gears"></i> いま（Phase 1）</h3>
+                <ul>
+                    <li><strong>リリース準備</strong></li>
+                    <li><strong>新機能の立案</strong></li>
+                    <li><strong>開発</strong>・バグ修正</li>
+                    <li><strong>UI / UX 改善</strong></li>
+                </ul>
+            </div>
+        </div>
+
+        <p style="font-size: 16px; font-weight: 700; color: #ffcc88; text-align: center; margin-bottom: 12px;">今後のスケジュール</p>
+        <div class="roadmap-row">
+            <div class="roadmap-card">
+                <h3>現在〜6月上旬</h3>
+                <p>Phase 1 完成<br>UI/UX 改善</p>
+            </div>
+            <div class="roadmap-card highlight">
+                <h3>6月中旬</h3>
+                <p><i class="fa-brands fa-apple"></i> <strong>App Store リリース</strong></p>
+            </div>
+            <div class="roadmap-card">
+                <h3>リリース後</h3>
+                <p>フィードバック<br>A/B テスト → 新機能</p>
+            </div>
+            <div class="roadmap-card">
+                <h3>中長期</h3>
+                <p>AI 偏り分析<br>栄養士連携など</p>
+            </div>
+        </div>
+
+        <p style="text-align: center; font-size: 19px; font-weight: 700; color: #fff; margin: 0;">
+            まず App Store で届け、<span style="color: #ffaa00;">フィードバックと A/B テスト</span> で育てる
+        </p>
+        <p style="text-align: center; font-size: 15px; color: #a1a1aa; margin-top: 8px; margin-bottom: 0;">
+            「続く食の記録で、偏らない食生活を支える」
+        </p>
+    </div>
+</div>
+
+<!-- Slide 11: アプリポスター -->
+<div class="slide-container" id="slide11">
+    <div class="content-area">
+        <div class="poster-full">
+            <img src="assets/images/poster.jpg" alt="Who eats アプリポスター">
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

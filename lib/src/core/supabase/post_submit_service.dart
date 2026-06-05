@@ -23,6 +23,9 @@ class PostSubmitService {
     double? restaurantPlaceLatitude,
     double? restaurantPlaceLongitude,
     String? caption,
+    int? rating,
+    String? mealGroupId,
+    List<String> companionUserIds = const [],
   }) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) {
@@ -38,6 +41,12 @@ class PostSubmitService {
           )
         : null;
 
+    final resolvedMealGroupId = mealGroupId?.isNotEmpty == true
+        ? mealGroupId
+        : (companionUserIds.isNotEmpty
+              ? await _client.rpc('new_meal_group_id') as String?
+              : null);
+
     final storagePath =
         '$uid/${DateTime.now().millisecondsSinceEpoch}_${imageFile.uri.pathSegments.isNotEmpty ? imageFile.uri.pathSegments.last : 'photo.jpg'}';
 
@@ -48,33 +57,82 @@ class PostSubmitService {
         ? 'image/webp'
         : 'image/jpeg';
 
-    final postRow = await _client
-        .from(SupabaseTables.posts)
-        .insert({
-          'user_id': uid,
-          'place_id': placeId,
-          'post_type': postType,
-          'visibility': visibility,
-          'caption': caption,
-        })
-        .select('id')
-        .single();
-
-    final postId = postRow['id'] as String;
-
     await _client.storage.from(_bucket).upload(
       storagePath,
       imageFile,
       fileOptions: FileOptions(contentType: contentType, upsert: false),
     );
 
-    await _client.from(SupabaseTables.postImages).insert({
-      'post_id': postId,
-      'storage_path': storagePath,
-      'display_order': 0,
-    });
+    try {
+      final insertPayload = <String, dynamic>{
+        'user_id': uid,
+        'place_id': placeId,
+        'post_type': postType,
+        'visibility': visibility,
+        'caption': caption,
+      };
+      if (rating != null && rating >= 1 && rating <= 5) {
+        insertPayload['rating'] = rating;
+      }
+      if (resolvedMealGroupId != null && resolvedMealGroupId.isNotEmpty) {
+        insertPayload['meal_group_id'] = resolvedMealGroupId;
+      }
 
-    return postId;
+      final postRow = await _client
+          .from(SupabaseTables.posts)
+          .insert(insertPayload)
+          .select('id')
+          .single();
+
+      final postId = postRow['id'] as String;
+
+      await _client.from(SupabaseTables.postImages).insert({
+        'post_id': postId,
+        'storage_path': storagePath,
+        'display_order': 0,
+      });
+
+      for (final companionId in companionUserIds) {
+        if (companionId.isEmpty || companionId == uid) continue;
+        try {
+          await _client.from(SupabaseTables.postCompanions).insert({
+            'post_id': postId,
+            'user_id': companionId,
+          });
+        } on PostgrestException catch (e) {
+          if (e.code != '23505') rethrow;
+        }
+      }
+
+      if (resolvedMealGroupId != null && resolvedMealGroupId.isNotEmpty) {
+        final groupPosts = await _client
+            .from(SupabaseTables.posts)
+            .select('id')
+            .eq('meal_group_id', resolvedMealGroupId);
+        for (final raw in (groupPosts as List<dynamic>)) {
+          final sourcePostId = (raw as Map<String, dynamic>)['id'].toString();
+          if (sourcePostId == postId) continue;
+          try {
+            await _client
+                .from(SupabaseTables.postCompanions)
+                .update({'joined_post_id': postId})
+                .eq('post_id', sourcePostId)
+                .eq('user_id', uid);
+          } catch (_) {}
+        }
+      }
+
+      try {
+        await _client.rpc('bump_user_streak_on_post');
+      } catch (_) {}
+
+      return postId;
+    } catch (e) {
+      try {
+        await _client.storage.from(_bucket).remove([storagePath]);
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   Future<String> _resolveOrCreatePlaceId({

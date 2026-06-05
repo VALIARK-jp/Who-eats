@@ -148,9 +148,11 @@ class AppConfig {
     return v.isNotEmpty ? v : 'whoeats_users';
   }
 
-  /// ドメイン表の接頭辞（例: `whoeats_`）。空なら非接頭辞。
-  static String get dbTablePrefix =>
-      _pick(_DartDefines.dbTablePrefix, _env('WHOEATS_DB_TABLE_PREFIX'));
+  /// ドメイン表の接頭辞（例: `whoeats_`）。未設定時は migration 0003 の既定 `whoeats_`。
+  static String get dbTablePrefix {
+    final v = _pick(_DartDefines.dbTablePrefix, _env('WHOEATS_DB_TABLE_PREFIX'));
+    return v.isNotEmpty ? v : 'whoeats_';
+  }
 
   /// メール確認・PKCE 戻り先（Supabase Dashboard の Redirect URLs と一致）。
   static String get authRedirectUrl {
