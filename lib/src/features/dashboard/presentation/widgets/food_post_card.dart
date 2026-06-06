@@ -12,6 +12,7 @@ class FoodPostCard extends StatelessWidget {
     required this.post,
     this.onTap,
     this.currentUserId,
+    this.onOpenProfile,
     this.onToggleFavorite,
     this.onTogglePin,
     this.onToggleLike,
@@ -21,6 +22,7 @@ class FoodPostCard extends StatelessWidget {
   final FeedPost post;
   final VoidCallback? onTap;
   final String? currentUserId;
+  final ValueChanged<String>? onOpenProfile;
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onTogglePin;
   final VoidCallback? onToggleLike;
@@ -57,6 +59,7 @@ class FoodPostCard extends StatelessWidget {
               _TopRow(
                 post: post,
                 currentUserId: currentUserId,
+                onOpenProfile: onOpenProfile,
                 onToggleFavorite: onToggleFavorite,
                 onTogglePin: onTogglePin,
                 timeLabel: _timeLabel(),
@@ -130,6 +133,7 @@ class _TopRow extends StatelessWidget {
   const _TopRow({
     required this.post,
     this.currentUserId,
+    this.onOpenProfile,
     this.onToggleFavorite,
     this.onTogglePin,
     required this.timeLabel,
@@ -137,6 +141,7 @@ class _TopRow extends StatelessWidget {
 
   final FeedPost post;
   final String? currentUserId;
+  final ValueChanged<String>? onOpenProfile;
   final VoidCallback? onToggleFavorite;
   final VoidCallback? onTogglePin;
   final String timeLabel;
@@ -154,11 +159,20 @@ class _TopRow extends StatelessWidget {
 
     return Row(
       children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: AppColors.blackElevated,
-          backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
-          child: hasNetwork ? null : Text(initial, style: const TextStyle(fontWeight: FontWeight.w800)),
+        InkWell(
+          onTap: onOpenProfile == null ? null : () => onOpenProfile!(post.userId),
+          customBorder: const CircleBorder(),
+          child: CircleAvatar(
+            radius: 18,
+            backgroundColor: AppColors.blackElevated,
+            backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
+            child: hasNetwork
+                ? null
+                : Text(
+                    initial,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+          ),
         ),
         const SizedBox(width: 10),
         if (isOwn && onTogglePin != null)

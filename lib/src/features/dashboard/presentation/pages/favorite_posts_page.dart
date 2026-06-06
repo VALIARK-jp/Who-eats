@@ -9,10 +9,12 @@ class FavoritePostsPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.onOpenPost,
+    this.onOpenProfile,
   });
 
   final AppShellController controller;
   final ValueChanged<FeedPost>? onOpenPost;
+  final ValueChanged<String>? onOpenProfile;
 
   @override
   State<FavoritePostsPage> createState() => _FavoritePostsPageState();
@@ -65,6 +67,7 @@ class _FavoritePostsPageState extends State<FavoritePostsPage> {
                   return FoodPostCard(
                     post: post,
                     currentUserId: uid,
+                    onOpenProfile: widget.onOpenProfile,
                     onTap: widget.onOpenPost != null
                         ? () => widget.onOpenPost!(post)
                         : null,

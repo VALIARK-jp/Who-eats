@@ -17,10 +17,12 @@ class ProfileSettingsPage extends StatelessWidget {
     super.key,
     required this.controller,
     this.onOpenPostDetail,
+    this.onOpenProfile,
   });
 
   final AppShellController controller;
   final ValueChanged<FeedPost>? onOpenPostDetail;
+  final ValueChanged<String>? onOpenProfile;
 
   Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -117,6 +119,7 @@ class ProfileSettingsPage extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (ctx) => FavoritePostsPage(
                       controller: controller,
+                      onOpenProfile: onOpenProfile,
                       onOpenPost: onOpenPostDetail == null
                           ? null
                           : (post) {

@@ -30,6 +30,7 @@ import '../widgets/calendar_record_view.dart';
 import '../widgets/post_comment_preview.dart';
 import '../widgets/profile_food_grid.dart';
 import '../widgets/app_state_view.dart';
+import '../widgets/report_reason_sheet.dart';
 import '../widgets/segmented_tab.dart';
 import 'profile_settings_page.dart';
 import 'user_profile_page.dart';
@@ -319,13 +320,14 @@ class _AppShellPageState extends State<AppShellPage> {
         }
 
         final pages = [
-          _HomePage(
-            controller: controller,
-            onOpenPlaceFromPost: (post) => _openPlaceFromPost(post, controller),
-            onOpenPostDetail: _openPostDetail,
-            onOpenFriends: _openFriendsPage,
-            onOpenDraft: () {
-              if (controller.postDraft != null) {
+        _HomePage(
+          controller: controller,
+          onOpenPlaceFromPost: (post) => _openPlaceFromPost(post, controller),
+          onOpenPostDetail: _openPostDetail,
+          onOpenProfile: _openUserProfile,
+          onOpenFriends: _openFriendsPage,
+          onOpenDraft: () {
+            if (controller.postDraft != null) {
                 controller.changeBottomIndex(0);
                 _openPostEditor();
               }
@@ -359,6 +361,7 @@ class _AppShellPageState extends State<AppShellPage> {
             profile: controller.profileOverview!,
             controller: controller,
             onOpenPostDetail: _openPostDetail,
+            onOpenProfile: _openUserProfile,
             onOpenFriendList: () => _openFriendListPage(controller.friends),
           ),
         ];
@@ -443,6 +446,10 @@ class _AppShellPageState extends State<AppShellPage> {
                         post: post,
                         controller: controller,
                         onClose: _closePostDetail,
+                        onOpenProfile: (userId) {
+                          _closePostDetail();
+                          _openUserProfile(userId);
+                        },
                         onPostUpdated: (updated) {
                           setState(() => _activePostDetail = updated);
                         },
@@ -520,12 +527,14 @@ class _HomePage extends StatefulWidget {
     required this.controller,
     required this.onOpenPlaceFromPost,
     required this.onOpenPostDetail,
+    required this.onOpenProfile,
     required this.onOpenFriends,
     required this.onOpenDraft,
   });
   final AppShellController controller;
   final ValueChanged<FeedPost> onOpenPlaceFromPost;
   final ValueChanged<FeedPost> onOpenPostDetail;
+  final ValueChanged<String> onOpenProfile;
   final VoidCallback onOpenFriends;
   final VoidCallback onOpenDraft;
 
@@ -544,6 +553,7 @@ class _HomePageState extends State<_HomePage> {
           controller: controller,
           onTapPost: widget.onOpenPostDetail,
           onOpenPlaceFromPost: widget.onOpenPlaceFromPost,
+          onOpenProfile: widget.onOpenProfile,
         ),
         SafeArea(
           child: Padding(
@@ -689,11 +699,13 @@ class _FeedTab extends StatelessWidget {
     required this.controller,
     required this.onTapPost,
     required this.onOpenPlaceFromPost,
+    required this.onOpenProfile,
   });
   final List<FeedPost> feed;
   final AppShellController controller;
   final ValueChanged<FeedPost> onTapPost;
   final ValueChanged<FeedPost> onOpenPlaceFromPost;
+  final ValueChanged<String> onOpenProfile;
 
   static int _compareFeedPostsDesc(FeedPost a, FeedPost b) {
     final aCreatedAt = a.createdAt;
@@ -797,6 +809,7 @@ class _FeedTab extends StatelessWidget {
               controller: controller,
               onTap: () => onTapPost(visibleOtherPosts[i]),
               onOpenPlace: () => onOpenPlaceFromPost(visibleOtherPosts[i]),
+              onOpenProfile: onOpenProfile,
             ),
             if (i != visibleOtherPosts.length - 1) const SizedBox(height: 18),
           ],
@@ -1445,6 +1458,7 @@ class _BerealFeedCard extends StatelessWidget {
     required this.controller,
     required this.onTap,
     required this.onOpenPlace,
+    this.onOpenProfile,
   });
 
   final FeedPost post;
@@ -1452,6 +1466,7 @@ class _BerealFeedCard extends StatelessWidget {
   final AppShellController controller;
   final VoidCallback onTap;
   final VoidCallback onOpenPlace;
+  final ValueChanged<String>? onOpenProfile;
 
   static String formatTime(DateTime createdAt) {
     final diff = DateTime.now().difference(createdAt.toLocal());
@@ -1481,18 +1496,22 @@ class _BerealFeedCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.blackElevated,
-                backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
-                child: hasNetwork
-                    ? null
-                    : Text(
-                        initial,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-              ),
+        children: [
+          InkWell(
+            onTap: onOpenProfile == null ? null : () => onOpenProfile!(post.userId),
+            customBorder: const CircleBorder(),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.blackElevated,
+              backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
+              child: hasNetwork
+                  ? null
+                  : Text(
+                      initial,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+            ),
+          ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1580,10 +1599,48 @@ class _BerealFeedCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(
-                Icons.more_horiz,
-                color: Colors.white.withValues(alpha: 0.75),
-              ),
+              if (!isOwn && currentUserId != null)
+                PopupMenuButton<String>(
+                  tooltip: 'その他',
+                  icon: Icon(
+                    Icons.menu_rounded,
+                    color: Colors.white.withValues(alpha: 0.75),
+                  ),
+                  onSelected: (value) async {
+                    if (value == 'report') {
+                      final reason = await showReportReasonSheet(
+                        context,
+                        targetLabel: post.userName,
+                      );
+                      if (reason == null || reason.isEmpty) return;
+                      await controller.reportPost(post.id, reason);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('通報を送信しました')),
+                        );
+                      }
+                    } else if (value == 'block') {
+                      await controller.blockUser(post.userId);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${post.userName} をブロックしました'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'report',
+                      child: Text('通報する'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'block',
+                      child: Text('ブロックする'),
+                    ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -2285,13 +2342,17 @@ class _MapTabState extends State<_MapTab> {
     return [
       for (int i = 0; i < pins.length; i++)
         if (_visible3dPinOffsets.containsKey(pins[i].id) &&
-            (postedIds.contains(pins[i].id) || pins[i].isFriendVisited))
+            _isPostedPin(pins[i], postedIds))
           ..._buildSingle3dOverlayWithTapTarget(
             context,
             pins[i],
             isPostedPin: true,
           ),
     ];
+  }
+
+  bool _isPostedPin(MapPin pin, Set<String> postedIds) {
+    return postedIds.contains(pin.id) || pin.isFriendVisited;
   }
 
   List<Widget> _buildSingle3dOverlayWithTapTarget(
@@ -2306,35 +2367,64 @@ class _MapTabState extends State<_MapTab> {
     final postedIconUrl = widget.controller.postedPlaceUserIcons[pin.id];
     return [
       Positioned(
-        left: offset.dx - 75,
-        top: offset.dy - 130,
-        width: 150,
-        height: 150,
-        child: IgnorePointer(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: FoodPin3DViewer(
-              key: ValueKey('map-3d-${pin.id}-posted:$isPostedPin'),
-              width: 150,
-              height: 150,
-              assetPath: pinAssetPath,
-              initialIconUrl: isPostedPin ? postedIconUrl : null,
-              initialIconAsset: isPostedPin ? 'doc/yuto.jpg' : null,
-              webviewBackground: Colors.transparent,
-              animationFpsListenable: _pin3dAnimationFps,
-            ),
-          ),
-        ),
-      ),
-      Positioned(
-        left: offset.dx - 36,
-        top: offset.dy - 98,
-        width: 72,
-        height: 78,
+        left: offset.dx - 82,
+        top: offset.dy - 146,
+        width: 164,
+        height: 180,
         child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
+          behavior: HitTestBehavior.opaque,
           onTap: () => _openMapBottomSheet(context, pin),
-          child: const SizedBox.expand(),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 7,
+                top: 0,
+                width: 150,
+                height: 150,
+                child: IgnorePointer(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: FoodPin3DViewer(
+                      key: ValueKey('map-3d-${pin.id}-posted:$isPostedPin'),
+                      width: 150,
+                      height: 150,
+                      assetPath: pinAssetPath,
+                      initialIconUrl: isPostedPin ? postedIconUrl : null,
+                      initialIconAsset: isPostedPin ? 'doc/yuto.jpg' : null,
+                      webviewBackground: Colors.transparent,
+                      animationFpsListenable: _pin3dAnimationFps,
+                    ),
+                  ),
+                ),
+              ),
+              if (isPostedPin)
+                Positioned(
+                  right: 4,
+                  top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.orange.withValues(alpha: 0.92),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.28),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.star_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              const Positioned.fill(child: SizedBox.expand()),
+            ],
+          ),
         ),
       ),
     ];
@@ -2357,24 +2447,27 @@ class _MapTabState extends State<_MapTab> {
 
   Set<Marker> _buildMapMarkers(BuildContext context, List<MapPin> pins) {
     if (_displayTier == 2) {
-      return {
-        for (int i = 0; i < pins.length; i++)
-          Marker(
-            markerId: MarkerId(pins[i].id),
-            position: _latLngFor(pins[i], i),
-            icon: pins[i].isFriendVisited
-                ? (_visitedMarkerIcon ??
-                      BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueOrange,
-                      ))
-                : (_unvisitedMarkerIcon ??
-                      BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueAzure,
-                      )),
-            zIndexInt: pins[i].isFriendVisited ? 1 : 0,
-            onTap: () async => _openMapBottomSheet(context, pins[i]),
-          ),
-      };
+    return {
+      for (int i = 0; i < pins.length; i++)
+        Marker(
+          markerId: MarkerId(pins[i].id),
+          position: _latLngFor(pins[i], i),
+          icon: _isPostedPin(pins[i], widget.controller.postedPlaceGoogleIds)
+              ? (_visitedMarkerIcon ??
+                    BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueOrange,
+                    ))
+              : (_unvisitedMarkerIcon ??
+                    BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueAzure,
+                    )),
+          zIndexInt:
+              _isPostedPin(pins[i], widget.controller.postedPlaceGoogleIds)
+              ? 1
+              : 0,
+          onTap: () async => _openMapBottomSheet(context, pins[i]),
+        ),
+    };
     }
 
     final grouped = <String, List<MapPin>>{};
@@ -2422,7 +2515,9 @@ class _MapTabState extends State<_MapTab> {
       infoWindow: InfoWindow(
         title: '友達が来た店舗: $visitedCount件',
         snippet: 'この範囲の全店舗: ${pins.length}店',
+        onTap: () => _animateToPin(pins.first),
       ),
+      onTap: () => _animateToPin(pins.first),
     );
   }
 
@@ -3529,11 +3624,13 @@ class _ProfilePage extends StatelessWidget {
     required this.profile,
     required this.controller,
     required this.onOpenPostDetail,
+    required this.onOpenProfile,
     required this.onOpenFriendList,
   });
   final ProfileOverview profile;
   final AppShellController controller;
   final ValueChanged<FeedPost> onOpenPostDetail;
+  final ValueChanged<String> onOpenProfile;
   final VoidCallback onOpenFriendList;
 
   FeedPost _postFromThumb(ProfilePostThumb thumb, {required bool pinned}) {
@@ -3592,9 +3689,10 @@ class _ProfilePage extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => ProfileSettingsPage(
+                    builder: (context) => ProfileSettingsPage(
                         controller: controller,
                         onOpenPostDetail: onOpenPostDetail,
+                        onOpenProfile: onOpenProfile,
                       ),
                     ),
                   );
@@ -4831,12 +4929,14 @@ class PostDetailPage extends StatefulWidget {
     required this.controller,
     required this.onClose,
     this.onPostUpdated,
+    this.onOpenProfile,
   });
 
   final FeedPost post;
   final AppShellController controller;
   final VoidCallback onClose;
   final ValueChanged<FeedPost>? onPostUpdated;
+  final ValueChanged<String>? onOpenProfile;
 
   @override
   State<PostDetailPage> createState() => _PostDetailPageState();
@@ -5127,6 +5227,40 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _reportPost() async {
+    if (_actionBusy || _isOwnPost) return;
+    final reason = await showReportReasonSheet(
+      context,
+      targetLabel: _post.userName,
+    );
+    if (reason == null || reason.isEmpty) return;
+    setState(() => _actionBusy = true);
+    try {
+      await controller.reportPost(_post.id, reason);
+      if (!mounted) return;
+      _showSnack(context, '通報を送信しました');
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _blockAuthor() async {
+    if (_actionBusy || _isOwnPost) return;
+    setState(() => _actionBusy = true);
+    try {
+      await controller.blockUser(_post.userId);
+      if (!mounted) return;
+      _showSnack(context, '${_post.userName} をブロックしました');
+      onClose();
+    } catch (e) {
+      if (mounted) _showSnack(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   Future<void> _toggleFavorite() async {
     if (_actionBusy || _isOwnPost) return;
     setState(() => _actionBusy = true);
@@ -5179,20 +5313,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         onPressed: onClose,
                       ),
                       const SizedBox(width: 4),
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppColors.blackElevated,
-                        backgroundImage: hasNetworkIcon
-                            ? NetworkImage(iconUrl)
-                            : null,
-                        child: hasNetworkIcon
+                      InkWell(
+                        onTap: widget.onOpenProfile == null
                             ? null
-                            : Text(
-                                initial,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
+                            : () => widget.onOpenProfile!.call(_post.userId),
+                        customBorder: const CircleBorder(),
+                        child: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: AppColors.blackElevated,
+                          backgroundImage: hasNetworkIcon
+                              ? NetworkImage(iconUrl)
+                              : null,
+                          child: hasNetworkIcon
+                              ? null
+                              : Text(
+                                  initial,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -5242,6 +5382,28 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             Icons.delete_outline,
                             color: Colors.redAccent,
                           ),
+                        ),
+                      if (!_isOwnPost && controller.currentUserId != null)
+                        PopupMenuButton<String>(
+                          tooltip: 'その他',
+                          icon: const Icon(Icons.menu_rounded),
+                          onSelected: (value) {
+                            if (value == 'report') {
+                              unawaited(_reportPost());
+                            } else if (value == 'block') {
+                              unawaited(_blockAuthor());
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem<String>(
+                              value: 'report',
+                              child: Text('通報する'),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'block',
+                              child: Text('ブロックする'),
+                            ),
+                          ],
                         ),
                     ],
                   ),

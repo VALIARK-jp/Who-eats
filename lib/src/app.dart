@@ -125,6 +125,8 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         getUserPublicProfileUseCase: GetUserPublicProfileUseCase(repository),
         blockUserUseCase: BlockUserUseCase(repository),
         unblockUserUseCase: UnblockUserUseCase(repository),
+        reportUserUseCase: ReportUserUseCase(repository),
+        reportPostUseCase: ReportPostUseCase(repository),
         getPendingMealTagsUseCase: GetPendingMealTagsUseCase(repository),
         getRecordSummaryUseCase: GetRecordSummaryUseCase(repository),
         getProfileOverviewUseCase: GetProfileOverviewUseCase(repository),

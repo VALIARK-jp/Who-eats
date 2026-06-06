@@ -233,6 +233,10 @@ class MockDashboardDataSource {
     ],
   );
 
+  Future<void> reportUser(String userId, String reason) async {}
+
+  Future<void> reportPost(String postId, String reason) async {}
+
   Future<List<AppNotification>> getNotifications() async => const [
     AppNotification(
       id: 'n1',

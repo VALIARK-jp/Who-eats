@@ -184,6 +184,7 @@ class UserPublicProfile {
     this.iFollowThem = false,
     this.theyFollowMe = false,
     this.isBlocked = false,
+    this.pinnedPosts = const [],
     this.recentPosts = const [],
   });
 
@@ -196,6 +197,7 @@ class UserPublicProfile {
   final bool iFollowThem;
   final bool theyFollowMe;
   final bool isBlocked;
+  final List<ProfilePostThumb> pinnedPosts;
   final List<ProfilePostThumb> recentPosts;
 }
 

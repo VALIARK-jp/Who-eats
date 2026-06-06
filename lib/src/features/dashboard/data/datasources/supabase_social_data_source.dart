@@ -784,6 +784,10 @@ class SupabaseSocialDataSource {
         userId,
         pinnedOnly: false,
       );
+      final pinnedPosts = await _fetchProfilePostThumbs(
+        userId,
+        pinnedOnly: true,
+      );
       return UserPublicProfile(
         userId: userId,
         name: (row['name'] ?? '').toString().trim().isNotEmpty
@@ -796,6 +800,7 @@ class SupabaseSocialDataSource {
         iFollowThem: iFollowThem && !isFriend,
         theyFollowMe: theyFollowMe && !isFriend,
         isBlocked: blocked != null,
+        pinnedPosts: pinnedPosts,
         recentPosts: recentPosts,
       );
     } catch (e, st) {
@@ -829,6 +834,26 @@ class SupabaseSocialDataSource {
         .delete()
         .eq('blocker_id', uid)
         .eq('blocked_id', targetUserId);
+  }
+
+  Future<void> reportUser(String targetUserId, String reason) async {
+    final uid = _uid;
+    if (uid == null || targetUserId.isEmpty) return;
+    await _client.from(SupabaseTables.reports).insert({
+      'reporter_id': uid,
+      'reported_user_id': targetUserId,
+      'reason': reason.trim(),
+    });
+  }
+
+  Future<void> reportPost(String postId, String reason) async {
+    final uid = _uid;
+    if (uid == null || postId.isEmpty) return;
+    await _client.from(SupabaseTables.reports).insert({
+      'reporter_id': uid,
+      'reported_post_id': postId,
+      'reason': reason.trim(),
+    });
   }
 
   Future<List<PendingMealTag>> listPendingMealTags() async {

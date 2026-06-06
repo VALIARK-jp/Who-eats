@@ -146,6 +146,18 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
+  Future<void> reportUser(String userId, String reason) async {
+    if (!_useSupabase) return;
+    await _social.reportUser(userId, reason);
+  }
+
+  @override
+  Future<void> reportPost(String postId, String reason) async {
+    if (!_useSupabase) return;
+    await _social.reportPost(postId, reason);
+  }
+
+  @override
   Future<List<PendingMealTag>> getPendingMealTags() async {
     if (!_useSupabase) return const [];
     return _social.listPendingMealTags();

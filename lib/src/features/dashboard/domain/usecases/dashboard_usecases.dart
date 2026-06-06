@@ -185,6 +185,20 @@ class UnblockUserUseCase {
   Future<void> call(String userId) => _repository.unblockUser(userId);
 }
 
+class ReportUserUseCase {
+  const ReportUserUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(String userId, String reason) =>
+      _repository.reportUser(userId, reason);
+}
+
+class ReportPostUseCase {
+  const ReportPostUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(String postId, String reason) =>
+      _repository.reportPost(postId, reason);
+}
+
 class GetPendingMealTagsUseCase {
   const GetPendingMealTagsUseCase(this._repository);
   final DashboardRepository _repository;

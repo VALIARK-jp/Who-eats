@@ -29,6 +29,8 @@ class AppShellController extends ChangeNotifier {
     required GetUserPublicProfileUseCase getUserPublicProfileUseCase,
     required BlockUserUseCase blockUserUseCase,
     required UnblockUserUseCase unblockUserUseCase,
+    required ReportUserUseCase reportUserUseCase,
+    required ReportPostUseCase reportPostUseCase,
     required GetPendingMealTagsUseCase getPendingMealTagsUseCase,
     required GetRecordSummaryUseCase getRecordSummaryUseCase,
     required GetProfileOverviewUseCase getProfileOverviewUseCase,
@@ -64,6 +66,8 @@ class AppShellController extends ChangeNotifier {
        _getUserPublicProfileUseCase = getUserPublicProfileUseCase,
        _blockUserUseCase = blockUserUseCase,
        _unblockUserUseCase = unblockUserUseCase,
+       _reportUserUseCase = reportUserUseCase,
+       _reportPostUseCase = reportPostUseCase,
        _getPendingMealTagsUseCase = getPendingMealTagsUseCase,
        _getRecordSummaryUseCase = getRecordSummaryUseCase,
        _getProfileOverviewUseCase = getProfileOverviewUseCase,
@@ -100,6 +104,8 @@ class AppShellController extends ChangeNotifier {
   final GetUserPublicProfileUseCase _getUserPublicProfileUseCase;
   final BlockUserUseCase _blockUserUseCase;
   final UnblockUserUseCase _unblockUserUseCase;
+  final ReportUserUseCase _reportUserUseCase;
+  final ReportPostUseCase _reportPostUseCase;
   final GetPendingMealTagsUseCase _getPendingMealTagsUseCase;
   final GetRecordSummaryUseCase _getRecordSummaryUseCase;
   final GetProfileOverviewUseCase _getProfileOverviewUseCase;
@@ -532,6 +538,14 @@ class AppShellController extends ChangeNotifier {
   Future<void> unblockUser(String targetUserId) async {
     await _unblockUserUseCase(targetUserId);
     notifyListeners();
+  }
+
+  Future<void> reportUser(String targetUserId, String reason) async {
+    await _reportUserUseCase(targetUserId, reason);
+  }
+
+  Future<void> reportPost(String postId, String reason) async {
+    await _reportPostUseCase(postId, reason);
   }
 
   void _log(String message) {

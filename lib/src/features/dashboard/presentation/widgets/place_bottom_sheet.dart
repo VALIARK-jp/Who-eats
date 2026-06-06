@@ -151,7 +151,9 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
 
   List<Widget> _buildContent(PlaceDetail detail) {
     final postImages = _postImageUrls(detail);
-    final heroImageUrl = postImages.isNotEmpty ? postImages.first : '';
+    final heroImageUrl = postImages.isNotEmpty
+        ? postImages.first
+        : detail.imageUrl.trim();
     final leadPost = detail.posts.isNotEmpty ? detail.posts.first : null;
 
     return [
@@ -160,11 +162,11 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
           ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: AspectRatio(
-              aspectRatio: 1.45,
-              child: heroImageUrl.isEmpty
-                  ? Container(
-                      color: AppColors.cardElevated,
-                      alignment: Alignment.center,
+                  aspectRatio: 1.45,
+                  child: heroImageUrl.isEmpty
+                      ? Container(
+                          color: AppColors.cardElevated,
+                          alignment: Alignment.center,
                       child: const Icon(Icons.restaurant, size: 34),
                     )
                   : Image.network(

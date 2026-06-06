@@ -17,6 +17,7 @@ abstract final class SupabaseTables {
   static String get postFavorites => _prefixed('post_favorites');
   static String get postCompanions => _prefixed('post_companions');
   static String get blocks => _prefixed('blocks');
+  static String get reports => _prefixed('reports');
   static String get devicePushTokens => _prefixed('device_push_tokens');
   static String get notifications => _prefixed('notifications');
 

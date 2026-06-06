@@ -45,6 +45,8 @@ abstract interface class DashboardRepository {
   Future<UserPublicProfile?> getUserPublicProfile(String userId);
   Future<void> blockUser(String userId);
   Future<void> unblockUser(String userId);
+  Future<void> reportUser(String userId, String reason);
+  Future<void> reportPost(String postId, String reason);
   Future<List<PendingMealTag>> getPendingMealTags();
 
   Future<RecordSummary> getRecordSummary();
