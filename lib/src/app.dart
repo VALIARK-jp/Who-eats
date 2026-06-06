@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/app_config.dart';
+import 'core/push/push_notification_service.dart';
 import 'core/supabase/user_profile_sync.dart';
 import 'core/supabase/valiark_deeplink_handler.dart';
 import 'core/theme/app_theme.dart';
@@ -35,13 +36,26 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
       ValiarkDeeplinkHandler.handleOnce();
       if (AppConfig.hasSupabase) {
         unawaited(_bootstrapStaleSession());
-        _authSub = Supabase.instance.client.auth.onAuthStateChange.listen(
-          (AuthState data) {
-            if (data.session != null) {
-              unawaited(syncCurrentUserProfile());
-            }
-          },
-        );
+        final session = Supabase.instance.client.auth.currentSession;
+        if (session != null) {
+          unawaited(
+            PushNotificationService.instance.onAuthChanged(session.user.id),
+          );
+        }
+        _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
+          AuthState data,
+        ) {
+          if (data.session != null) {
+            unawaited(syncCurrentUserProfile());
+            unawaited(
+              PushNotificationService.instance.onAuthChanged(
+                data.session!.user.id,
+              ),
+            );
+          } else {
+            unawaited(PushNotificationService.instance.onAuthChanged(null));
+          }
+        });
       }
     });
   }
@@ -53,7 +67,9 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
     try {
       await auth.refreshSession();
     } catch (e, st) {
-      debugPrint('WhoEatsApp: refreshSession failed, clearing local session: $e\n$st');
+      debugPrint(
+        'WhoEatsApp: refreshSession failed, clearing local session: $e\n$st',
+      );
       await auth.signOut(scope: SignOutScope.local);
     }
   }
@@ -86,12 +102,15 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         getHomeFeedUseCase: GetHomeFeedUseCase(repository),
         getMapPinsUseCase: GetMapPinsUseCase(repository),
         getFriendsUseCase: GetFriendsUseCase(repository),
-        getFriendRecommendationsUseCase:
-            GetFriendRecommendationsUseCase(repository),
-        getIncomingFriendRequestsUseCase:
-            GetIncomingFriendRequestsUseCase(repository),
-        getOutgoingPendingFollowsUseCase:
-            GetOutgoingPendingFollowsUseCase(repository),
+        getFriendRecommendationsUseCase: GetFriendRecommendationsUseCase(
+          repository,
+        ),
+        getIncomingFriendRequestsUseCase: GetIncomingFriendRequestsUseCase(
+          repository,
+        ),
+        getOutgoingPendingFollowsUseCase: GetOutgoingPendingFollowsUseCase(
+          repository,
+        ),
         followUserUseCase: FollowUserUseCase(repository),
         unfollowUserUseCase: UnfollowUserUseCase(repository),
         togglePostLikeUseCase: TogglePostLikeUseCase(repository),
@@ -100,6 +119,7 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         deletePostCommentUseCase: DeletePostCommentUseCase(repository),
         searchUsersByCodeUseCase: SearchUsersByCodeUseCase(repository),
         softDeletePostUseCase: SoftDeletePostUseCase(repository),
+        updatePostCaptionUseCase: UpdatePostCaptionUseCase(repository),
         getPostsForDayUseCase: GetPostsForDayUseCase(repository),
         getFeedPostByIdUseCase: GetFeedPostByIdUseCase(repository),
         getUserPublicProfileUseCase: GetUserPublicProfileUseCase(repository),
@@ -108,10 +128,14 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         getPendingMealTagsUseCase: GetPendingMealTagsUseCase(repository),
         getRecordSummaryUseCase: GetRecordSummaryUseCase(repository),
         getProfileOverviewUseCase: GetProfileOverviewUseCase(repository),
+        getProfilePostThumbsUseCase: GetProfilePostThumbsUseCase(repository),
         getFavoritePostsUseCase: GetFavoritePostsUseCase(repository),
         setProfilePostPinnedUseCase: SetProfilePostPinnedUseCase(repository),
         togglePostFavoriteUseCase: TogglePostFavoriteUseCase(repository),
         getNotificationsUseCase: GetNotificationsUseCase(repository),
+        markAllNotificationsReadUseCase: MarkAllNotificationsReadUseCase(
+          repository,
+        ),
         createPostDraftUseCase: CreatePostDraftUseCase(repository),
         getPlaceDetailUseCase: GetPlaceDetailUseCase(repository),
         searchMapPinsUseCase: SearchMapPinsUseCase(repository),

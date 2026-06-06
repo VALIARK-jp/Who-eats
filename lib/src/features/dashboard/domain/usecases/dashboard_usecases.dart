@@ -146,6 +146,13 @@ class SoftDeletePostUseCase {
   Future<void> call(String postId) => _repository.softDeletePost(postId);
 }
 
+class UpdatePostCaptionUseCase {
+  const UpdatePostCaptionUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(String postId, String caption) =>
+      _repository.updatePostCaption(postId, caption);
+}
+
 class GetPostsForDayUseCase {
   const GetPostsForDayUseCase(this._repository);
   final DashboardRepository _repository;
@@ -196,6 +203,13 @@ class GetProfileOverviewUseCase {
   Future<ProfileOverview> call() => _repository.getProfileOverview();
 }
 
+class GetProfilePostThumbsUseCase {
+  const GetProfilePostThumbsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<ProfilePostThumb>> call({required bool pinnedOnly}) =>
+      _repository.getProfilePostThumbs(pinnedOnly: pinnedOnly);
+}
+
 class GetFavoritePostsUseCase {
   const GetFavoritePostsUseCase(this._repository);
   final DashboardRepository _repository;
@@ -219,6 +233,12 @@ class GetNotificationsUseCase {
   const GetNotificationsUseCase(this._repository);
   final DashboardRepository _repository;
   Future<List<AppNotification>> call() => _repository.getNotifications();
+}
+
+class MarkAllNotificationsReadUseCase {
+  const MarkAllNotificationsReadUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call() => _repository.markAllNotificationsRead();
 }
 
 class CreatePostDraftUseCase {

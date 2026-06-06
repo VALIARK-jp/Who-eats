@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -22,15 +23,14 @@ import '../controllers/app_shell_controller.dart';
 import '../widgets/floating_bottom_nav.dart';
 import '../widgets/signed_in_gate_overlay.dart';
 import '../widgets/friend_avatar_stack.dart';
-import '../widgets/food_post_card.dart';
 import '../widgets/food_pin_3d_viewer.dart';
 import '../widgets/place_bottom_sheet.dart';
 import '../widgets/friend_avatar.dart';
-import '../widgets/orange_glow_button.dart';
 import '../widgets/calendar_record_view.dart';
 import '../widgets/post_comment_preview.dart';
 import '../widgets/profile_food_grid.dart';
 import '../widgets/app_state_view.dart';
+import '../widgets/segmented_tab.dart';
 import 'profile_settings_page.dart';
 import 'user_profile_page.dart';
 
@@ -43,7 +43,6 @@ class AppShellPage extends StatefulWidget {
 
 class _AppShellPageState extends State<AppShellPage> {
   MapPin? _activePlaceSheetPin;
-  bool _postEditorOpen = false;
   FeedPost? _activePostDetail;
   String? _activeUserProfileId;
   StreamSubscription<AuthState>? _authSub;
@@ -57,7 +56,8 @@ class _AppShellPageState extends State<AppShellPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _controller = context.read<AppShellController>();
-        _lastAuthUserHash = Supabase.instance.client.auth.currentUser?.id.hashCode;
+        _lastAuthUserHash =
+            Supabase.instance.client.auth.currentUser?.id.hashCode;
         _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((
           AuthState data,
         ) {
@@ -87,7 +87,6 @@ class _AppShellPageState extends State<AppShellPage> {
     _activePlaceSheetPin = null;
     _activePostDetail = null;
     _activeUserProfileId = null;
-    _postEditorOpen = false;
     setState(() {});
     await controller.initialize();
     if (!mounted) return;
@@ -115,20 +114,54 @@ class _AppShellPageState extends State<AppShellPage> {
   }
 
   void _openPostEditor() {
-    setState(() => _postEditorOpen = true);
+    final controller = _controller;
+    if (controller == null || controller.postDraft == null) return;
+    unawaited(_showPostEditorSheet(controller));
   }
 
   void _openPostDetail(FeedPost post) {
     setState(() => _activePostDetail = post);
   }
 
-  void _closePostEditor({
-    bool clearDraft = true,
-    AppShellController? controller,
-  }) {
-    if (!_postEditorOpen) return;
-    setState(() => _postEditorOpen = false);
-    if (clearDraft) controller?.clearPostDraft();
+  Future<void> _showPostEditorSheet(AppShellController controller) async {
+    final draft = controller.postDraft;
+    if (draft == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.58),
+      builder: (sheetContext) {
+        final height = MediaQuery.sizeOf(sheetContext).height * 0.94;
+        return Container(
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            color: Colors.transparent,
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                height: height,
+                child: PostCreationPage(
+                  draft: draft,
+                  controller: controller,
+                  sheetHeight: height,
+                  onClose: () {
+                    controller.clearPostDraft();
+                    if (Navigator.of(sheetContext).canPop()) {
+                      Navigator.of(sheetContext).pop();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _closePostDetail() {
@@ -147,17 +180,14 @@ class _AppShellPageState extends State<AppShellPage> {
 
   void _openPlaceFromPost(FeedPost post, AppShellController controller) {
     if (post.isHomePost || (post.placeGoogleId ?? '').isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('この投稿には地図上の店舗がありません')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('この投稿には地図上の店舗がありません')));
       return;
     }
     _closePostDetail();
     _closePlaceSheet();
-    controller.focusMapOnPlace(
-      post.placeGoogleId!,
-      placeName: post.placeName,
-    );
+    controller.focusMapOnPlace(post.placeGoogleId!, placeName: post.placeName);
   }
 
   void _openFriendsPage() {
@@ -262,6 +292,22 @@ class _AppShellPageState extends State<AppShellPage> {
     );
   }
 
+  void _openFriendListPage(List<FriendCandidate> friends) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => Scaffold(
+          backgroundColor: AppColors.black,
+          body: SafeArea(
+            child: _FriendListPage(
+              friends: friends,
+              onOpenProfile: _openUserProfile,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AppShellController>(
@@ -292,7 +338,7 @@ class _AppShellPageState extends State<AppShellPage> {
             onSearchExpansionChanged: (_) {},
             onEdgeSwipeBack: () {},
           ),
-          _CameraPage(
+          _SimpleCameraPage(
             onShot: () => _startNewPostFlow(
               context,
               controller,
@@ -313,6 +359,7 @@ class _AppShellPageState extends State<AppShellPage> {
             profile: controller.profileOverview!,
             controller: controller,
             onOpenPostDetail: _openPostDetail,
+            onOpenFriendList: () => _openFriendListPage(controller.friends),
           ),
         ];
 
@@ -322,6 +369,7 @@ class _AppShellPageState extends State<AppShellPage> {
 
         return Scaffold(
           extendBody: true,
+          resizeToAvoidBottomInset: false,
           body: Stack(
             children: [
               pages[controller.bottomIndex],
@@ -367,51 +415,15 @@ class _AppShellPageState extends State<AppShellPage> {
                         detailFuture: controller.getPlaceDetail(pin.id),
                         scrollController: scrollController,
                         onClose: _closePlaceSheet,
-                        onPostTap: (_) {},
+                        onPostTap: (preview) async {
+                          _closePlaceSheet();
+                          final post = controller.feedPostById(preview.id) ??
+                              await controller.loadFeedPostById(preview.id);
+                          if (!mounted || post == null) return;
+                          _openPostDetail(post);
+                        },
                       );
                     },
-                  ),
-                ),
-
-              // Post editor overlay (camera -> edit -> submit).
-              if (_postEditorOpen && controller.postDraft != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  bottom: bottomOffset,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _closePostEditor(controller: controller),
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.22),
-                    ),
-                  ),
-                ),
-              if (_postEditorOpen && controller.postDraft != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: bottomOffset,
-                  height: availableHeight,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: SizedBox(
-                      // Keep the same feel as the old bottom-sheet (72%).
-                      height: (availableHeight * 0.72).clamp(
-                        420.0,
-                        availableHeight,
-                      ),
-                      child: PostCreationPage(
-                        draft: controller.postDraft!,
-                        controller: controller,
-                        sheetHeight: (availableHeight * 0.72).clamp(
-                          420.0,
-                          availableHeight,
-                        ),
-                        onClose: () => _closePostEditor(controller: controller),
-                      ),
-                    ),
                   ),
                 ),
 
@@ -452,8 +464,7 @@ class _AppShellPageState extends State<AppShellPage> {
           bottomNavigationBar: FloatingBottomNav(
             selectedIndex: controller.bottomIndex,
             onTabSelected: (index) => controller.changeBottomIndex(index),
-            onCameraPressed: () =>
-                _startNewPostFlow(context, controller, source: ImageSource.camera),
+            onCameraPressed: () => controller.changeBottomIndex(2),
           ),
         );
       },
@@ -462,9 +473,9 @@ class _AppShellPageState extends State<AppShellPage> {
 
   Future<void> _startNewPostFlow(
     BuildContext context,
-    AppShellController controller,
-    {required ImageSource source}
-  ) async {
+    AppShellController controller, {
+    required ImageSource source,
+  }) async {
     // 画像の選択は先に行い、その後で現在地から最寄り店を補完する。
     final file = await ImagePicker().pickImage(
       source: source,
@@ -496,7 +507,7 @@ class _AppShellPageState extends State<AppShellPage> {
     );
 
     if (!context.mounted || controller.postDraft == null) return;
-    // 編集シートはホーム上に載せる。
+    // 投稿フォームはモーダルで開く。
     controller.changeBottomIndex(0);
     await Future<void>.delayed(Duration.zero);
     if (!context.mounted || controller.postDraft == null) return;
@@ -536,58 +547,72 @@ class _HomePageState extends State<_HomePage> {
         ),
         SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
-                    IconButton(
-                      icon: Badge(
-                        isLabelVisible: controller.incomingFriendRequests.isNotEmpty,
-                        label: Text('${controller.incomingFriendRequests.length}'),
-                        child: const Icon(Icons.people_outline),
-                      ),
-                      onPressed: widget.onOpenFriends,
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.black.withValues(alpha: 0.8),
-                        minimumSize: const Size(46, 46),
-                        fixedSize: const Size(46, 46),
-                        padding: EdgeInsets.zero,
-                      ),
-                    ),
+                    const SizedBox(width: 48),
                     const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none),
-                      onPressed: () =>
-                          _showNotificationSheet(context, controller.notifications),
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.black.withValues(alpha: 0.8),
-                        minimumSize: const Size(46, 46),
-                        fixedSize: const Size(46, 46),
-                        padding: EdgeInsets.zero,
+                    const SizedBox(width: 48),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.blackElevated.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Badge(
+                              isLabelVisible:
+                                  controller.incomingFriendRequests.isNotEmpty,
+                              label: Text(
+                                '${controller.incomingFriendRequests.length}',
+                              ),
+                              child: const Icon(Icons.people_outline),
+                            ),
+                            onPressed: widget.onOpenFriends,
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              minimumSize: const Size(42, 42),
+                              fixedSize: const Size(42, 42),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                          IconButton(
+                            icon: Badge(
+                              isLabelVisible:
+                                  controller.unreadNotificationCount > 0,
+                              label: Text(
+                                '${controller.unreadNotificationCount}',
+                              ),
+                              child: const Icon(Icons.notifications_none),
+                            ),
+                            onPressed: () async {
+                              await controller.markAllNotificationsRead();
+                              if (!context.mounted) return;
+                              _showNotificationSheet(
+                                context,
+                                controller.notifications,
+                              );
+                            },
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              minimumSize: const Size(42, 42),
+                              fixedSize: const Size(42, 42),
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final scope in FeedTimelineScope.values)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(scope.label),
-                            selected: controller.feedTimelineScope == scope,
-                            onSelected: (_) =>
-                                controller.setFeedTimelineScope(scope),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
                 if (controller.pendingPostDraft != null) ...[
                   const SizedBox(height: 8),
                   Material(
@@ -597,7 +622,10 @@ class _HomePageState extends State<_HomePage> {
                       dense: true,
                       title: const Text(
                         '投稿に失敗しました',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
                       ),
                       subtitle: const Text('タップして再試行'),
                       trailing: IconButton(
@@ -627,7 +655,9 @@ class _HomePageState extends State<_HomePage> {
                           fontSize: 13,
                         ),
                       ),
-                      subtitle: Text(controller.pendingMealTags.first.placeName),
+                      subtitle: Text(
+                        controller.pendingMealTags.first.placeName,
+                      ),
                       onTap: () {
                         final tag = controller.pendingMealTags.first;
                         controller.setPostDraft(
@@ -651,7 +681,6 @@ class _HomePageState extends State<_HomePage> {
       ],
     );
   }
-
 }
 
 class _FeedTab extends StatelessWidget {
@@ -666,134 +695,928 @@ class _FeedTab extends StatelessWidget {
   final ValueChanged<FeedPost> onTapPost;
   final ValueChanged<FeedPost> onOpenPlaceFromPost;
 
+  static int _compareFeedPostsDesc(FeedPost a, FeedPost b) {
+    final aCreatedAt = a.createdAt;
+    final bCreatedAt = b.createdAt;
+    if (aCreatedAt == null && bCreatedAt == null) return 0;
+    if (aCreatedAt == null) return 1;
+    if (bCreatedAt == null) return -1;
+    final createdAtCompare = bCreatedAt.compareTo(aCreatedAt);
+    if (createdAtCompare != 0) return createdAtCompare;
+    return b.id.compareTo(a.id);
+  }
+
+  static bool _canViewOtherPosts(List<FeedPost> myPosts) {
+    if (myPosts.isEmpty) return true;
+    final latest = myPosts.first.createdAt;
+    if (latest == null) return true;
+    return DateTime.now().difference(latest.toLocal()) < const Duration(hours: 24);
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = controller.currentUserId;
+    final sortedFeed = [...feed]..sort(_compareFeedPostsDesc);
     final myPosts = uid == null
         ? const <FeedPost>[]
-        : feed.where((post) => post.userId == uid).toList();
-    final otherPosts = uid == null
-        ? feed
-        : feed.where((post) => post.userId != uid).toList();
+        : sortedFeed.where((post) => post.userId == uid).toList();
+    final featuredPost = myPosts.isNotEmpty
+        ? myPosts.first
+        : (sortedFeed.isNotEmpty ? sortedFeed.first : null);
+    final myPastPosts = uid == null || featuredPost == null
+        ? const <FeedPost>[]
+        : [
+            for (final post in myPosts)
+              if (post.id != featuredPost.id) post,
+          ];
+    final remainingPosts = featuredPost == null
+        ? sortedFeed
+        : sortedFeed.where((post) => post.id != featuredPost.id).toList();
+    final remainingOtherPosts = uid == null
+        ? remainingPosts
+        : remainingPosts.where((post) => post.userId != uid).toList();
+    final canViewOtherPosts = uid == null || _canViewOtherPosts(myPosts);
+    final visibleOtherPosts = canViewOtherPosts
+        ? remainingOtherPosts
+        : const <FeedPost>[];
 
     if (feed.isEmpty) {
-      return AppStateView(
-        type: AppStateType.empty,
-        title: '投稿がまだありません',
-        message: '撮影して、みんなの「おすすめ」を広げよう。',
+      return Container(
+        color: AppColors.black,
+        child: const AppStateView(
+          type: AppStateType.empty,
+          title: '投稿がまだありません',
+          message: '撮影して、みんなの「おすすめ」を広げよう。',
+        ),
       );
     }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 220, 16, 120),
-      children: [
-        if (myPosts.isNotEmpty) ...[
+    return Container(
+      color: AppColors.black,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
+        children: [
+          SegmentedTab<FeedTimelineScope>(
+            items: const [
+              SegmentedTabItem(
+                value: FeedTimelineScope.friends,
+                label: '友達',
+              ),
+              SegmentedTabItem(
+                value: FeedTimelineScope.near,
+                label: '友達の友達',
+              ),
+              SegmentedTabItem(
+                value: FeedTimelineScope.all,
+                label: '全体',
+              ),
+            ],
+            selected: controller.feedTimelineScope,
+            onChanged: controller.setFeedTimelineScope,
+          ),
+          const SizedBox(height: 20),
+          if (featuredPost != null) ...[
+            _BerealFeaturedPanel(
+              post: featuredPost,
+              remainingCount: remainingPosts.length,
+              pastPosts: myPastPosts,
+              currentUserId: uid,
+              controller: controller,
+              onTap: () => onTapPost(featuredPost),
+              onOpenPlace: () => onOpenPlaceFromPost(featuredPost),
+            ),
+            const SizedBox(height: 26),
+          ],
+          if (!canViewOtherPosts) ...[
+            const _FeedRefreshLockCard(),
+            const SizedBox(height: 18),
+          ],
+          for (var i = 0; i < visibleOtherPosts.length; i++) ...[
+            _BerealFeedCard(
+              post: visibleOtherPosts[i],
+              currentUserId: uid,
+              controller: controller,
+              onTap: () => onTapPost(visibleOtherPosts[i]),
+              onOpenPlace: () => onOpenPlaceFromPost(visibleOtherPosts[i]),
+            ),
+            if (i != visibleOtherPosts.length - 1) const SizedBox(height: 18),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedRefreshLockCard extends StatelessWidget {
+  const _FeedRefreshLockCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.blackElevated.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.orangeAccent.withValues(alpha: 0.38)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Container(
-            padding: const EdgeInsets.all(14),
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: AppColors.cardElevated.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.orange.withValues(alpha: 0.42)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.orange.withValues(alpha: 0.12),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+              color: AppColors.orange.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.lock_clock_outlined,
+              color: AppColors.orangeHighlight,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '投稿から24時間が経過しました',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '新しく投稿すると、友達や全体の投稿をまた見られます。',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.person_pin_circle_outlined,
-                  color: AppColors.orangeAccent,
-                  size: 22,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BerealFeaturedPanel extends StatefulWidget {
+  const _BerealFeaturedPanel({
+    required this.post,
+    required this.remainingCount,
+    required this.pastPosts,
+    required this.currentUserId,
+    required this.controller,
+    required this.onTap,
+    required this.onOpenPlace,
+  });
+
+  final FeedPost post;
+  final int remainingCount;
+  final List<FeedPost> pastPosts;
+  final String? currentUserId;
+  final AppShellController controller;
+  final VoidCallback onTap;
+  final VoidCallback onOpenPlace;
+
+  @override
+  State<_BerealFeaturedPanel> createState() => _BerealFeaturedPanelState();
+}
+
+class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
+  final TextEditingController _captionController = TextEditingController();
+  final FocusNode _captionFocusNode = FocusNode();
+  bool _captionEditorOpen = false;
+  bool _savingCaption = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _captionController.text = widget.post.caption;
+  }
+
+  @override
+  void didUpdateWidget(covariant _BerealFeaturedPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_captionEditorOpen && oldWidget.post.caption != widget.post.caption) {
+      _captionController.text = widget.post.caption;
+    }
+  }
+
+  @override
+  void dispose() {
+    _captionFocusNode.dispose();
+    _captionController.dispose();
+    super.dispose();
+  }
+
+  void _openCaptionEditor() {
+    if (_captionEditorOpen) {
+      _captionFocusNode.requestFocus();
+      return;
+    }
+    _captionController.text = widget.post.caption;
+    setState(() => _captionEditorOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _captionFocusNode.requestFocus();
+    });
+  }
+
+  void _closeCaptionEditor() {
+    if (!_captionEditorOpen) return;
+    _captionFocusNode.unfocus();
+    setState(() => _captionEditorOpen = false);
+  }
+
+  Future<void> _saveCaption() async {
+    if (_savingCaption) return;
+    final caption = _captionController.text.trim();
+    setState(() => _savingCaption = true);
+    try {
+      await widget.controller.updatePostCaption(widget.post, caption);
+      _closeCaptionEditor();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _savingCaption = false);
+    }
+  }
+
+  Widget _postImage({required double aspectRatio}) {
+    final hasNetwork = widget.post.imageUrl.startsWith('http://') ||
+        widget.post.imageUrl.startsWith('https://');
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: AspectRatio(
+          aspectRatio: aspectRatio,
+          child: hasNetwork
+              ? Image.network(
+                  widget.post.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: AppColors.cardElevated,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.image_outlined),
+                  ),
+                )
+              : Container(
+                  color: AppColors.cardElevated,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_outlined),
                 ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'My Post',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timeLabel = widget.post.createdAt == null
+        ? 'たった今'
+        : _BerealFeedCard.formatTime(widget.post.createdAt!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (widget.pastPosts.isEmpty)
+          Center(
+            child: SizedBox(
+              width: MediaQuery.sizeOf(context).width * 0.62,
+              child: _postImage(aspectRatio: 0.86),
+            ),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: _postImage(aspectRatio: 0.86),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: AspectRatio(
+                  aspectRatio: 0.86,
+                  child: _PastPostSlot(pastPosts: widget.pastPosts),
+                ),
+              ),
+            ],
+          ),
+        const SizedBox(height: 18),
+        TextButton(
+          onPressed: _openCaptionEditor,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            alignment: Alignment.centerLeft,
+          ),
+          child: Text(
+            widget.post.caption.trim().isEmpty
+                ? '一言を追加...'
+                : widget.post.caption,
+            style: TextStyle(
+              fontSize: widget.post.caption.trim().isEmpty ? 16 : 18,
+              fontWeight: FontWeight.w800,
+              color: widget.post.caption.trim().isEmpty
+                  ? AppColors.orangeHighlight
+                  : Colors.white,
+              decoration: widget.post.caption.trim().isEmpty
+                  ? TextDecoration.underline
+                  : TextDecoration.none,
+              decorationColor: AppColors.orangeHighlight,
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          child: _captionEditorOpen
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.blackElevated.withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: AppColors.border2),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _captionController,
+                            focusNode: _captionFocusNode,
+                            enabled: widget.currentUserId != null,
+                            minLines: 1,
+                            maxLines: 3,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _saveCaption(),
+                            decoration: const InputDecoration(
+                              hintText: '一言を入力...',
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed:
+                              widget.currentUserId == null || _savingCaption
+                                  ? null
+                                  : _saveCaption,
+                          icon: _savingCaption
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded),
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.orange,
+                            foregroundColor: Colors.black,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: _closeCaptionEditor,
+                          icon: const Icon(Icons.close),
+                          visualDensity: VisualDensity.compact,
+                          style: IconButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                )
+              : const SizedBox.shrink(),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${widget.post.placeName} · $timeLabel',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.62),
+                  fontWeight: FontWeight.w600,
                 ),
-                Text(
-                  '${myPosts.length}件',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.72),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          for (final post in myPosts) ...[
-            FoodPostCard(
-              post: post,
-              currentUserId: uid,
-              onTap: () => onTapPost(post),
-              onOpenPlace: () => onOpenPlaceFromPost(post),
-              onToggleLike: uid != null
-                  ? () async {
-                      try {
-                        await controller.togglePostLikeForPost(post);
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('$e')),
-                          );
-                        }
-                      }
-                    }
-                  : null,
-              onTogglePin: () async {
-                final pin = !post.isPinnedOnMyProfile;
-                try {
-                  await controller.setProfilePinForPost(post, pin);
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.toString())),
-                    );
-                  }
-                }
-              },
-              onToggleFavorite: null,
-            ),
-            const SizedBox(height: 14),
+            if (!widget.post.isHomePost &&
+                (widget.post.placeGoogleId ?? '').isNotEmpty)
+              _MapShortcutButton(onTap: widget.onOpenPlace),
           ],
-          const SizedBox(height: 4),
-        ],
-        for (var i = 0; i < otherPosts.length; i++) ...[
-          FoodPostCard(
-            post: otherPosts[i],
-            currentUserId: uid,
-            onTap: () => onTapPost(otherPosts[i]),
-            onOpenPlace: () => onOpenPlaceFromPost(otherPosts[i]),
-            onToggleLike: uid != null
-                ? () async {
-                    try {
-                      await controller.togglePostLikeForPost(otherPosts[i]);
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('$e')),
-                        );
-                      }
-                    }
-                  }
-                : null,
-            onTogglePin: null,
-            onToggleFavorite: uid != null
-                ? () => controller.togglePostFavoriteForPost(otherPosts[i])
-                : null,
+        ),
+        const SizedBox(height: 6),
+        _PostMetaLine(
+          post: widget.post,
+          onLike: widget.currentUserId == null
+              ? null
+              : () => widget.controller.togglePostLikeForPost(widget.post),
+        ),
+        _LatestCommentLine(post: widget.post, onTap: widget.onTap),
+      ],
+    );
+  }
+}
+
+class _PostMetaLine extends StatelessWidget {
+  const _PostMetaLine({
+    required this.post,
+    this.onLike,
+    this.onFavorite,
+  });
+
+  final FeedPost post;
+  final Future<void> Function()? onLike;
+  final Future<void> Function()? onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _FiveStarRating(value: post.rating),
+        _InlinePostMetric(
+          icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
+          value: '${post.likes}',
+          active: post.likedByMe,
+          onTap: onLike == null ? null : () => unawaited(onLike!()),
+        ),
+        _InlinePostMetric(
+          icon: post.isFavoritedByMe
+              ? Icons.bookmark_rounded
+              : Icons.bookmark_border_rounded,
+          value: null,
+          active: post.isFavoritedByMe,
+          onTap: onFavorite == null ? null : () => unawaited(onFavorite!()),
+        ),
+      ],
+    );
+  }
+}
+
+class _FiveStarRating extends StatelessWidget {
+  const _FiveStarRating({required this.value});
+
+  final int? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final rating = (value ?? 0).clamp(0, 5);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          Icon(
+            i <= rating ? Icons.star_rounded : Icons.star_border_rounded,
+            size: 17,
+            color: i <= rating
+                ? AppColors.orangeHighlight
+                : Colors.white.withValues(alpha: 0.36),
           ),
-          if (i != otherPosts.length - 1) const SizedBox(height: 14),
+      ],
+    );
+  }
+}
+
+class _InlinePostMetric extends StatelessWidget {
+  const _InlinePostMetric({
+    required this.icon,
+    required this.value,
+    this.active = false,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String? value;
+  final bool active;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppColors.orangeHighlight : Colors.white70;
+    final child = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 22, color: color),
+        if (value != null) ...[
+          const SizedBox(width: 5),
+          Text(
+            value!,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
         ],
       ],
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _MapShortcutButton extends StatelessWidget {
+  const _MapShortcutButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(
+              Icons.map_outlined,
+              size: 19,
+              color: AppColors.orangeHighlight,
+            ),
+            SizedBox(width: 3),
+            Text(
+              '地図',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: AppColors.orangeHighlight,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LatestCommentLine extends StatelessWidget {
+  const _LatestCommentLine({required this.post, required this.onTap});
+
+  final FeedPost post;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final comment = post.latestComment;
+    if (comment == null || comment.body.trim().isEmpty) {
+      if (post.comments <= 0) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: Text(
+            'コメント${post.comments}件を見る',
+            style: TextStyle(
+              color: AppColors.textSubtle.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: PostCommentPreview(
+        comment: comment,
+        totalCount: post.comments > 0 ? post.comments : 1,
+        onMoreTap: onTap,
+      ),
+    );
+  }
+}
+
+class _PastPostSlot extends StatelessWidget {
+  const _PastPostSlot({
+    required this.pastPosts,
+  });
+
+  final List<FeedPost> pastPosts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pastPosts.length == 1) {
+      return _PastPostPreview(post: pastPosts.first);
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.blackElevated,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border2),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              '自分の過去投稿',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              pastPosts.isEmpty ? 'なし' : '${pastPosts.length}件',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PastPostPreview extends StatelessWidget {
+  const _PastPostPreview({required this.post});
+
+  final FeedPost post;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasNetwork = post.imageUrl.startsWith('http://') ||
+        post.imageUrl.startsWith('https://');
+    final label = post.createdAt == null
+        ? '自分の過去投稿'
+        : _BerealFeedCard.formatTime(post.createdAt!);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          hasNetwork
+              ? Image.network(
+                  post.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: AppColors.blackElevated,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.image_outlined),
+                  ),
+                )
+              : Container(
+                  color: AppColors.blackElevated,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_outlined),
+                ),
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.45),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.black.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+              child: Text(
+                '自分の過去投稿 · $label',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BerealFeedCard extends StatelessWidget {
+  const _BerealFeedCard({
+    required this.post,
+    required this.currentUserId,
+    required this.controller,
+    required this.onTap,
+    required this.onOpenPlace,
+  });
+
+  final FeedPost post;
+  final String? currentUserId;
+  final AppShellController controller;
+  final VoidCallback onTap;
+  final VoidCallback onOpenPlace;
+
+  static String formatTime(DateTime createdAt) {
+    final diff = DateTime.now().difference(createdAt.toLocal());
+    if (diff.inMinutes < 60) return '${diff.inMinutes.clamp(1, 59)}分前';
+    if (diff.inHours < 24) return '${diff.inHours}時間前';
+    if (diff.inDays < 7) return '${diff.inDays}日前';
+    return '${createdAt.toLocal().month}/${createdAt.toLocal().day}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = currentUserId ?? '';
+    final isOwn = uid.isNotEmpty && post.userId == uid;
+    final hasNetwork = post.userIconUrl != null &&
+        post.userIconUrl!.isNotEmpty &&
+        (post.userIconUrl!.startsWith('http://') ||
+            post.userIconUrl!.startsWith('https://'));
+    final timeLabel = post.createdAt == null
+        ? post.placeName
+        : formatTime(post.createdAt!);
+    final initial = post.userName.isNotEmpty ? post.userName[0].toUpperCase() : '?';
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.blackElevated,
+                backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
+                child: hasNetwork
+                    ? null
+                    : Text(
+                        initial,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            post.userName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (isOwn) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.orange.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: AppColors.orangeAccent.withValues(alpha: 0.45),
+                              ),
+                            ),
+                            child: const Text(
+                              'My Post',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.orangeHighlight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: onOpenPlace,
+                                behavior: HitTestBehavior.opaque,
+                                child: Text(
+                                  '${post.placeName} · $timeLabel',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.62),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (!post.isHomePost &&
+                                (post.placeGoogleId ?? '').isNotEmpty)
+                              _MapShortcutButton(onTap: onOpenPlace),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        _PostMetaLine(
+                          post: post,
+                          onLike: currentUserId == null
+                              ? null
+                              : () => controller.togglePostLikeForPost(post),
+                          onFavorite: currentUserId == null || isOwn
+                              ? null
+                              : () => controller.togglePostFavoriteForPost(post),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.more_horiz,
+                color: Colors.white.withValues(alpha: 0.75),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: AspectRatio(
+              aspectRatio: 0.92,
+              child: Image.network(
+                post.imageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                  color: AppColors.cardElevated,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.fastfood_outlined),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (post.caption.trim().isNotEmpty) ...[
+            Text(
+              post.caption,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          _LatestCommentLine(post: post, onTap: onTap),
+        ],
+      ),
     );
   }
 }
@@ -805,12 +1628,14 @@ class _MapTab extends StatefulWidget {
     required this.onPlaceTap,
     required this.onSearchExpansionChanged,
     required this.onEdgeSwipeBack,
+    this.onPickPlace,
   });
   final List<MapPin> mapPins;
   final AppShellController controller;
   final ValueChanged<MapPin> onPlaceTap;
   final ValueChanged<bool> onSearchExpansionChanged;
   final VoidCallback onEdgeSwipeBack;
+  final ValueChanged<MapPin>? onPickPlace;
 
   @override
   State<_MapTab> createState() => _MapTabState();
@@ -965,6 +1790,11 @@ class _MapTabState extends State<_MapTab> {
               zoom: 14,
             ),
             style: _hideDefaultPoiStyle,
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+              Factory<OneSequenceGestureRecognizer>(
+                () => EagerGestureRecognizer(),
+              ),
+            },
             onMapCreated: (controller) {
               _mapController = controller;
               _log('Map created, refreshing viewport pins');
@@ -1180,6 +2010,10 @@ class _MapTabState extends State<_MapTab> {
   Future<void> _openMapBottomSheet(BuildContext context, MapPin pin) async {
     if (!context.mounted) return;
     _log('openBottomSheet placeId=${pin.id} name=${pin.placeName}');
+    if (widget.onPickPlace != null) {
+      widget.onPickPlace!(pin);
+      return;
+    }
     widget.onPlaceTap(pin);
   }
 
@@ -1277,9 +2111,9 @@ class _MapTabState extends State<_MapTab> {
     if (lat == null || lng == null) {
       widget.controller.clearPendingMapPlaceFocus();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('店舗の位置を地図上に表示できませんでした')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('店舗の位置を地図上に表示できませんでした')));
       }
       return;
     }
@@ -1301,6 +2135,8 @@ class _MapTabState extends State<_MapTab> {
       _lastZoom = nextZoom;
     });
     await _refreshViewportPins();
+    if (!mounted || pin == null) return;
+    widget.onPlaceTap(pin);
   }
 
   void _onSearchChanged(String value) {
@@ -1670,8 +2506,9 @@ class _MapTabState extends State<_MapTab> {
     final width = size.toDouble();
     final center = Offset(width / 2, width / 2);
     final orange = AppColors.orange;
-    final baseColor =
-        visited > 0 ? AppColors.orange : AppColors.gray.withValues(alpha: 0.85);
+    final baseColor = visited > 0
+        ? AppColors.orange
+        : AppColors.gray.withValues(alpha: 0.85);
 
     final glowPaint = Paint()
       ..color = orange.withValues(alpha: 0.24)
@@ -1860,7 +2697,7 @@ class _FriendsPageState extends State<_FriendsPage> {
           ),
           Expanded(
             child: Text(
-              _searchByConnection ? 'からむで探す' : '友達',
+              '友達申請',
               style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w900,
@@ -1874,32 +2711,6 @@ class _FriendsPageState extends State<_FriendsPage> {
               child: const Icon(Icons.mail_outline, size: 22),
             ),
         ],
-      ),
-    );
-  }
-
-  bool get _hasNoFriendsData =>
-      widget.friends.isEmpty &&
-      widget.incoming.isEmpty &&
-      widget.outgoing.isEmpty &&
-      widget.recommendations.isEmpty;
-
-  Widget _buildDiscoverButton() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: OrangeGlowButton(
-        width: double.infinity,
-        height: 42,
-        isEnabled: true,
-        borderRadius: 999,
-        onPressed: () => setState(() => _searchByConnection = true),
-        child: const Text(
-          'からむで探す',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: Colors.black,
-          ),
-        ),
       ),
     );
   }
@@ -1921,13 +2732,14 @@ class _FriendsPageState extends State<_FriendsPage> {
                   _onSearchChanged(v);
                 },
                 decoration: InputDecoration(
-                  hintText: '@user_codeで検索',
+                  hintText: 'ユーザー名 / @user_codeで検索',
                   prefixIcon: const Icon(Icons.search, color: Colors.white70),
                   suffixIcon: _searchController.text.trim().isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.close, color: Colors.white70),
                           onPressed: () {
                             _searchController.clear();
+                            widget.controller.clearUserCodeSearch();
                             setState(() {});
                           },
                         )
@@ -1945,37 +2757,19 @@ class _FriendsPageState extends State<_FriendsPage> {
                   onUnfollow: widget.onUnfollow,
                 ),
               ),
-            if (!_hasNoFriendsData) _buildDiscoverButton(),
           ],
 
           Expanded(
-            child: _searchByConnection
-                ? FriendSearchPage(
-                    incoming: widget.incoming,
-                    outgoing: widget.outgoing,
-                    candidates: widget.recommendations,
-                    onBack: () => setState(() => _searchByConnection = false),
-                    onFriendTap: _onFriendTap,
-                    onFollow: widget.onFollow,
-                    onUnfollow: widget.onUnfollow,
-                  )
-                : _hasNoFriendsData
-                ? Column(
-                    children: [
-                      const Expanded(
-                        child: AppStateView(
-                          type: AppStateType.empty,
-                          title: '友達がいません',
-                          message: '「からむで探す」から友達を見つけましょう。',
-                        ),
-                      ),
-                      _buildDiscoverButton(),
-                    ],
-                  )
-                : FriendGrid(
-                    candidates: widget.friends,
-                    onFriendTap: _onFriendTap,
-                  ),
+            child: FriendSearchPage(
+              query: _searchController.text.trim(),
+              incoming: widget.incoming,
+              outgoing: widget.outgoing,
+              candidates: widget.recommendations,
+              onBack: () => setState(() => _searchByConnection = false),
+              onFriendTap: _onFriendTap,
+              onFollow: widget.onFollow,
+              onUnfollow: widget.onUnfollow,
+            ),
           ),
         ],
       ),
@@ -2038,10 +2832,11 @@ class FriendGrid extends StatelessWidget {
   }
 }
 
-/// 「からむで探す」: フォロー返し・承認待ち・おすすめ候補（🔶タグ行のみモック）。
+/// 友達申請: フォロー返し・承認待ち・おすすめ候補（🔶タグ行のみモック）。
 class FriendSearchPage extends StatelessWidget {
   const FriendSearchPage({
     super.key,
+    required this.query,
     required this.incoming,
     required this.outgoing,
     required this.candidates,
@@ -2051,6 +2846,7 @@ class FriendSearchPage extends StatelessWidget {
     required this.onUnfollow,
   });
 
+  final String query;
   final List<FriendCandidate> incoming;
   final List<FriendCandidate> outgoing;
   final List<FriendCandidate> candidates;
@@ -2062,13 +2858,62 @@ class FriendSearchPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 🔶 モック: DB 未整備（doc/mvp-mock-vs-real-data.md 参照）
-    final recommendedTags = const ['グルメ', 'カフェ巡り', 'ラーメン', '焼肉', 'スイーツ', 'ランチ'];
-
-    final sorted = [...candidates]
-      ..sort((a, b) => b.mutualCount.compareTo(a.mutualCount));
-
-    final top = sorted.take(4).toList(growable: false);
-
+    const fallbackCandidates = <FriendCandidate>[
+      FriendCandidate(
+        id: 'demo-1',
+        name: 'yuma_21',
+        avatarUrl: '',
+        mutualCount: 4,
+        isFriend: false,
+      ),
+      FriendCandidate(
+        id: 'demo-2',
+        name: 'saya_27',
+        avatarUrl: '',
+        mutualCount: 3,
+        isFriend: false,
+      ),
+      FriendCandidate(
+        id: 'demo-3',
+        name: 'haruka',
+        avatarUrl: '',
+        mutualCount: 2,
+        isFriend: false,
+      ),
+      FriendCandidate(
+        id: 'demo-4',
+        name: 'takumi_99',
+        avatarUrl: '',
+        mutualCount: 1,
+        isFriend: false,
+      ),
+    ];
+    final normalizedQuery = query.trim().toLowerCase();
+    final q = normalizedQuery.replaceFirst('@', '');
+    final recommendedCandidates = candidates.isNotEmpty
+        ? candidates
+        : fallbackCandidates;
+    final remoteMatches = normalizedQuery.isEmpty
+        ? const <FriendCandidate>[]
+        : context.read<AppShellController>().userCodeSearchResults;
+    final searchPool = <FriendCandidate>[
+      ...recommendedCandidates,
+      ...remoteMatches,
+    ];
+    final searchResults =
+        normalizedQuery.isEmpty
+              ? <FriendCandidate>[]
+              : List<FriendCandidate>.from(
+                  searchPool.where((c) {
+                    final name = c.name.toLowerCase();
+                    final code = c.name.toLowerCase().replaceFirst('@', '');
+                    return name.startsWith(normalizedQuery) ||
+                        name.contains(normalizedQuery) ||
+                        code.startsWith(q) ||
+                        code.contains(q);
+                  }),
+                )
+          ..sort((a, b) => b.mutualCount.compareTo(a.mutualCount));
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -2086,12 +2931,14 @@ class FriendSearchPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...incoming.map((c) => _FriendCandidateRow(
-                candidate: c,
-                onFriendTap: onFriendTap,
-                onFollow: onFollow,
-                onUnfollow: onUnfollow,
-              )),
+          ...incoming.map(
+            (c) => _FriendCandidateRow(
+              candidate: c,
+              onFriendTap: onFriendTap,
+              onFollow: onFollow,
+              onUnfollow: onUnfollow,
+            ),
+          ),
           const SizedBox(height: 18),
         ],
         if (outgoing.isNotEmpty) ...[
@@ -2108,119 +2955,106 @@ class FriendSearchPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          ...outgoing.map((c) => _FriendCandidateRow(
+          ...outgoing.map(
+            (c) => _FriendCandidateRow(
+              candidate: c,
+              onFriendTap: onFriendTap,
+              onFollow: onFollow,
+              onUnfollow: onUnfollow,
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
+        if (normalizedQuery.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          const Text(
+            '検索結果',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 12),
+          if (searchResults.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                '該当するユーザーがいません',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+              ),
+            )
+          else
+            ...searchResults.map(
+              (c) => _FriendCandidateRow(
                 candidate: c,
                 onFriendTap: onFriendTap,
                 onFollow: onFollow,
                 onUnfollow: onUnfollow,
-              )),
-          const SizedBox(height: 18),
-        ],
-        const Text(
-          '共通の友達が多い人',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 12),
-
-        SizedBox(
-          height: 120,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemBuilder: (context, i) {
-              final c = top[i];
-              final showDot =
-                  c.isFriend || c.theyFollowMe || c.mutualCount > 0;
-              return InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => onFriendTap(c),
-                child: Container(
-                  width: 120,
-                  decoration: BoxDecoration(
-                    color: AppColors.blackElevated.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      FriendAvatar(
-                        displayName: c.name,
-                        radius: 22,
-                        showStatusDot: showDot,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        c.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                        ),
-                      ),
-                      Text(
-                        '共通 ${c.mutualCount}人',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemCount: top.length,
-          ),
-        ),
-
-        const SizedBox(height: 18),
-
-        const Text(
-          'おすすめタグ',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 12),
-
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final t in recommendedTags)
-              FilterChip(
-                label: Text(t),
-                onSelected: (_) {},
-                selected: false,
-                backgroundColor: AppColors.blackElevated.withValues(alpha: 0.7),
-                shape: StadiumBorder(
-                  side: BorderSide(
-                    color: AppColors.orange.withValues(alpha: 0.5),
-                  ),
-                ),
-                labelStyle: const TextStyle(fontWeight: FontWeight.w900),
-                checkmarkColor: AppColors.orange,
               ),
-          ],
-        ),
+            ),
+        ],
 
-        const SizedBox(height: 18),
-
-        const Text(
-          '候補一覧',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 10),
-
-        ...sorted.map(
-          (c) => _FriendCandidateRow(
-            candidate: c,
-            onFriendTap: onFriendTap,
-            onFollow: onFollow,
-            onUnfollow: onUnfollow,
+        if (normalizedQuery.isEmpty) ...[
+          const SizedBox(height: 18),
+          const Text(
+            '候補一覧',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
           ),
+          const SizedBox(height: 10),
+          ...recommendedCandidates.map(
+            (c) => _FriendCandidateRow(
+              candidate: c,
+              onFriendTap: onFriendTap,
+              onFollow: onFollow,
+              onUnfollow: onUnfollow,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _FriendListPage extends StatelessWidget {
+  const _FriendListPage({required this.friends, required this.onOpenProfile});
+
+  final List<FriendCandidate> friends;
+  final ValueChanged<String> onOpenProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                '友達一覧',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: friends.isEmpty
+              ? const Center(
+                  child: AppStateView(
+                    type: AppStateType.empty,
+                    title: '友達がいません',
+                    message: 'プロフィールから友達申請を送ってみましょう。',
+                  ),
+                )
+              : FriendGrid(
+                  candidates: friends,
+                  onFriendTap: (c) => onOpenProfile(c.id),
+                ),
         ),
       ],
     );
@@ -2265,8 +3099,7 @@ class _FriendCandidateRow extends StatelessWidget {
             FriendAvatar(
               displayName: c.name,
               radius: 20,
-              showStatusDot:
-                  c.isFriend || c.theyFollowMe || c.mutualCount > 0,
+              showStatusDot: c.isFriend || c.theyFollowMe || c.mutualCount > 0,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2327,62 +3160,305 @@ class _FriendCandidateRow extends StatelessWidget {
   }
 }
 
-class _CameraPage extends StatelessWidget {
-  const _CameraPage({
+class _SimpleCameraPage extends StatelessWidget {
+  const _SimpleCameraPage({
     required this.onShot,
     required this.onGalleryPressed,
   });
+
   final VoidCallback onShot;
   final VoidCallback onGalleryPressed;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: GestureDetector(
-        onTap: onShot,
-        child: Container(
-          color: Colors.black,
-          alignment: Alignment.center,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 84,
-                height: 84,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 3),
-                  shape: BoxShape.circle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+        child: Column(
+          children: [
+            const Spacer(),
+            Text(
+              '投稿を始める',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'カメラかギャラリーを選んでください',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textSubtle),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: onShot,
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const Text('カメラ'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton.icon(
+                onPressed: onGalleryPressed,
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('ギャラリー'),
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _CameraPage extends StatelessWidget {
+  const _CameraPage({required this.onShot, required this.onGalleryPressed});
+  final VoidCallback onShot;
+  final VoidCallback onGalleryPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0, -0.9),
+                  radius: 1.25,
+                  colors: [
+                    AppColors.orange.withValues(alpha: 0.20),
+                    AppColors.black,
+                  ],
+                  stops: const [0.0, 0.75],
                 ),
               ),
-              const SizedBox(height: 28),
-              Text(
-                'タップしてカメラで撮影',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
+            ),
+          ),
+          Positioned(
+            top: -26,
+            right: -26,
+            child: Container(
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.orange.withValues(alpha: 0.12),
               ),
-              const SizedBox(height: 10),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  '位置情報の取得は撮影のあとに行います。',
+            ),
+          ),
+          Positioned(
+            bottom: -44,
+            left: -36,
+            child: Container(
+              width: 210,
+              height: 210,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.orangeAccent.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                Text(
+                  '投稿を始める',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'カメラで新しく撮るか、ギャラリーから選んでそのまま編集へ。',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white38,
+                    color: AppColors.textSubtle,
+                    height: 1.45,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 18),
+                Expanded(
+                  child: Center(
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 430),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardElevated.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.30),
+                            blurRadius: 30,
+                            offset: const Offset(0, 16),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _CameraChoiceTile(
+                            icon: Icons.photo_camera_outlined,
+                            title: 'カメラで撮る',
+                            description: 'その場で撮ってすぐ投稿へ進む',
+                            accent: AppColors.orange,
+                            onTap: onShot,
+                          ),
+                          const SizedBox(height: 14),
+                          _CameraChoiceTile(
+                            icon: Icons.photo_library_outlined,
+                            title: 'ギャラリーから選ぶ',
+                            description: '過去の写真を選んで投稿に使う',
+                            accent: AppColors.orangeAccent,
+                            onTap: onGalleryPressed,
+                          ),
+                          const SizedBox(height: 18),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.03),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.06),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.auto_awesome,
+                                  color: AppColors.orangeAccent.withValues(
+                                    alpha: 0.95,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    '選んだあと、そのまま編集画面へ進みます',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  '撮影後に戻らず、そのまま編集へ進めます。',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textInactive,
                     height: 1.35,
                   ),
                   textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: 220,
-                child: OutlinedButton.icon(
-                  onPressed: onGalleryPressed,
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('ギャラリーから選ぶ'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CameraChoiceTile extends StatelessWidget {
+  const _CameraChoiceTile({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.24),
+                Colors.white.withValues(alpha: 0.03),
+              ],
+            ),
+            border: Border.all(color: accent.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: 0.2),
                 ),
+                child: Icon(icon, color: accent, size: 28),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.68),
+                        fontSize: 12,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: Colors.white.withValues(alpha: 0.72),
               ),
             ],
           ),
@@ -2453,10 +3529,12 @@ class _ProfilePage extends StatelessWidget {
     required this.profile,
     required this.controller,
     required this.onOpenPostDetail,
+    required this.onOpenFriendList,
   });
   final ProfileOverview profile;
   final AppShellController controller;
   final ValueChanged<FeedPost> onOpenPostDetail;
+  final VoidCallback onOpenFriendList;
 
   FeedPost _postFromThumb(ProfilePostThumb thumb, {required bool pinned}) {
     final fromFeed = controller.feedPostById(thumb.postId);
@@ -2477,7 +3555,11 @@ class _ProfilePage extends StatelessWidget {
     );
   }
 
-  void _openThumb(BuildContext context, ProfilePostThumb thumb, {required bool pinned}) {
+  void _openThumb(
+    BuildContext context,
+    ProfilePostThumb thumb, {
+    required bool pinned,
+  }) {
     onOpenPostDetail(_postFromThumb(thumb, pinned: pinned));
   }
 
@@ -2486,6 +3568,8 @@ class _ProfilePage extends StatelessWidget {
     final initial = profile.name.isNotEmpty
         ? profile.name.characters.first.toUpperCase()
         : '?';
+    final postCount = profile.recentPosts.length;
+    final streakDays = controller.recordSummary?.streakDays ?? 0;
 
     return SafeArea(
       child: ListView(
@@ -2562,7 +3646,25 @@ class _ProfilePage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _StatTile(label: '友達', value: profile.friends),
+                child: _StatTile(
+                  label: '投稿数',
+                  value: postCount,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  label: '連続記録日数',
+                  value: streakDays,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatTile(
+                  label: '友達',
+                  value: profile.friends,
+                  onTap: profile.friends > 0 ? onOpenFriendList : null,
+                ),
               ),
             ],
           ),
@@ -3096,17 +4198,6 @@ class _PostCreationPageState extends State<PostCreationPage> {
     super.dispose();
   }
 
-  String _visibilityLabel() {
-    switch (_visibility) {
-      case 'public':
-        return '公開';
-      case 'private':
-        return '非公開';
-      default:
-        return '友だちのみ';
-    }
-  }
-
   String _currentPlaceName() {
     final text = _placeController.text.trim();
     if (text.isNotEmpty) return text;
@@ -3203,6 +4294,124 @@ class _PostCreationPageState extends State<PostCreationPage> {
     }
   }
 
+  void _applyResolvedPlace({
+    required String placeId,
+    required String placeName,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    _suppressPlaceChange = true;
+    _placeController.text = placeName;
+    _selectedPlaceGoogleId = placeId;
+    _selectedPlaceLat = latitude;
+    _selectedPlaceLng = longitude;
+    _selectedPlaceName = placeName;
+    _clearPlaceSuggestions();
+    setState(() {});
+    unawaited(
+      Future<void>.delayed(Duration.zero, () {
+        if (mounted) _suppressPlaceChange = false;
+      }),
+    );
+  }
+
+  Future<void> _choosePlaceFromMap(BuildContext context) async {
+    if (_resolvingPlace) return;
+    final picked = await showModalBottomSheet<MapPin>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.58),
+      builder: (sheetContext) {
+        final height = MediaQuery.sizeOf(sheetContext).height * 0.88;
+        return Container(
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            color: Colors.transparent,
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            child: Material(
+              color: const Color(0xFF09090A),
+              child: SizedBox(
+                height: height,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              '地図から店を選ぶ',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            color: Colors.white70,
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        'ピンをタップすると、その店を投稿先に設定します。',
+                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                    ),
+                    Expanded(
+                      child: _MapTab(
+                        mapPins: widget.controller.mapPins,
+                        controller: widget.controller,
+                        onPlaceTap: (pin) => Navigator.of(sheetContext).pop(pin),
+                        onSearchExpansionChanged: (_) {},
+                        onEdgeSwipeBack: () => Navigator.of(sheetContext).maybePop(),
+                        onPickPlace: (pin) => Navigator.of(sheetContext).pop(pin),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _resolvingPlace = true);
+    try {
+      final detail = await widget.controller.getPlaceDetail(picked.id);
+      if (!mounted) return;
+      final resolvedName = detail.placeName.isNotEmpty
+          ? detail.placeName
+          : picked.placeName;
+      _applyResolvedPlace(
+        placeId: detail.placeId,
+        placeName: resolvedName,
+        latitude: detail.latitude,
+        longitude: detail.longitude,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _applyResolvedPlace(
+        placeId: picked.id,
+        placeName: picked.placeName,
+        latitude: picked.latitude,
+        longitude: picked.longitude,
+      );
+    } finally {
+      if (mounted) setState(() => _resolvingPlace = false);
+    }
+  }
+
   Future<void> _replaceImage(ImageSource source) async {
     final file = await ImagePicker().pickImage(
       source: source,
@@ -3233,9 +4442,9 @@ class _PostCreationPageState extends State<PostCreationPage> {
               _selectedPlaceLat == null ||
               _selectedPlaceLng == null)) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('店名の候補を選択してください')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('店名を選択してください')));
         return;
       }
       setState(() => _submitting = true);
@@ -3250,10 +4459,12 @@ class _PostCreationPageState extends State<PostCreationPage> {
           restaurantPlaceName: _postType == 'restaurant'
               ? _currentPlaceName()
               : null,
-          restaurantPlaceLatitude:
-              _postType == 'restaurant' ? _selectedPlaceLat : null,
-          restaurantPlaceLongitude:
-              _postType == 'restaurant' ? _selectedPlaceLng : null,
+          restaurantPlaceLatitude: _postType == 'restaurant'
+              ? _selectedPlaceLat
+              : null,
+          restaurantPlaceLongitude: _postType == 'restaurant'
+              ? _selectedPlaceLng
+              : null,
           caption: _captionController.text.trim().isEmpty
               ? null
               : _captionController.text.trim(),
@@ -3293,299 +4504,319 @@ class _PostCreationPageState extends State<PostCreationPage> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const actionAreaHeight = 84.0;
+    final actionAreaHeight = 92.0 + bottomInset;
     final suggestions = widget.controller.placeSuggestions;
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
+    final isRestaurant = _postType == 'restaurant';
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF151517), Color(0xFF09090A)],
+        ),
       ),
-      child: SizedBox(
-        height: widget.sheetHeight ?? MediaQuery.of(context).size.height * 0.72,
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                children: [
-                  Row(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+          child: SizedBox(
+            height:
+                widget.sheetHeight ?? MediaQuery.of(context).size.height * 0.72,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, actionAreaHeight),
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
-                        onPressed: widget.onClose,
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        '新しい投稿',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: SizedBox(
-                      height: 200,
-                      width: double.infinity,
-                      child: _localImagePath != null
-                          ? Image.file(
-                              File(_localImagePath!),
-                              fit: BoxFit.cover,
-                            )
-                          : (_photoUrl?.isNotEmpty == true
-                              ? Image.network(_photoUrl!, fit: BoxFit.cover)
-                              : Container(
-                                  color: AppColors.gray.withValues(alpha: 0.35),
-                                  alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.photo_outlined,
-                                    size: 42,
-                                    color: Colors.white70,
-                                  ),
-                                )),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _replaceImage(ImageSource.gallery),
-                          icon: const Icon(Icons.photo_library_outlined),
-                          label: const Text('ギャラリー'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _replaceImage(ImageSource.camera),
-                          icon: const Icon(Icons.photo_camera_outlined),
-                          label: const Text('撮り直す'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (_postType == 'restaurant') ...[
-                    TextField(
-                      controller: _placeController,
-                      onChanged: _onPlaceChanged,
-                      decoration: InputDecoration(
-                        labelText: '店名',
-                        hintText: '店名を入力すると候補が出ます',
-                        suffixIcon: _resolvingPlace
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              )
-                            : (_placeController.text.isNotEmpty
-                                ? IconButton(
-                                    tooltip: '入力を消す',
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _placeSearchDebounce?.cancel();
-                                      _suppressPlaceChange = true;
-                                      _placeController.clear();
-                                      setState(() {
-                                        _selectedPlaceGoogleId = null;
-                                        _selectedPlaceLat = null;
-                                        _selectedPlaceLng = null;
-                                        _selectedPlaceName = '';
-                                      });
-                                      _clearPlaceSuggestions();
-                                      unawaited(
-                                        Future<void>.delayed(Duration.zero, () {
-                                          if (mounted) {
-                                            _suppressPlaceChange = false;
-                                          }
-                                        }),
-                                      );
-                                    },
-                                  )
-                                : null),
-                      ),
-                    ),
-                    if (_selectedPlaceGoogleId == null)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text(
-                          '候補を選ぶと、店名と位置情報が自動で入ります。',
-                          style: TextStyle(fontSize: 12, color: Colors.orange),
-                        ),
-                      ),
-                    if (_selectedPlaceGoogleId == null &&
-                        _placeController.text.trim().isNotEmpty &&
-                        suggestions.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.blackElevated,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        constraints: const BoxConstraints(maxHeight: 180),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          itemCount: suggestions.length,
-                          separatorBuilder: (_, _) => Divider(
-                            height: 1,
-                            color: Colors.white.withValues(alpha: 0.08),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                            onPressed: widget.onClose,
                           ),
-                          itemBuilder: (context, index) {
-                            final suggestion = suggestions[index];
-                            return ListTile(
-                              dense: true,
-                              title: Text(
-                                suggestion.description,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              leading: const Icon(
-                                Icons.place_outlined,
-                                size: 18,
-                                color: AppColors.orange,
-                              ),
-                              onTap: () => _choosePlaceSuggestion(suggestion),
-                            );
-                          },
-                        ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            '投稿を作成',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                    if (_selectedPlaceGoogleId == null)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text(
-                          '位置情報または最寄り店の解決に失敗したため、外食投稿できません。',
-                          style: TextStyle(fontSize: 12, color: Colors.orange),
-                        ),
-                      ),
-                  ],
-                  TextField(
-                    controller: _captionController,
-                    decoration: InputDecoration(
-                      labelText: 'キャプション',
-                      hintText: widget.draft.note,
-                    ),
-                  ),
-                  if (AppConfig.hasSupabase) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      '評価（1〜5）',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    Slider(
-                      value: (_rating ?? 3).toDouble(),
-                      min: 1,
-                      max: 5,
-                      divisions: 4,
-                      label: '${_rating ?? 3}',
-                      onChanged: (v) => setState(() => _rating = v.round()),
-                    ),
-                    if (widget.controller.friends.isNotEmpty) ...[
+                      const SizedBox(height: 12),
                       const Text(
-                        '一緒に食べた友達',
+                        '種類',
                         style: TextStyle(fontSize: 12, color: Colors.white70),
                       ),
                       const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          for (final f in widget.controller.friends)
-                            FilterChip(
-                              label: Text(f.name),
-                              selected: _companionIds.contains(f.id),
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _companionIds.add(f.id);
-                                  } else {
-                                    _companionIds.remove(f.id);
-                                  }
-                                });
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'restaurant',
+                            label: Text('外食'),
+                          ),
+                          ButtonSegment(value: 'home', label: Text('自炊')),
+                        ],
+                        selected: {_postType},
+                        onSelectionChanged: (s) {
+                          setState(() => _postType = s.first);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 200,
+                          width: double.infinity,
+                          child: _localImagePath != null
+                              ? Image.file(
+                                  File(_localImagePath!),
+                                  fit: BoxFit.cover,
+                                )
+                              : (_photoUrl?.isNotEmpty == true
+                                    ? Image.network(
+                                        _photoUrl!,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Container(
+                                        color: AppColors.gray.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: const Icon(
+                                          Icons.photo_outlined,
+                                          size: 42,
+                                          color: Colors.white70,
+                                        ),
+                                      )),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _replaceImage(ImageSource.camera),
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          label: const Text('再撮影'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (isRestaurant) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _placeController,
+                                onChanged: _onPlaceChanged,
+                                decoration: InputDecoration(
+                                  labelText: '店名',
+                                  hintText: '店名を入力',
+                                  suffixIcon: _resolvingPlace
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        )
+                                      : (_placeController.text.isNotEmpty
+                                            ? IconButton(
+                                                tooltip: '入力を消す',
+                                                icon: const Icon(Icons.clear),
+                                                onPressed: () {
+                                                  _placeSearchDebounce?.cancel();
+                                                  _suppressPlaceChange = true;
+                                                  _placeController.clear();
+                                                  setState(() {
+                                                    _selectedPlaceGoogleId = null;
+                                                    _selectedPlaceLat = null;
+                                                    _selectedPlaceLng = null;
+                                                    _selectedPlaceName = '';
+                                                  });
+                                                  _clearPlaceSuggestions();
+                                                  unawaited(
+                                                    Future<void>.delayed(
+                                                      Duration.zero,
+                                                      () {
+                                                        if (mounted) {
+                                                          _suppressPlaceChange =
+                                                              false;
+                                                        }
+                                                      },
+                                                    ),
+                                                  );
+                                                },
+                                              )
+                                            : null),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              height: 56,
+                              child: FilledButton.tonalIcon(
+                                onPressed: _resolvingPlace
+                                    ? null
+                                    : () => _choosePlaceFromMap(context),
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('地図から選ぶ'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '入力か地図選択で店名と位置情報を入れられます。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        if (_selectedPlaceGoogleId == null &&
+                            _placeController.text.trim().isNotEmpty &&
+                            suggestions.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.blackElevated,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            constraints: const BoxConstraints(maxHeight: 180),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              itemCount: suggestions.length,
+                              separatorBuilder: (_, _) => Divider(
+                                height: 1,
+                                color: Colors.white.withValues(alpha: 0.08),
+                              ),
+                              itemBuilder: (context, index) {
+                                final suggestion = suggestions[index];
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    suggestion.description,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  leading: const Icon(
+                                    Icons.place_outlined,
+                                    size: 18,
+                                    color: AppColors.orange,
+                                  ),
+                                  onTap: () => _choosePlaceSuggestion(
+                                    suggestion,
+                                  ),
+                                );
                               },
                             ),
-                        ],
-                      ),
-                    ],
-                  ],
-                  if (AppConfig.hasSupabase) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      '種類',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'restaurant', label: Text('外食')),
-                        ButtonSegment(value: 'home', label: Text('自宅')),
+                          ),
+                        const SizedBox(height: 12),
                       ],
-                      selected: {_postType},
-                      onSelectionChanged: (s) {
-                        setState(() => _postType = s.first);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '公開範囲',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      TextField(
+                        controller: _captionController,
+                        decoration: const InputDecoration(
+                          labelText: '一言',
+                          hintText: '一言を入力...',
+                        ),
                       ),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (v) => setState(() => _visibility = v),
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(value: 'friends', child: Text('友だちのみ')),
-                          PopupMenuItem(value: 'public', child: Text('公開')),
-                          PopupMenuItem(value: 'private', child: Text('非公開')),
+                      if (AppConfig.hasSupabase) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          '評価（1〜5）',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        Slider(
+                          value: (_rating ?? 3).toDouble(),
+                          min: 1,
+                          max: 5,
+                          divisions: 4,
+                          label: '${_rating ?? 3}',
+                          onChanged: (v) => setState(() => _rating = v.round()),
+                        ),
+                        if (widget.controller.friends.isNotEmpty) ...[
+                          const Text(
+                            '一緒に食べた友達',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final f in widget.controller.friends)
+                                FilterChip(
+                                  label: Text(f.name),
+                                  selected: _companionIds.contains(f.id),
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      if (selected) {
+                                        _companionIds.add(f.id);
+                                      } else {
+                                        _companionIds.remove(f.id);
+                                      }
+                                    });
+                                  },
+                                ),
+                            ],
+                          ),
                         ],
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_visibilityLabel()),
-                            const Icon(Icons.arrow_drop_down),
-                          ],
+                      ],
+                    ],
+                  ),
+                ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  minimum: const EdgeInsets.only(bottom: 12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF09090A).withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: SizedBox(
+                        height: 48,
+                        child: FilledButton(
+                          onPressed:
+                              (_submitting ||
+                                  (isRestaurant &&
+                                      _selectedPlaceGoogleId == null))
+                              ? null
+                              : () => _onSubmitPressed(context),
+                          child: _submitting
+                              ? const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('投稿する'),
                         ),
                       ),
                     ),
-                  ],
-                  const SizedBox(height: actionAreaHeight),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 12 + bottomInset,
-              child: SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed:
-                      (_submitting ||
-                          (_postType == 'restaurant' &&
-                              _selectedPlaceGoogleId == null))
-                      ? null
-                      : () => _onSubmitPressed(context),
-                  child: _submitting
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('投稿する'),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -3637,13 +4868,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadComments() async {
+  Future<void> _loadComments({bool expand = false}) async {
     setState(() => _commentsLoading = true);
     final list = await controller.loadPostComments(_post.id);
     if (!mounted) return;
     setState(() {
       _comments = list;
       _commentsLoading = false;
+      if (expand || list.length > 1) {
+        _commentsExpanded = true;
+      }
     });
   }
 
@@ -3658,6 +4892,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
   PostComment? get _previewComment {
     if (_comments.isEmpty) return null;
     return _comments.last;
+  }
+
+  Future<void> _openComments() async {
+    if (_commentsExpanded && _comments.isNotEmpty) return;
+    if (_comments.isEmpty) {
+      await _loadComments(expand: true);
+      return;
+    }
+    setState(() => _commentsExpanded = true);
   }
 
   void _syncPostCommentMeta() {
@@ -3687,11 +4930,16 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final preview = _previewComment ?? _post.latestComment;
     if (preview == null) {
       return [
-        Text(
-          'コメントを読み込めませんでした',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.6),
-            fontSize: 13,
+        GestureDetector(
+          onTap: _openComments,
+          behavior: HitTestBehavior.opaque,
+          child: Text(
+            'コメント$count件を見る',
+            style: TextStyle(
+              color: AppColors.textSubtle.withValues(alpha: 0.85),
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
           ),
         ),
       ];
@@ -3702,7 +4950,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
         PostCommentPreview(
           comment: preview,
           totalCount: count,
-          onMoreTap: () => setState(() => _commentsExpanded = true),
+          onMoreTap: _openComments,
           onDelete: preview.isMine ? () => _deleteComment(preview) : null,
         ),
       ];
@@ -3782,9 +5030,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       if (!mounted) return;
       _showSnack(
         context,
-        updated.isPinnedOnMyProfile
-            ? 'プロフィールにピン留めしました'
-            : 'ピン留めを外しました',
+        updated.isPinnedOnMyProfile ? 'プロフィールにピン留めしました' : 'ピン留めを外しました',
       );
     } catch (e) {
       if (mounted) _showSnack(context, e.toString());
@@ -3891,9 +5137,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       if (!mounted) return;
       _showSnack(
         context,
-        updated.isFavoritedByMe
-            ? 'お気に入りに追加しました'
-            : 'お気に入りを外しました',
+        updated.isFavoritedByMe ? 'お気に入りに追加しました' : 'お気に入りを外しました',
       );
     } catch (e) {
       if (mounted) _showSnack(context, e.toString());
@@ -3979,9 +5223,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         )
                       else if (controller.currentUserId != null)
                         IconButton(
-                          tooltip: _post.isFavoritedByMe
-                              ? 'お気に入りを外す'
-                              : 'お気に入り',
+                          tooltip: _post.isFavoritedByMe ? 'お気に入りを外す' : 'お気に入り',
                           onPressed: _actionBusy ? null : _toggleFavorite,
                           icon: Icon(
                             _post.isFavoritedByMe
@@ -3996,7 +5238,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         IconButton(
                           tooltip: '投稿を削除',
                           onPressed: _actionBusy ? null : _confirmDeletePost,
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.redAccent,
+                          ),
                         ),
                     ],
                   ),
@@ -4096,8 +5341,12 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: AppColors.orange.withValues(alpha: 0.35),
-                                            borderRadius: BorderRadius.circular(999),
+                                            color: AppColors.orange.withValues(
+                                              alpha: 0.35,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
                                           ),
                                           child: const Text(
                                             '自炊',
@@ -4143,11 +5392,39 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         onOpenGoogleMaps: () => _openGoogleMaps(context, place),
                       ),
                       const SizedBox(height: 14),
-                      Text(
-                        _post.caption,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          height: 1.25,
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.blackElevated.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: AppColors.border2),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '一言',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.orangeHighlight,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _post.caption.trim().isEmpty
+                                  ? '一言を追加...'
+                                  : _post.caption,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                height: 1.25,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -4189,6 +5466,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'コメント',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
@@ -4358,20 +5644,27 @@ class _PostPlaceActionPanel extends StatelessWidget {
 }
 
 class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value});
+  const _StatTile({required this.label, required this.value, this.onTap});
   final String label;
   final int value;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          children: [
-            Text('$value', style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(label),
-          ],
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            children: [
+              Text(
+                '$value',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(label),
+            ],
+          ),
         ),
       ),
     );
@@ -4413,14 +5706,43 @@ void _showNotificationSheet(
       children: [
         const ListTile(
           title: Text('通知', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('いいね、コメント、友達申請など'),
         ),
-        ...notifications.map(
-          (n) => ListTile(
-            leading: const Icon(Icons.notifications_active_outlined),
-            title: Text(n.message),
+        if (notifications.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Text('まだ通知はありません。'),
+          )
+        else
+          ...notifications.map(
+            (n) => ListTile(
+              leading: Icon(
+                n.isRead
+                    ? Icons.notifications_none_outlined
+                    : Icons.notifications_active_outlined,
+              ),
+              title: Text(
+                n.title,
+                style: TextStyle(
+                  fontWeight: n.isRead ? FontWeight.w500 : FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(
+                '${n.body}${n.createdAt != null ? ' ・ ${_formatNotificationTime(n.createdAt!)}' : ''}',
+              ),
+            ),
           ),
-        ),
       ],
     ),
   );
+}
+
+String _formatNotificationTime(DateTime createdAt) {
+  final now = DateTime.now();
+  final diff = now.difference(createdAt.toLocal());
+  if (diff.inMinutes < 1) return 'たった今';
+  if (diff.inHours < 1) return '${diff.inMinutes}分前';
+  if (diff.inDays < 1) return '${diff.inHours}時間前';
+  if (diff.inDays < 7) return '${diff.inDays}日前';
+  return '${createdAt.month}/${createdAt.day}';
 }

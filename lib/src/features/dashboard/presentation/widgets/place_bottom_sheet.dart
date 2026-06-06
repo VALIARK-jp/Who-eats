@@ -3,7 +3,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
-import 'friend_avatar.dart';
 import 'friend_avatar_stack.dart';
 import 'glass_panel.dart';
 import 'segmented_tab.dart';
@@ -30,7 +29,7 @@ class PlaceBottomSheet extends StatefulWidget {
 }
 
 class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
-  int _tab = 0; // 0: overview, 1: posts, 2: menu, 3: photos
+  int _tab = 0; // 0: posts, 1: photos, 2: place info
 
   Future<void> _callPlace(PlaceDetail detail) async {
     final raw = (detail.phoneNumber ?? '').trim();
@@ -151,104 +150,96 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
   }
 
   List<Widget> _buildContent(PlaceDetail detail) {
+    final postImages = _postImageUrls(detail);
+    final heroImageUrl = postImages.isNotEmpty ? postImages.first : '';
+    final leadPost = detail.posts.isNotEmpty ? detail.posts.first : null;
+
     return [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      Stack(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: detail.imageUrl.isEmpty
-                ? Container(
-                    width: 112,
-                    height: 92,
-                    color: AppColors.cardElevated,
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.restaurant, size: 28),
-                  )
-                : Image.network(
-                    detail.imageUrl,
-                    width: 112,
-                    height: 92,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
-                      width: 112,
-                      height: 92,
+            borderRadius: BorderRadius.circular(22),
+            child: AspectRatio(
+              aspectRatio: 1.45,
+              child: heroImageUrl.isEmpty
+                  ? Container(
                       color: AppColors.cardElevated,
                       alignment: Alignment.center,
-                      child: const Icon(Icons.restaurant, size: 28),
+                      child: const Icon(Icons.restaurant, size: 34),
+                    )
+                  : Image.network(
+                      heroImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: AppColors.cardElevated,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.restaurant, size: 34),
+                      ),
                     ),
-                  ),
+            ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.08),
+                    Colors.black.withValues(alpha: 0.76),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 10,
+            right: 10,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: widget.onClose,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black.withValues(alpha: 0.46),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 14,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        detail.placeName,
-                        style: const TextStyle(
-                          fontSize: 27,
-                          fontWeight: FontWeight.w800,
-                          height: 1.05,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70),
-                      onPressed: widget.onClose,
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
                 Text(
-                  '★ ${detail.rating.toStringAsFixed(1)}',
+                  detail.placeName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: AppColors.orange,
+                    fontSize: 28,
                     fontWeight: FontWeight.w900,
+                    height: 1.02,
                   ),
                 ),
-                if ((detail.address ?? '').isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      detail.address!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.textSubtle.withValues(alpha: 0.95),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 2),
-                Row(
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    if (detail.openNow != null)
-                      Text(
-                        detail.openNow! ? '営業中' : '営業時間外',
-                        style: TextStyle(
-                          color: detail.openNow! ? AppColors.orange : Colors.white70,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
+                    _PlaceStatPill(
+                      icon: Icons.auto_awesome,
+                      label: '${detail.posts.length}件の投稿',
+                    ),
+                    if (widget.pin.friendAvatars.isNotEmpty)
+                      _PlaceStatPill(
+                        icon: Icons.people_alt_outlined,
+                        label: '${widget.pin.friendAvatars.length}人が投稿',
                       ),
-                    if (detail.travelMinutes != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '徒歩 ${detail.travelMinutes}分',
-                        style: TextStyle(
-                          color: AppColors.textSubtle.withValues(alpha: 0.9),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    if (detail.travelMinutes != null)
+                      _PlaceStatPill(
+                        icon: Icons.directions_walk,
+                        label: '徒歩 ${detail.travelMinutes}分',
                       ),
-                    ],
                   ],
                 ),
               ],
@@ -256,6 +247,60 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
           ),
         ],
       ),
+      const SizedBox(height: 12),
+      if (leadPost != null)
+        GlassPanel(
+          padding: const EdgeInsets.all(12),
+          borderRadius: 18,
+          child: InkWell(
+            onTap: () => widget.onPostTap?.call(leadPost),
+            borderRadius: BorderRadius.circular(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 17,
+                      color: AppColors.orangeHighlight,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      '${leadPost.userName} の投稿',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.orangeHighlight,
+                      ),
+                    ),
+                  ],
+                ),
+                if (leadPost.comment.trim().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    leadPost.comment,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        )
+      else
+        GlassPanel(
+          padding: const EdgeInsets.all(14),
+          borderRadius: 18,
+          child: const Text(
+            'このお店の投稿はまだありません。最初の投稿を作るとここに表示されます。',
+            style: TextStyle(fontWeight: FontWeight.w800, height: 1.35),
+          ),
+        ),
       const SizedBox(height: 14),
       Container(
         decoration: BoxDecoration(
@@ -283,16 +328,9 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             Expanded(
               child: _PlaceActionButton(
                 icon: Icons.map_outlined,
-                label: 'Google Maps',
-                subLabel: 'で開く',
+                label: '地図',
+                subLabel: 'で見る',
                 onTap: () => _openGoogleMaps(detail),
-              ),
-            ),
-            Expanded(
-              child: _PlaceActionButton(
-                icon: Icons.language,
-                label: '店舗サイト',
-                onTap: () => _openWebsite(detail),
               ),
             ),
           ],
@@ -301,115 +339,27 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
       const SizedBox(height: 14),
       SegmentedTab<int>(
         items: const [
-          SegmentedTabItem(value: 0, label: '概要'),
-          SegmentedTabItem(value: 1, label: '投稿'),
-          SegmentedTabItem(value: 2, label: 'メニュー'),
-          SegmentedTabItem(value: 3, label: '写真'),
+          SegmentedTabItem(value: 0, label: '投稿'),
+          SegmentedTabItem(value: 1, label: '写真'),
+          SegmentedTabItem(value: 2, label: '店舗情報'),
         ],
         selected: _tab,
         onChanged: (v) => setState(() => _tab = v),
       ),
       const SizedBox(height: 12),
-      if (_tab == 0) ..._buildOverview(detail),
-      if (_tab == 1) ..._buildPosts(detail),
-      if (_tab == 2) ..._buildMenu(),
-      if (_tab == 3) ..._buildPhotos(detail),
+      if (_tab == 0) ..._buildPosts(detail),
+      if (_tab == 1) ..._buildPhotos(detail),
+      if (_tab == 2) ..._buildPlaceInfo(detail),
       const SizedBox(height: 10),
-    ];
-  }
-
-  List<Widget> _buildOverview(PlaceDetail detail) {
-    return [
-      Row(
-        children: [
-          const Text(
-            '友達が行っています',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
-          ),
-          const Spacer(),
-          Text(
-            '${widget.pin.friendAvatars.length} 人',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      SizedBox(
-        height: 42,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: widget.pin.friendAvatars.isEmpty ? 1 : widget.pin.friendAvatars.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (_, i) {
-            if (widget.pin.friendAvatars.isEmpty) {
-              return const CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.cardElevated,
-                child: Icon(Icons.person_outline),
-              );
-            }
-            return FriendAvatar(
-              displayName: widget.pin.friendAvatars[i],
-              radius: 20,
-            );
-          },
-        ),
-      ),
-      const SizedBox(height: 14),
-      _PlaceInfoPanel(
-        detail: detail,
-        onOpenWebsite: () => _openWebsite(detail),
-        onOpenGoogleMaps: () => _openGoogleMaps(detail),
-      ),
-      const SizedBox(height: 14),
-      const Text('写真', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-      const SizedBox(height: 8),
-      SizedBox(
-        height: 86,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: (detail.posts.isNotEmpty ? detail.posts.length : 5).clamp(1, 6),
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
-          itemBuilder: (_, i) {
-            final imageUrl =
-                i < detail.posts.length ? (detail.posts[i].imageUrl ?? '') : '';
-            if (imageUrl.isEmpty) {
-              return Container(
-                width: 108,
-                decoration: BoxDecoration(
-                  color: AppColors.cardElevated,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(Icons.photo_outlined),
-              );
-            }
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                imageUrl,
-                width: 108,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  width: 108,
-                  decoration: BoxDecoration(
-                    color: AppColors.cardElevated,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.photo_outlined),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
     ];
   }
 
   List<Widget> _buildPosts(PlaceDetail detail) {
     return [
-      const Text('みんなの投稿', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+      Text(
+        detail.posts.isEmpty ? 'この店の投稿' : 'この店の投稿 ${detail.posts.length}件',
+        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+      ),
       const SizedBox(height: 8),
       if (detail.posts.isEmpty)
         Container(
@@ -419,86 +369,106 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: const Text('レビューはまだありません', style: TextStyle(fontWeight: FontWeight.w700)),
+          child: const Text(
+            'まだ投稿がありません',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
         )
       else
         ...detail.posts.map(
           (post) => InkWell(
             onTap: () => widget.onPostTap?.call(post),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppColors.blackElevated.withValues(alpha: 0.67),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(18),
                 border: Border.all(color: AppColors.border),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: post.imageUrl == null || post.imageUrl!.isEmpty
-                        ? Container(
-                            width: 56,
-                            height: 56,
-                            color: AppColors.cardElevated,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.photo_outlined, size: 18),
-                          )
-                        : Image.network(
-                            post.imageUrl!,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => Container(
-                              width: 56,
-                              height: 56,
-                              color: AppColors.cardElevated,
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.photo_outlined, size: 18),
-                            ),
-                          ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: post.imageUrl == null || post.imageUrl!.isEmpty
+                            ? Container(
+                                width: 82,
+                                height: 82,
+                                color: AppColors.cardElevated,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.photo_outlined, size: 22),
+                              )
+                            : Image.network(
+                                post.imageUrl!,
+                                width: 82,
+                                height: 82,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  width: 82,
+                                  height: 82,
+                                  color: AppColors.cardElevated,
+                                  alignment: Alignment.center,
+                                  child: const Icon(Icons.photo_outlined, size: 22),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               post.userName,
-                              style: const TextStyle(fontWeight: FontWeight.w900),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.orange.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(color: AppColors.orange.withValues(alpha: 0.35)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
                               ),
-                              child: const Text(
-                                '外食',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.orangeHighlight,
-                                ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              post.comment.trim().isEmpty ? '一言なし' : post.comment,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: post.comment.trim().isEmpty
+                                    ? AppColors.textSubtle.withValues(alpha: 0.72)
+                                    : AppColors.white.withValues(alpha: 0.92),
+                                fontWeight: FontWeight.w700,
+                                height: 1.32,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          post.comment,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.textSubtle.withValues(alpha: 0.95)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.restaurant_menu,
+                        size: 15,
+                        color: AppColors.orangeHighlight,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'この店での投稿',
+                        style: TextStyle(
+                          color: AppColors.textSubtle.withValues(alpha: 0.86),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
                         ),
-                      ],
-                    ),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.chevron_right, color: Colors.white54),
+                    ],
                   ),
                 ],
               ),
@@ -506,43 +476,37 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
           ),
         ),
       const SizedBox(height: 6),
-      FriendAvatarStack(
-        avatarDisplays: widget.pin.friendAvatars,
-        maxVisible: 4,
-        avatarRadius: 16,
-      ),
+      if (widget.pin.friendAvatars.isNotEmpty)
+        FriendAvatarStack(
+          avatarDisplays: widget.pin.friendAvatars,
+          maxVisible: 4,
+          avatarRadius: 16,
+        ),
     ];
   }
 
-  List<Widget> _buildMenu() {
+  List<Widget> _buildPlaceInfo(PlaceDetail detail) {
     return [
-      const Text('メニュー', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-      const SizedBox(height: 8),
-      _MenuCard(
-        title: '名物',
-        items: const ['名物プレート', '半熟卵のオムライス', '季節のデザート'],
+      _PlaceInfoPanel(
+        detail: detail,
+        onOpenWebsite: () => _openWebsite(detail),
+        onOpenGoogleMaps: () => _openGoogleMaps(detail),
       ),
-      const SizedBox(height: 10),
-      _MenuCard(
-        title: 'ドリンク',
-        items: const ['オレンジハイ', '炭酸水', 'アイスコーヒー'],
-      ),
-      const SizedBox(height: 10),
     ];
   }
 
   List<Widget> _buildPhotos(PlaceDetail detail) {
-    final photoUrls = detail.posts
-        .map((p) => p.imageUrl ?? '')
-        .where((u) => u.isNotEmpty)
-        .toList(growable: false);
+    final photoUrls = _postImageUrls(detail);
     final padded = List<String>.from(photoUrls);
     if (padded.isEmpty) {
-      padded.length = 5; // show empty slots
+      padded.length = 3;
     }
 
     return [
-      const Text('写真', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
+      Text(
+        photoUrls.isEmpty ? '投稿写真' : '投稿写真 ${photoUrls.length}枚',
+        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+      ),
       const SizedBox(height: 8),
       GridView.builder(
         shrinkWrap: true,
@@ -579,31 +543,42 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
       const SizedBox(height: 12),
     ];
   }
+
+  List<String> _postImageUrls(PlaceDetail detail) {
+    return detail.posts
+        .map((p) => p.imageUrl ?? '')
+        .where((u) => u.isNotEmpty)
+        .toList(growable: false);
+  }
 }
 
-class _MenuCard extends StatelessWidget {
-  const _MenuCard({required this.title, required this.items});
-  final String title;
-  final List<String> items;
+class _PlaceStatPill extends StatelessWidget {
+  const _PlaceStatPill({
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      padding: const EdgeInsets.all(14),
-      borderRadius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 10),
-          for (final item in items)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                item,
-                style: const TextStyle(color: AppColors.white, fontWeight: FontWeight.w700),
-              ),
-            ),
+          Icon(icon, size: 14, color: AppColors.orangeHighlight),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+          ),
         ],
       ),
     );

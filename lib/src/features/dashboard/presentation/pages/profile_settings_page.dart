@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/legal/legal_document_page.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../../auth/application/auth_session.dart';
@@ -145,6 +146,37 @@ class ProfileSettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           const Divider(),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.description_outlined),
+            title: const Text('利用規約'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      const LegalDocumentPage(type: LegalDocumentType.terms),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('プライバシーポリシー'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      const LegalDocumentPage(type: LegalDocumentType.privacy),
+                ),
+              );
+            },
+          ),
+          const Divider(),
           const SizedBox(height: 16),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -220,16 +252,24 @@ class _FeedScopeSettingsSectionState extends State<_FeedScopeSettingsSection> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
-        ...FeedTimelineScope.values.map(
-          (scope) => RadioListTile<FeedTimelineScope>(
-            value: scope,
-            groupValue: _selected,
-            onChanged: (v) {
-              if (v != null) _onSelect(v);
-            },
-            title: Text(scope.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text(scope.description),
-            contentPadding: EdgeInsets.zero,
+        RadioGroup<FeedTimelineScope>(
+          groupValue: _selected,
+          onChanged: (v) {
+            if (v != null) _onSelect(v);
+          },
+          child: Column(
+            children: [
+              for (final scope in FeedTimelineScope.values)
+                RadioListTile<FeedTimelineScope>(
+                  value: scope,
+                  title: Text(
+                    scope.label,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(scope.description),
+                  contentPadding: EdgeInsets.zero,
+                ),
+            ],
           ),
         ),
       ],
@@ -381,4 +421,3 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     );
   }
 }
-

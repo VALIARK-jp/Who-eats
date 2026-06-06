@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/app_config.dart';
+import '../../../core/legal/legal_document_page.dart';
 import '../../../core/theme/app_theme.dart';
 
 /// 利用規約・プライバシーポリシーへの同意（Panda Talk 同型）。
@@ -43,6 +44,7 @@ class TermsConsentFooter extends StatelessWidget {
                 context,
                 AppConfig.termsOfServiceUrl,
                 '利用規約',
+                LegalDocumentType.terms,
               ),
               child: Text(
                 '利用規約を読む',
@@ -66,6 +68,7 @@ class TermsConsentFooter extends StatelessWidget {
                 context,
                 AppConfig.privacyPolicyUrl,
                 'プライバシーポリシー',
+                LegalDocumentType.privacy,
               ),
               child: Text(
                 'プライバシーポリシーを読む',
@@ -84,12 +87,19 @@ class TermsConsentFooter extends StatelessWidget {
     );
   }
 
-  Future<void> _openUrl(BuildContext context, String url, String label) async {
+  Future<void> _openUrl(
+    BuildContext context,
+    String url,
+    String label,
+    LegalDocumentType fallbackType,
+  ) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
       if (!context.mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('$label の掲載準備中です。')),
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LegalDocumentPage(type: fallbackType),
+        ),
       );
       return;
     }
@@ -97,7 +107,7 @@ class TermsConsentFooter extends StatelessWidget {
     if (uri == null || !(uri.isScheme('https') || uri.isScheme('http'))) {
       if (!context.mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('リンク URL が未設定または不正です。')),
+        SnackBar(content: Text('$label のリンク URL が未設定または不正です。')),
       );
       return;
     }

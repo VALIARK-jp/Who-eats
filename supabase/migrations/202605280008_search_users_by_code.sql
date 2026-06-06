@@ -1,4 +1,4 @@
--- Prefix match search for @user_code (friend discovery).
+-- Prefix match search for @user_code or name (friend discovery).
 
 create or replace function public.search_users_by_code(p_query text, p_limit int default 20)
 returns table (
@@ -23,8 +23,12 @@ as $$
     and u.id <> auth.uid()
     and not public.is_blocked(auth.uid(), u.id)
     and length(trim(coalesce(p_query, ''))) >= 2
-    and u.user_code ilike trim(p_query) || '%'
-  order by u.user_code
+    and (
+      u.user_code ilike trim(p_query) || '%'
+      or u.user_code ilike '@' || regexp_replace(trim(p_query), '^@', '') || '%'
+      or u.name ilike '%' || trim(p_query) || '%'
+    )
+  order by u.name, u.user_code
   limit greatest(1, least(coalesce(p_limit, 20), 50));
 $$;
 

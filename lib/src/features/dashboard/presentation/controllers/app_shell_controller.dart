@@ -23,6 +23,7 @@ class AppShellController extends ChangeNotifier {
     required DeletePostCommentUseCase deletePostCommentUseCase,
     required SearchUsersByCodeUseCase searchUsersByCodeUseCase,
     required SoftDeletePostUseCase softDeletePostUseCase,
+    required UpdatePostCaptionUseCase updatePostCaptionUseCase,
     required GetPostsForDayUseCase getPostsForDayUseCase,
     required GetFeedPostByIdUseCase getFeedPostByIdUseCase,
     required GetUserPublicProfileUseCase getUserPublicProfileUseCase,
@@ -31,10 +32,12 @@ class AppShellController extends ChangeNotifier {
     required GetPendingMealTagsUseCase getPendingMealTagsUseCase,
     required GetRecordSummaryUseCase getRecordSummaryUseCase,
     required GetProfileOverviewUseCase getProfileOverviewUseCase,
+    required GetProfilePostThumbsUseCase getProfilePostThumbsUseCase,
     required GetFavoritePostsUseCase getFavoritePostsUseCase,
     required SetProfilePostPinnedUseCase setProfilePostPinnedUseCase,
     required TogglePostFavoriteUseCase togglePostFavoriteUseCase,
     required GetNotificationsUseCase getNotificationsUseCase,
+    required MarkAllNotificationsReadUseCase markAllNotificationsReadUseCase,
     required CreatePostDraftUseCase createPostDraftUseCase,
     required GetPlaceDetailUseCase getPlaceDetailUseCase,
     required SearchMapPinsUseCase searchMapPinsUseCase,
@@ -55,6 +58,7 @@ class AppShellController extends ChangeNotifier {
        _deletePostCommentUseCase = deletePostCommentUseCase,
        _searchUsersByCodeUseCase = searchUsersByCodeUseCase,
        _softDeletePostUseCase = softDeletePostUseCase,
+       _updatePostCaptionUseCase = updatePostCaptionUseCase,
        _getPostsForDayUseCase = getPostsForDayUseCase,
        _getFeedPostByIdUseCase = getFeedPostByIdUseCase,
        _getUserPublicProfileUseCase = getUserPublicProfileUseCase,
@@ -63,10 +67,12 @@ class AppShellController extends ChangeNotifier {
        _getPendingMealTagsUseCase = getPendingMealTagsUseCase,
        _getRecordSummaryUseCase = getRecordSummaryUseCase,
        _getProfileOverviewUseCase = getProfileOverviewUseCase,
+       _getProfilePostThumbsUseCase = getProfilePostThumbsUseCase,
        _getFavoritePostsUseCase = getFavoritePostsUseCase,
        _setProfilePostPinnedUseCase = setProfilePostPinnedUseCase,
        _togglePostFavoriteUseCase = togglePostFavoriteUseCase,
        _getNotificationsUseCase = getNotificationsUseCase,
+       _markAllNotificationsReadUseCase = markAllNotificationsReadUseCase,
        _createPostDraftUseCase = createPostDraftUseCase,
        _getPlaceDetailUseCase = getPlaceDetailUseCase,
        _searchMapPinsUseCase = searchMapPinsUseCase,
@@ -88,6 +94,7 @@ class AppShellController extends ChangeNotifier {
   final DeletePostCommentUseCase _deletePostCommentUseCase;
   final SearchUsersByCodeUseCase _searchUsersByCodeUseCase;
   final SoftDeletePostUseCase _softDeletePostUseCase;
+  final UpdatePostCaptionUseCase _updatePostCaptionUseCase;
   final GetPostsForDayUseCase _getPostsForDayUseCase;
   final GetFeedPostByIdUseCase _getFeedPostByIdUseCase;
   final GetUserPublicProfileUseCase _getUserPublicProfileUseCase;
@@ -96,10 +103,12 @@ class AppShellController extends ChangeNotifier {
   final GetPendingMealTagsUseCase _getPendingMealTagsUseCase;
   final GetRecordSummaryUseCase _getRecordSummaryUseCase;
   final GetProfileOverviewUseCase _getProfileOverviewUseCase;
+  final GetProfilePostThumbsUseCase _getProfilePostThumbsUseCase;
   final GetFavoritePostsUseCase _getFavoritePostsUseCase;
   final SetProfilePostPinnedUseCase _setProfilePostPinnedUseCase;
   final TogglePostFavoriteUseCase _togglePostFavoriteUseCase;
   final GetNotificationsUseCase _getNotificationsUseCase;
+  final MarkAllNotificationsReadUseCase _markAllNotificationsReadUseCase;
   final CreatePostDraftUseCase _createPostDraftUseCase;
   final GetPlaceDetailUseCase _getPlaceDetailUseCase;
   final SearchMapPinsUseCase _searchMapPinsUseCase;
@@ -149,7 +158,14 @@ class AppShellController extends ChangeNotifier {
     notifyListeners();
   }
 
+  int get unreadNotificationCount =>
+      notifications.where((notification) => !notification.isRead).length;
+
   Future<List<FeedPost>> loadFavoritePosts() => _getFavoritePostsUseCase();
+
+  Future<List<ProfilePostThumb>> loadProfilePostThumbs({
+    required bool pinnedOnly,
+  }) => _getProfilePostThumbsUseCase(pinnedOnly: pinnedOnly);
 
   Future<FeedPost> togglePostFavoriteForPost(FeedPost post) async {
     final favorited = await _togglePostFavoriteUseCase(post.id);
@@ -191,18 +207,29 @@ class AppShellController extends ChangeNotifier {
 
   Future<PostComment> addPostComment(String postId, String body) async {
     final comment = await _createPostCommentUseCase(postId, body);
+    final profileName = (profileOverview?.name ?? '').trim();
+    final displayComment = profileName.isEmpty
+        ? comment
+        : PostComment(
+            id: comment.id,
+            userId: comment.userId,
+            userName: profileName,
+            body: comment.body,
+            createdAt: comment.createdAt,
+            isMine: comment.isMine,
+          );
     final post = feedPostById(postId);
     if (post != null) {
       _replacePostInFeed(
         post.copyWith(
           comments: post.comments + 1,
           setLatestComment: true,
-          latestComment: comment,
+          latestComment: displayComment,
         ),
       );
       notifyListeners();
     }
-    return comment;
+    return displayComment;
   }
 
   Future<void> removePostComment(
@@ -231,6 +258,15 @@ class AppShellController extends ChangeNotifier {
     feed = feed.where((p) => p.id != postId).toList();
     await refreshProfileOverview();
     notifyListeners();
+  }
+
+  Future<FeedPost> updatePostCaption(FeedPost post, String caption) async {
+    final normalized = caption.trim();
+    await _updatePostCaptionUseCase(post.id, normalized);
+    final updated = post.copyWith(caption: normalized);
+    _replacePostInFeed(updated);
+    notifyListeners();
+    return updated;
   }
 
   Future<List<RecordDayEntry>> loadPostsForDay(DateTime dayLocal) =>
@@ -344,6 +380,16 @@ class AppShellController extends ChangeNotifier {
     }
     loading = false;
     _log('initialize done feed=${feed.length} pins=${mapPins.length}');
+    notifyListeners();
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (notifications.isEmpty || unreadNotificationCount == 0) return;
+    await _markAllNotificationsReadUseCase();
+    notifications = [
+      for (final notification in notifications)
+        notification.isRead ? notification : notification.copyWith(isRead: true),
+    ];
     notifyListeners();
   }
 

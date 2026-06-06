@@ -6,9 +6,9 @@ extension FeedTimelineScopeX on FeedTimelineScope {
       case FeedTimelineScope.friends:
         return '友達';
       case FeedTimelineScope.near:
-        return '近い';
+        return '友達の友達';
       case FeedTimelineScope.all:
-        return 'すべて';
+        return '全体';
     }
   }
 
@@ -17,7 +17,7 @@ extension FeedTimelineScopeX on FeedTimelineScope {
       case FeedTimelineScope.friends:
         return '相互フォロー（友達）と自分の投稿だけ表示します。';
       case FeedTimelineScope.near:
-        return '友達の投稿に加え、友達がフォローしている人（まだ友達ではない）の投稿も表示します。';
+        return '友達の友達まで含めて表示します。';
       case FeedTimelineScope.all:
         return '公開範囲とブロック設定に従い、閲覧できる投稿を広く表示します。';
     }
@@ -35,10 +35,7 @@ extension FeedTimelineScopeX on FeedTimelineScope {
 
 /// フィードなどから地図タブで特定店舗のピンへ飛ぶときのリクエスト。
 class MapPlaceFocus {
-  const MapPlaceFocus({
-    required this.placeGoogleId,
-    required this.placeName,
-  });
+  const MapPlaceFocus({required this.placeGoogleId, required this.placeName});
 
   final String placeGoogleId;
   final String placeName;
@@ -90,6 +87,7 @@ class FeedPost {
   bool get isHomePost => postType == 'home';
 
   FeedPost copyWith({
+    String? caption,
     bool? isFavoritedByMe,
     bool? isPinnedOnMyProfile,
     bool? likedByMe,
@@ -110,7 +108,7 @@ class FeedPost {
       userIconUrl: userIconUrl,
       placeName: placeName,
       placeGoogleId: placeGoogleId,
-      caption: caption,
+      caption: caption ?? this.caption,
       imageUrl: imageUrl,
       likes: likes ?? this.likes,
       comments: comments ?? this.comments,
@@ -218,10 +216,7 @@ class PendingMealTag {
 }
 
 class ProfilePostThumb {
-  const ProfilePostThumb({
-    required this.postId,
-    required this.imageUrl,
-  });
+  const ProfilePostThumb({required this.postId, required this.imageUrl});
 
   final String postId;
   final String imageUrl;
@@ -361,10 +356,35 @@ class ProfileOverview {
 }
 
 class AppNotification {
-  const AppNotification({required this.id, required this.message});
+  const AppNotification({
+    required this.id,
+    required this.title,
+    required this.body,
+    this.createdAt,
+    this.isRead = false,
+  });
 
   final String id;
-  final String message;
+  final String title;
+  final String body;
+  final DateTime? createdAt;
+  final bool isRead;
+
+  AppNotification copyWith({
+    String? id,
+    String? title,
+    String? body,
+    DateTime? createdAt,
+    bool? isRead,
+  }) {
+    return AppNotification(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      createdAt: createdAt ?? this.createdAt,
+      isRead: isRead ?? this.isRead,
+    );
+  }
 }
 
 class PostDraft {

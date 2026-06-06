@@ -47,6 +47,9 @@ dependencies:
   flutter_line_sdk: ^2.3.6
   sign_in_with_apple: ^8.0.0
   shared_preferences: ^2.5.5
+  firebase_core: ^4.10.0
+  firebase_messaging: ^16.3.0
+  flutter_local_notifications: ^21.0.0
 
 dev_dependencies:
   flutter_test:

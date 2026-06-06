@@ -195,12 +195,42 @@ class _TopRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '@${post.userName}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '@${post.userName}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  if (isOwn) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.orange.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: AppColors.orangeAccent.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: const Text(
+                        'My Post',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeHighlight,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 2),
               Text(

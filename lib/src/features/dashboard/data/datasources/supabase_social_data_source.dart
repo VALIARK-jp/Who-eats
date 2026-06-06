@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/push/push_notification_service.dart';
 import '../../../../core/supabase/supabase_storage_urls.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../domain/entities/app_entities.dart';
@@ -68,9 +71,10 @@ class SupabaseSocialDataSource {
   Future<List<FriendCandidate>> fetchFriendRecommendations() async {
     if (_uid == null) return const [];
     try {
-      final rows = await _client.rpc('get_friend_recommendations', params: {
-        'p_limit': 50,
-      });
+      final rows = await _client.rpc(
+        'get_friend_recommendations',
+        params: {'p_limit': 50},
+      );
       return _rowsToCandidates(
         rows,
         theyFollowMe: false,
@@ -125,15 +129,27 @@ class SupabaseSocialDataSource {
     if (uid == null || targetUserId.isEmpty || targetUserId == uid) {
       return false;
     }
+    var created = false;
     try {
       await _client.from(SupabaseTables.follows).insert({
         'follower_id': uid,
         'following_id': targetUserId,
       });
+      created = true;
     } on PostgrestException catch (e) {
       if (e.code != '23505') rethrow;
     }
     final mutual = await fetchMutualFriendIds();
+    if (created) {
+      unawaited(
+        PushNotificationService.instance.sendEvent(
+          targetUserId: targetUserId,
+          eventType: mutual.contains(targetUserId)
+              ? 'friend_accepted'
+              : 'friend_request',
+        ),
+      );
+    }
     return mutual.contains(targetUserId);
   }
 
@@ -169,7 +185,9 @@ class SupabaseSocialDataSource {
     return list;
   }
 
-  Future<List<FeedPost>> fetchHomeFeed({FeedTimelineScope scope = FeedTimelineScope.all}) async {
+  Future<List<FeedPost>> fetchHomeFeed({
+    FeedTimelineScope scope = FeedTimelineScope.all,
+  }) async {
     try {
       final tAuthor = SupabaseTables.postAuthorEmbed;
       final tPlaces = SupabaseTables.places;
@@ -188,9 +206,7 @@ class SupabaseSocialDataSource {
         query = query.eq('visibility', 'public');
       }
 
-      final rows = await query
-          .order('created_at', ascending: false)
-          .limit(80);
+      final rows = await query.order('created_at', ascending: false).limit(80);
       final postIds = <String>[];
       final rawRows = <Map<String, dynamic>>[];
       for (final raw in (rows as List<dynamic>)) {
@@ -226,7 +242,8 @@ class SupabaseSocialDataSource {
         if (uid != null && scope == FeedTimelineScope.friends) {
           if (postUserId != uid && !friendIds.contains(postUserId)) continue;
         } else if (uid != null && scope == FeedTimelineScope.near) {
-          final allowed = nearIds.contains(postUserId) ||
+          final allowed =
+              nearIds.contains(postUserId) ||
               friendIds.contains(postUserId) ||
               postUserId == uid;
           if (!allowed) continue;
@@ -256,6 +273,16 @@ class SupabaseSocialDataSource {
     }
   }
 
+  Future<void> updatePostCaption(String postId, String caption) async {
+    final uid = _uid;
+    if (uid == null || postId.isEmpty) return;
+    await _client
+        .from(SupabaseTables.posts)
+        .update({'caption': caption.trim()})
+        .eq('id', postId)
+        .eq('user_id', uid);
+  }
+
   Future<Map<String, int>> _countByPostId(
     String table,
     List<String> postIds, {
@@ -263,7 +290,10 @@ class SupabaseSocialDataSource {
   }) async {
     if (postIds.isEmpty) return {};
     try {
-      var query = _client.from(table).select('post_id').inFilter('post_id', postIds);
+      var query = _client
+          .from(table)
+          .select('post_id')
+          .inFilter('post_id', postIds);
       if (deletedFilter) {
         query = query.isFilter('deleted_at', null);
       }
@@ -351,7 +381,8 @@ class SupabaseSocialDataSource {
   ) async {
     if (postIds.isEmpty) return {};
     try {
-      final tUser = '${SupabaseTables.profiles}!whoeats_post_companions_user_fk';
+      final tUser =
+          '${SupabaseTables.profiles}!whoeats_post_companions_user_fk';
       final rows = await _client
           .from(SupabaseTables.postCompanions)
           .select('post_id, $tUser(name, icon_path)')
@@ -361,7 +392,8 @@ class SupabaseSocialDataSource {
         final row = raw as Map<String, dynamic>;
         final postId = (row['post_id'] ?? '').toString();
         if (postId.isEmpty) continue;
-        final user = _extractEmbedded(row[SupabaseTables.profiles]) ??
+        final user =
+            _extractEmbedded(row[SupabaseTables.profiles]) ??
             _extractEmbedded(row['whoeats_users']);
         final name = (user?['name'] ?? '').toString().trim();
         final token = _avatarToken(name.isNotEmpty ? name : '?');
@@ -379,7 +411,8 @@ class SupabaseSocialDataSource {
     if (postIds.isEmpty) return {};
     final uid = _uid;
     try {
-      final tAuthor = '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
+      final tAuthor =
+          '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
       final rows = await _client
           .from(SupabaseTables.postComments)
           .select('id, post_id, body, created_at, user_id, $tAuthor(name)')
@@ -399,7 +432,8 @@ class SupabaseSocialDataSource {
           userId: userId,
           userName: name.isNotEmpty ? name : 'ユーザー',
           body: (row['body'] ?? '').toString(),
-          createdAt: DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+          createdAt:
+              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
               DateTime.now(),
           isMine: uid != null && userId == uid,
         );
@@ -431,13 +465,24 @@ class SupabaseSocialDataSource {
       'post_id': postId,
       'user_id': uid,
     });
+    final ownerId = await _getPostOwnerId(postId);
+    if (ownerId != null && ownerId != uid) {
+      unawaited(
+        PushNotificationService.instance.sendEvent(
+          targetUserId: ownerId,
+          eventType: 'like',
+          postId: postId,
+        ),
+      );
+    }
     return true;
   }
 
   Future<List<PostComment>> fetchPostComments(String postId) async {
     final uid = _uid;
     try {
-      final tAuthor = '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
+      final tAuthor =
+          '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
       final rows = await _client
           .from(SupabaseTables.postComments)
           .select('id, body, created_at, user_id, $tAuthor(name)')
@@ -456,7 +501,8 @@ class SupabaseSocialDataSource {
             userId: userId,
             userName: name.isNotEmpty ? name : 'ユーザー',
             body: (row['body'] ?? '').toString(),
-            createdAt: DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+            createdAt:
+                DateTime.tryParse((row['created_at'] ?? '').toString()) ??
                 DateTime.now(),
             isMine: uid != null && userId == uid,
           ),
@@ -481,12 +527,23 @@ class SupabaseSocialDataSource {
         .insert({'post_id': postId, 'user_id': uid, 'body': trimmed})
         .select('id, body, created_at, user_id')
         .single();
+    final ownerId = await _getPostOwnerId(postId);
+    if (ownerId != null && ownerId != uid) {
+      unawaited(
+        PushNotificationService.instance.sendEvent(
+          targetUserId: ownerId,
+          eventType: 'comment',
+          postId: postId,
+        ),
+      );
+    }
     return PostComment(
       id: row['id'].toString(),
       userId: uid,
       userName: '自分',
       body: trimmed,
-      createdAt: DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+      createdAt:
+          DateTime.tryParse((row['created_at'] ?? '').toString()) ??
           DateTime.now(),
       isMine: true,
     );
@@ -531,9 +588,22 @@ class SupabaseSocialDataSource {
 
   Future<void> softDeletePost(String postId) async {
     if (_uid == null) throw StateError('Not signed in');
-    await _client.rpc('soft_delete_post', params: {
-      'p_post_id': postId,
-    });
+    await _client.rpc('soft_delete_post', params: {'p_post_id': postId});
+  }
+
+  Future<String?> _getPostOwnerId(String postId) async {
+    if (postId.isEmpty) return null;
+    try {
+      final row = await _client
+          .from(SupabaseTables.posts)
+          .select('user_id')
+          .eq('id', postId)
+          .maybeSingle();
+      final ownerId = (row?['user_id'] ?? '').toString();
+      return ownerId.isEmpty ? null : ownerId;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<RecordDayEntry>> fetchPostsForDay(DateTime dayLocal) async {
@@ -614,7 +684,8 @@ class SupabaseSocialDataSource {
   ) async {
     if (postIds.isEmpty) return {};
     try {
-      final tUser = '${SupabaseTables.profiles}!whoeats_post_companions_user_fk';
+      final tUser =
+          '${SupabaseTables.profiles}!whoeats_post_companions_user_fk';
       final rows = await _client
           .from(SupabaseTables.postCompanions)
           .select('post_id, $tUser(name)')
@@ -656,11 +727,9 @@ class SupabaseSocialDataSource {
         SupabaseTables.postReactions,
         [postId],
       );
-      final commentCounts = await _countByPostId(
-        SupabaseTables.postComments,
-        [postId],
-        deletedFilter: true,
-      );
+      final commentCounts = await _countByPostId(SupabaseTables.postComments, [
+        postId,
+      ], deletedFilter: true);
       final likedIds = await _fetchMyLikedPostIds([postId]);
       final companions = await _fetchCompanionAvatarsByPost([postId]);
       final latestComments = await _fetchLatestCommentsByPostIds([postId]);
@@ -693,7 +762,8 @@ class SupabaseSocialDataSource {
       final outgoing = await fetchOutgoingPendingFollows();
       final isFriend = friendIds.contains(userId);
       final theyFollowMe = incoming.any((c) => c.id == userId);
-      final iFollowThem = outgoing.any((c) => c.id == userId) ||
+      final iFollowThem =
+          outgoing.any((c) => c.id == userId) ||
           (await _client
                   .from(SupabaseTables.follows)
                   .select('follower_id')
@@ -710,7 +780,10 @@ class SupabaseSocialDataSource {
       final iconPath = (row['icon_path'] ?? '').toString();
       final avatarUrl =
           await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
-      final recentPosts = await _fetchProfilePostThumbs(userId, pinnedOnly: false);
+      final recentPosts = await _fetchProfilePostThumbs(
+        userId,
+        pinnedOnly: false,
+      );
       return UserPublicProfile(
         userId: userId,
         name: (row['name'] ?? '').toString().trim().isNotEmpty
@@ -727,7 +800,9 @@ class SupabaseSocialDataSource {
       );
     } catch (e, st) {
       if (kDebugMode) {
-        debugPrint('[SupabaseSocialDataSource] fetchUserPublicProfile: $e\n$st');
+        debugPrint(
+          '[SupabaseSocialDataSource] fetchUserPublicProfile: $e\n$st',
+        );
       }
       return null;
     }
@@ -759,9 +834,10 @@ class SupabaseSocialDataSource {
   Future<List<PendingMealTag>> listPendingMealTags() async {
     if (_uid == null) return const [];
     try {
-      final rows = await _client.rpc('list_pending_meal_tags', params: {
-        'p_limit': 10,
-      });
+      final rows = await _client.rpc(
+        'list_pending_meal_tags',
+        params: {'p_limit': 10},
+      );
       final list = <PendingMealTag>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
@@ -789,10 +865,10 @@ class SupabaseSocialDataSource {
 
   Future<void> setProfilePostPinned(String postId, bool pin) async {
     if (_uid == null) throw StateError('Not signed in');
-    await _client.rpc('set_profile_post_pinned', params: {
-      'p_post_id': postId,
-      'p_pin': pin,
-    });
+    await _client.rpc(
+      'set_profile_post_pinned',
+      params: {'p_post_id': postId, 'p_pin': pin},
+    );
   }
 
   Future<bool> togglePostFavorite(String postId) async {
@@ -1051,6 +1127,14 @@ class SupabaseSocialDataSource {
     }
   }
 
+  Future<List<ProfilePostThumb>> fetchProfilePostThumbs({
+    required bool pinnedOnly,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return const [];
+    return _fetchProfilePostThumbs(uid, pinnedOnly: pinnedOnly, limit: 2000);
+  }
+
   Future<List<ProfilePostThumb>> _fetchProfilePostThumbs(
     String uid, {
     required bool pinnedOnly,
@@ -1073,14 +1157,16 @@ class SupabaseSocialDataSource {
           .eq('user_id', uid)
           .isFilter('deleted_at', null);
 
-      final rows = await query.order('created_at', ascending: false).limit(limit * 2);
+      final rows = await query
+          .order('created_at', ascending: false)
+          .limit(limit * 2);
 
       final thumbs = <ProfilePostThumb>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = row['id'].toString();
         final isPinned = pinnedIds.contains(postId);
-        if (pinnedOnly != isPinned) continue;
+        if (pinnedOnly && !isPinned) continue;
 
         final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
@@ -1100,7 +1186,9 @@ class SupabaseSocialDataSource {
       return thumbs;
     } catch (e, st) {
       if (kDebugMode) {
-        debugPrint('[SupabaseSocialDataSource] _fetchProfilePostThumbs: $e\n$st');
+        debugPrint(
+          '[SupabaseSocialDataSource] _fetchProfilePostThumbs: $e\n$st',
+        );
       }
       return const [];
     }
@@ -1154,7 +1242,8 @@ class SupabaseSocialDataSource {
         caloriesAvg: 0,
         proteinAvg: 0,
         aiSuggestion: suggestion,
-        monthlyShots: days.toList()..sort((a, b) => int.parse(a).compareTo(int.parse(b))),
+        monthlyShots: days.toList()
+          ..sort((a, b) => int.parse(a).compareTo(int.parse(b))),
       );
     } catch (e, st) {
       if (kDebugMode) {
@@ -1173,17 +1262,24 @@ class SupabaseSocialDataSource {
   Future<List<AppNotification>> fetchNotifications() async {
     if (_uid == null) return const [];
     try {
-      final rows = await _client.rpc(
-        'list_inbox_notifications',
-        params: {'p_limit': 50},
-      );
+      final rows = await _client
+          .from(SupabaseTables.notifications)
+          .select('id,title,body,created_at,is_read')
+          .eq('recipient_user_id', _uid!)
+          .order('created_at', ascending: false)
+          .limit(50);
       final list = <AppNotification>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         list.add(
           AppNotification(
             id: (row['id'] ?? '').toString(),
-            message: (row['message'] ?? '').toString(),
+            title: (row['title'] ?? '').toString(),
+            body: (row['body'] ?? '').toString(),
+            createdAt: row['created_at'] == null
+                ? null
+                : DateTime.tryParse(row['created_at'].toString()),
+            isRead: row['is_read'] == true,
           ),
         );
       }
@@ -1193,6 +1289,23 @@ class SupabaseSocialDataSource {
         debugPrint('[SupabaseSocialDataSource] fetchNotifications: $e\n$st');
       }
       return const [];
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    if (_uid == null) return;
+    try {
+      await _client
+          .from(SupabaseTables.notifications)
+          .update({'is_read': true})
+          .eq('recipient_user_id', _uid!)
+          .eq('is_read', false);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseSocialDataSource] markAllNotificationsRead: $e\n$st',
+        );
+      }
     }
   }
 

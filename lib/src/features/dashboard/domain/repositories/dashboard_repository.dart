@@ -39,6 +39,7 @@ abstract interface class DashboardRepository {
   Future<void> deletePostComment(String commentId);
   Future<List<FriendCandidate>> searchUsersByCode(String query);
   Future<void> softDeletePost(String postId);
+  Future<void> updatePostCaption(String postId, String caption);
   Future<List<RecordDayEntry>> getPostsForDay(DateTime dayLocal);
   Future<FeedPost?> getFeedPostById(String postId);
   Future<UserPublicProfile?> getUserPublicProfile(String userId);
@@ -48,9 +49,13 @@ abstract interface class DashboardRepository {
 
   Future<RecordSummary> getRecordSummary();
   Future<ProfileOverview> getProfileOverview();
+  Future<List<ProfilePostThumb>> getProfilePostThumbs({
+    required bool pinnedOnly,
+  });
   Future<List<FeedPost>> getFavoritePosts();
   Future<void> setProfilePostPinned(String postId, bool pin);
   Future<bool> togglePostFavorite(String postId);
   Future<List<AppNotification>> getNotifications();
+  Future<void> markAllNotificationsRead();
   Future<PostDraft> createPostDraft();
 }

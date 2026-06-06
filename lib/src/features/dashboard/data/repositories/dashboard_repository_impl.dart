@@ -99,7 +99,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<List<FriendCandidate>> searchUsersByCode(String query) async {
-    if (!_useSupabase) return const [];
+    if (!_useSupabase) return _dataSource.searchUsersByCode(query);
     return _social.searchUsersByCode(query);
   }
 
@@ -107,6 +107,12 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<void> softDeletePost(String postId) async {
     if (!_useSupabase) return;
     await _social.softDeletePost(postId);
+  }
+
+  @override
+  Future<void> updatePostCaption(String postId, String caption) async {
+    if (!_useSupabase) return;
+    await _social.updatePostCaption(postId, caption);
   }
 
   @override
@@ -158,7 +164,9 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
-  Future<List<FeedPost>> getHomeFeed({FeedTimelineScope scope = FeedTimelineScope.all}) async {
+  Future<List<FeedPost>> getHomeFeed({
+    FeedTimelineScope scope = FeedTimelineScope.all,
+  }) async {
     if (_useSupabase) return _social.fetchHomeFeed(scope: scope);
     return _dataSource.getHomeFeed();
   }
@@ -186,12 +194,13 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
     if (_googlePlacesDataSource != null) {
       try {
-        final googlePins = await _googlePlacesDataSource.searchNearbyPlacesAround(
-          lat: lat,
-          lng: lng,
-          radiusMeters: _initialMapRadiusMeters,
-          keyword: 'restaurant',
-        );
+        final googlePins = await _googlePlacesDataSource
+            .searchNearbyPlacesAround(
+              lat: lat,
+              lng: lng,
+              radiusMeters: _initialMapRadiusMeters,
+              keyword: 'restaurant',
+            );
         if (googlePins.isNotEmpty) {
           final postedPlaceIds = dbPins.map((e) => e.id).toSet();
           _log('getMapPins source=google+db count=${googlePins.length}');
@@ -352,9 +361,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     _log('getPlaceDetail placeId=$placeId isMock=$isMockPlaceId');
 
     final dbPosts = _useSupabase
-        ? await _supabaseMapPins.fetchVisiblePlacePosts(
-            placeGoogleId: placeId,
-          )
+        ? await _supabaseMapPins.fetchVisiblePlacePosts(placeGoogleId: placeId)
         : const <PlacePostPreview>[];
 
     if (_googlePlacesDataSource != null) {
@@ -478,6 +485,12 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
+  Future<void> markAllNotificationsRead() async {
+    if (!_useSupabase) return;
+    await _social.markAllNotificationsRead();
+  }
+
+  @override
   Future<ProfileOverview> getProfileOverview() async {
     if (_useSupabase) return _social.fetchProfileOverview();
     return _dataSource.getProfileOverview();
@@ -507,6 +520,17 @@ class DashboardRepositoryImpl implements DashboardRepository {
     return _social.fetchRecordSummary();
   }
 
+  @override
+  Future<List<ProfilePostThumb>> getProfilePostThumbs({
+    required bool pinnedOnly,
+  }) async {
+    if (!_useSupabase) {
+      final profile = await _dataSource.getProfileOverview();
+      return pinnedOnly ? profile.pinnedPosts : profile.recentPosts;
+    }
+    return _social.fetchProfilePostThumbs(pinnedOnly: pinnedOnly);
+  }
+
   void _log(String message) {
     if (kDebugMode) debugPrint('[DashboardRepositoryImpl] $message');
   }
@@ -524,5 +548,4 @@ class DashboardRepositoryImpl implements DashboardRepository {
     }
     return merged.values.toList();
   }
-
 }

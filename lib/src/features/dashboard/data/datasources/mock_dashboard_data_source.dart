@@ -69,7 +69,8 @@ class MockDashboardDataSource {
     openNow: true,
     travelMinutes: 9,
     websiteUrl: 'https://www.andpeople.co.jp/',
-    googleMapsUrl: 'https://www.google.com/maps/search/?api=1&query=and+people+udagawa',
+    googleMapsUrl:
+        'https://www.google.com/maps/search/?api=1&query=and+people+udagawa',
     posts: [
       PlacePostPreview(
         id: 'pp1',
@@ -135,6 +136,20 @@ class MockDashboardDataSource {
     ),
   ];
 
+  Future<List<FriendCandidate>> searchUsersByCode(String query) async {
+    final q = query.trim().toLowerCase();
+    if (q.length < 2) return const [];
+    final normalized = q.replaceFirst('@', '');
+    final candidates = await getFriendCandidates();
+    return candidates
+        .where(
+          (c) =>
+              c.name.toLowerCase().contains(q) ||
+              c.name.toLowerCase().contains(normalized),
+        )
+        .toList();
+  }
+
   Future<RecordSummary> getRecordSummary() async => const RecordSummary(
     streakDays: 12,
     caloriesAvg: 1860,
@@ -169,6 +184,22 @@ class MockDashboardDataSource {
       ),
     ],
     recentPosts: [
+      // ピン済み投稿もすべての投稿一覧に含まれる（ピン留めは集合のサブセット）
+      const ProfilePostThumb(
+        postId: 'pin-1',
+        imageUrl:
+            'https://images.unsplash.com/photo-1604908177225-06b39e6d7f4a',
+      ),
+      const ProfilePostThumb(
+        postId: 'pin-2',
+        imageUrl:
+            'https://images.unsplash.com/photo-1598214886806-c87b84b7078b',
+      ),
+      const ProfilePostThumb(
+        postId: 'pin-3',
+        imageUrl:
+            'https://images.unsplash.com/photo-1498654896293-37aacf113fd9',
+      ),
       const ProfilePostThumb(
         postId: 'recent-1',
         imageUrl:
@@ -203,9 +234,21 @@ class MockDashboardDataSource {
   );
 
   Future<List<AppNotification>> getNotifications() async => const [
-    AppNotification(id: 'n1', message: 'haruka さんがコメントしました'),
-    AppNotification(id: 'n2', message: 'yuma_21 さんがリアクションしました'),
-    AppNotification(id: 'n3', message: 'saya_27 さんにフォローされました'),
+    AppNotification(
+      id: 'n1',
+      title: 'コメントが届きました',
+      body: 'haruka さんがあなたの投稿にコメントしました',
+    ),
+    AppNotification(
+      id: 'n2',
+      title: 'いいねが届きました',
+      body: 'yuma_21 さんがあなたの投稿にいいねしました',
+    ),
+    AppNotification(
+      id: 'n3',
+      title: '友達申請が届きました',
+      body: 'saya_27 さんから友達申請が届きました',
+    ),
   ];
 
   Future<PostDraft> createPostDraft() async => const PostDraft(
