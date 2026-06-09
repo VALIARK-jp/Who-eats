@@ -5,6 +5,15 @@
 - 正本: `doc/db-table-design-final-mvp.md`
 - 初版: `supabase/migrations/0001_init.sql`
 
+### valiark-prod（prod / release）
+
+Who eats の prod は `valiark-prod` に link して管理する。
+
+- 手順の正本: [docs/16_valiark_prod_who_eats_setup.md](../docs/16_valiark_prod_who_eats_setup.md)
+- DB: `./scripts/valiark-prod-supabase-setup.sh db`
+- Edge Functions: `./scripts/valiark-prod-supabase-setup.sh functions`
+- 共有秘密: [docs/valiark_client_secrets_playbook.md](../docs/valiark_client_secrets_playbook.md)
+
 ### 運用ルール（MVP）
 
 - DB変更（DDL / migration / index / constraint / trigger / RLS）は **PMのみ**。
@@ -42,8 +51,29 @@
    supabase migration list
    ```
 
+### prod の push 通知連携
+
+`send-push` Edge Function を `valiark-prod` に向けるときは、次の secrets を設定する。
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `FCM_PROJECT_ID`
+- `FCM_SERVICE_ACCOUNT_JSON`
+
+手順の詳細は [docs/push_notification_prod_setup.md](../docs/push_notification_prod_setup.md) を参照。
+
+このリポジトリでは、次のスクリプトでも同じ設定を入れられる。
+
+```bash
+SUPABASE_PROJECT_REF=<prod-project-ref> \
+SUPABASE_URL=https://<prod-project>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=<service_role> \
+FCM_PROJECT_ID=<firebase-project-id> \
+FCM_SERVICE_ACCOUNT_JSON='<service-account-json>' \
+scripts/set_supabase_prod_push_secrets.sh
+```
+
 注意:
 
 - 既に SQL Editor だけで同じDDLを流している場合、CLI の履歴とDB実体がズレることがある。そのときは [migration repair](https://supabase.com/docs/reference/cli/supabase-migration-repair) などで方針を決める。
 - 初回 `0001_init.sql` は **空のDB** に向けるのが安全。既存テーブルがあるプロジェクトでは衝突するので、別ブランチ用プロジェクトかバックアップ後に実行する。
-

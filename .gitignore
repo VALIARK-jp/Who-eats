@@ -48,3 +48,5 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+!.env.prod.example
+scripts/valiark-project-refs.env

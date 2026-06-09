@@ -1,4 +1,4 @@
-package com.example.who_eats_app
+package com.valiark.whoeats
 
 import io.flutter.embedding.android.FlutterActivity
 

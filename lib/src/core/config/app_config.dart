@@ -72,6 +72,30 @@ abstract final class _DartDefines {
     'WHOEATS_PRIVACY_URL',
     defaultValue: '',
   );
+  static const firebaseApiKey = String.fromEnvironment(
+    'WHOEATS_FIREBASE_API_KEY',
+    defaultValue: '',
+  );
+  static const firebaseAppId = String.fromEnvironment(
+    'WHOEATS_FIREBASE_APP_ID',
+    defaultValue: '',
+  );
+  static const firebaseMessagingSenderId = String.fromEnvironment(
+    'WHOEATS_FIREBASE_MESSAGING_SENDER_ID',
+    defaultValue: '',
+  );
+  static const firebaseStorageBucket = String.fromEnvironment(
+    'WHOEATS_FIREBASE_STORAGE_BUCKET',
+    defaultValue: '',
+  );
+  static const firebaseIosBundleId = String.fromEnvironment(
+    'WHOEATS_FIREBASE_IOS_BUNDLE_ID',
+    defaultValue: '',
+  );
+  static const firebaseProjectId = String.fromEnvironment(
+    'WHOEATS_FIREBASE_PROJECT_ID',
+    defaultValue: '',
+  );
 }
 
 /// 環境値の優先順位: **`--dart-define` → ルートの `.env`**（Panda Talk と同じ運用）。
@@ -193,10 +217,50 @@ class AppConfig {
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
   /// 利用規約（HTTPS）。空のときはタップで準備中メッセージ。
-  static String get termsOfServiceUrl =>
-      _pick(_DartDefines.termsOfServiceUrl, _env('WHOEATS_TERMS_URL'));
+  static String get termsOfServiceUrl {
+    final value = _pick(
+      _DartDefines.termsOfServiceUrl,
+      _env('WHOEATS_TERMS_URL'),
+    );
+    return value.isNotEmpty
+        ? value
+        : 'https://valiark.jp/who-eats/terms_of_service/';
+  }
 
   /// プライバシーポリシー（HTTPS）。
-  static String get privacyPolicyUrl =>
-      _pick(_DartDefines.privacyPolicyUrl, _env('WHOEATS_PRIVACY_URL'));
+  static String get privacyPolicyUrl {
+    final value = _pick(
+      _DartDefines.privacyPolicyUrl,
+      _env('WHOEATS_PRIVACY_URL'),
+    );
+    return value.isNotEmpty
+        ? value
+        : 'https://valiark.jp/who-eats/privacy_policy/';
+  }
+
+  static String get firebaseApiKey =>
+      _pick(_DartDefines.firebaseApiKey, _env('WHOEATS_FIREBASE_API_KEY'));
+
+  static String get firebaseAppId =>
+      _pick(_DartDefines.firebaseAppId, _env('WHOEATS_FIREBASE_APP_ID'));
+
+  static String get firebaseMessagingSenderId => _pick(
+        _DartDefines.firebaseMessagingSenderId,
+        _env('WHOEATS_FIREBASE_MESSAGING_SENDER_ID'),
+      );
+
+  static String get firebaseStorageBucket => _pick(
+        _DartDefines.firebaseStorageBucket,
+        _env('WHOEATS_FIREBASE_STORAGE_BUCKET'),
+      );
+
+  static String get firebaseIosBundleId => _pick(
+        _DartDefines.firebaseIosBundleId,
+        _env('WHOEATS_FIREBASE_IOS_BUNDLE_ID'),
+      );
+
+  static String get firebaseProjectId => _pick(
+        _DartDefines.firebaseProjectId,
+        _env('WHOEATS_FIREBASE_PROJECT_ID'),
+      );
 }

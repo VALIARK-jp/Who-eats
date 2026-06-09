@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/app.dart';
 import 'src/core/config/app_config.dart';
+import 'src/core/config/firebase_options.dart';
 import 'src/core/push/push_notification_service.dart';
 import 'src/core/web/google_maps_loader.dart';
 import 'src/features/auth/valiark_auth_config.dart';
@@ -22,6 +23,17 @@ bool _isSupabaseOfflineNoise(Object error) {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      await dotenv.load(fileName: '.env');
+    } catch (_) {
+      // The background isolate can run with native Firebase config if .env is unavailable.
+    }
+    final firebaseOptions = firebaseOptionsFromConfig();
+    if (firebaseOptions != null) {
+      await Firebase.initializeApp(options: firebaseOptions);
+      return;
+    }
     await Firebase.initializeApp();
   } catch (e, st) {
     debugPrint('Firebase background init failed: $e\n$st');
@@ -45,7 +57,12 @@ Future<void> main() async {
           firebaseMessagingBackgroundHandler,
         );
         try {
-          await Firebase.initializeApp();
+          final firebaseOptions = firebaseOptionsFromConfig();
+          if (firebaseOptions != null) {
+            await Firebase.initializeApp(options: firebaseOptions);
+          } else {
+            await Firebase.initializeApp();
+          }
         } catch (e, st) {
           debugPrint('Firebase init skipped or failed: $e\n$st');
         }

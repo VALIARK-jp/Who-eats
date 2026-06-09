@@ -26,7 +26,7 @@ val androidMapsApiKey =
         ?: "YOUR_ANDROID_MAPS_API_KEY"
 
 android {
-    namespace = "com.example.who_eats_app"
+    namespace = "com.valiark.whoeats"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -41,7 +41,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.who_eats_app"
+        applicationId = "com.valiark.whoeats"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

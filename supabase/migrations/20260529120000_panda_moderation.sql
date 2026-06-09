@@ -1,0 +1,2 @@
+-- Stub migration.
+-- This Supabase project (valiark-prod shared history) already applied this version remotely.

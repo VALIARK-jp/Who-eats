@@ -91,6 +91,9 @@ class PushSendResult {
     if (first is! Map) return null;
     final code = (first['code'] ?? '').toString();
     final message = (first['message'] ?? '').toString();
+    final projectIdSuffix = AppConfig.firebaseProjectId.isNotEmpty
+        ? ' (${AppConfig.firebaseProjectId})'
+        : '';
     switch (code) {
       case 'THIRD_PARTY_AUTH_ERROR':
         return 'Firebase に APNs 認証キーが未設定、または無効です。'
@@ -98,17 +101,19 @@ class PushSendResult {
       case 'UNREGISTERED':
         return '端末トークンが無効です。アプリを再起動してからもう一度お試しください。';
       case 'SENDER_ID_MISMATCH':
-        return 'Firebase プロジェクト設定がアプリと一致していません（FCM_PROJECT_ID / GoogleService-Info.plist を確認）。';
+        return 'Firebase プロジェクト設定がアプリと一致していません'
+            '（FCM_PROJECT_ID / GoogleService-Info.plist / google-services.json を確認）'
+            '$projectIdSuffix。';
       case 'INVALID_ARGUMENT':
         return 'FCM リクエストが不正です: $message';
       case 'PERMISSION_DENIED':
         return 'FCM の権限がありません。Supabase シークレットの '
-            'FCM_SERVICE_ACCOUNT_JSON が who-eats-12d33 の Firebase サービスアカウントか、'
+            'FCM_SERVICE_ACCOUNT_JSON が対象 Firebase プロジェクトのサービスアカウントか、'
             'FCM_PROJECT_ID に余計な空白がないか確認してください。'
             ' ($message)';
       default:
         if (message.contains('Permission denied')) {
-          return 'FCM の権限がありません。Firebase Console から who-eats-12d33 用の '
+          return 'FCM の権限がありません。Firebase Console から対象プロジェクト用の '
               'サービスアカウント鍵を再発行し、FCM_SERVICE_ACCOUNT_JSON を更新してください。';
         }
         if (code.isNotEmpty) return 'FCM エラー ($code): $message';

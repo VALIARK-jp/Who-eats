@@ -36,7 +36,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>Who eats Auth (valiark-dev)</string>
+			<string>Who eats Auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>io.valiark.whoeats</string>
