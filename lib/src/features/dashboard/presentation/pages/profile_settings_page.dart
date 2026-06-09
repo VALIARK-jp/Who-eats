@@ -264,6 +264,13 @@ class ProfileSettingsPage extends StatelessWidget {
           const SizedBox(height: 16),
           ListTile(
             contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('ログアウト', style: TextStyle(color: Colors.red)),
+            onTap: () => _confirmAndSignOutFromProfile(context),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
             title: const Text(
               'アカウントを削除',
@@ -273,13 +280,6 @@ class ProfileSettingsPage extends StatelessWidget {
               'プロフィール・投稿などすべてのデータが完全に削除されます',
             ),
             onTap: () => _confirmAndDeleteAccount(context),
-          ),
-          const SizedBox(height: 8),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('ログアウト', style: TextStyle(color: Colors.red)),
-            onTap: () => _confirmAndSignOutFromProfile(context),
           ),
         ],
       ),

@@ -12,7 +12,8 @@ returns table (
   latitude double precision,
   longitude double precision,
   user_id uuid,
-  user_name text
+  user_name text,
+  icon_path text
 )
 language sql
 stable
@@ -28,7 +29,8 @@ as $$
     pl.latitude,
     pl.longitude,
     p.user_id,
-    u.name as user_name
+    u.name as user_name,
+    u.icon_path
   from public.whoeats_posts p
   join public.whoeats_places pl on pl.id = p.place_id
   join public.whoeats_users u on u.id = p.user_id
@@ -57,7 +59,8 @@ $$;
 create or replace function public.get_place_visitors(p_google_place_id text)
 returns table (
   user_id uuid,
-  user_name text
+  user_name text,
+  icon_path text
 )
 language sql
 stable
@@ -69,7 +72,8 @@ as $$
   )
   select distinct
     p.user_id,
-    u.name as user_name
+    u.name as user_name,
+    u.icon_path
   from public.whoeats_posts p
   join public.whoeats_places pl on pl.id = p.place_id
   join public.whoeats_users u on u.id = p.user_id

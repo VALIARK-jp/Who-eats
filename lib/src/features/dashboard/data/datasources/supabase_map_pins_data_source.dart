@@ -56,6 +56,10 @@ class SupabaseMapPinsDataSource {
 
         final userId = (row['user_id'] ?? '').toString();
         final userName = (row['user_name'] ?? '').toString().trim();
+        final iconPath = (row['icon_path'] ?? '').toString().trim();
+        final avatarUrl = iconPath.isEmpty
+            ? null
+            : await SupabaseStorageUrls.signedPostImage(_client, iconPath);
         final isFriend =
             mutualFriendIds.isNotEmpty && mutualFriendIds.contains(userId);
         final isMe = userId == currentUserId;
@@ -73,6 +77,7 @@ class SupabaseMapPinsDataSource {
           userId: userId,
           userName: userName.isNotEmpty ? userName : 'user',
           isFriend: isFriend,
+          avatarUrl: avatarUrl,
           isMe: isMe,
         );
       }
@@ -105,11 +110,16 @@ class SupabaseMapPinsDataSource {
         if (userId.isEmpty || seen.contains(userId)) continue;
         seen.add(userId);
         final userName = (row['user_name'] ?? '').toString().trim();
+        final iconPath = (row['icon_path'] ?? '').toString().trim();
+        final avatarUrl = iconPath.isEmpty
+            ? null
+            : await SupabaseStorageUrls.signedPostImage(_client, iconPath);
         visitors.add(
           PlaceVisitor(
             userId: userId,
             userName: userName.isNotEmpty ? userName : 'user',
             isFriend: mutualFriendIds.contains(userId),
+            avatarUrl: avatarUrl,
             isMe: userId == currentUserId,
           ),
         );
@@ -277,6 +287,7 @@ class _PlacePinAggregate {
     required String userId,
     required String userName,
     required bool isFriend,
+    required String? avatarUrl,
     required bool isMe,
   }) {
     if (_visitors.any((v) => v.userId == userId)) return;
@@ -285,6 +296,7 @@ class _PlacePinAggregate {
         userId: userId,
         userName: userName,
         isFriend: isFriend,
+        avatarUrl: avatarUrl,
         isMe: isMe,
       ),
     );
@@ -304,7 +316,6 @@ class _PlacePinAggregate {
       friendComment: comment,
       imageUrl: '',
       isFriendVisited: _hasFriendPost,
-      friendAvatars: const [],
       hasPostedActivity: _visitors.isNotEmpty,
       visitors: List<PlaceVisitor>.unmodifiable(_visitors),
       latitude: latitude,

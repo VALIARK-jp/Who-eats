@@ -7,6 +7,7 @@ Who eats UI prototype built with Flutter (clean architecture + mock-first).
 - **秘密・`.env` の運用（Valiark 共通）:** [docs/valiark_client_secrets_playbook.md](docs/valiark_client_secrets_playbook.md)
 - **push 通知の prod 接続:** [docs/push_notification_prod_setup.md](docs/push_notification_prod_setup.md)
 - **valiark-prod / prod 接続と build:** [docs/16_valiark_prod_who_eats_setup.md](docs/16_valiark_prod_who_eats_setup.md)
+- **起動・読み込みの重さ改善メモ:** [docs/performance_startup_loading_plan.md](docs/performance_startup_loading_plan.md)
 - **環境値の優先順位:** `--dart-define=KEY=value` を付けた場合は、ルートの `.env` より優先（`lib/src/core/config/app_config.dart` の `AppConfig`）。
 - **初回:** `cp .env.example .env` で `.env` を作る（`pubspec.yaml` の asset に含まれるため必須）。または [scripts/flutter_run_dev.sh](scripts/flutter_run_dev.sh) が無ければ自動コピーしてから `flutter run`。
 - **prod:** `cp .env.prod.example .env.prod` のうえ、[scripts/flutter_run_prod.sh](scripts/flutter_run_prod.sh) / [scripts/flutter_build_prod.sh](scripts/flutter_build_prod.sh) を使う。

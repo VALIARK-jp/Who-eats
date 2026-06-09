@@ -32,7 +32,6 @@ class PlaceBottomSheet extends StatefulWidget {
 
 class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
   int _tab = 0; // 0: posts, 1: photos, 2: place info
-  final Set<String> _followSubmitting = {};
 
   Future<void> _callPlace(PlaceDetail detail) async {
     final raw = (detail.phoneNumber ?? '').trim();
@@ -157,32 +156,6 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
     return widget.pin.visitors;
   }
 
-  Future<void> _followVisitor(PlaceVisitor visitor) async {
-    if (visitor.isMe || visitor.isFriend) return;
-    setState(() => _followSubmitting.add(visitor.userId));
-    try {
-      final becameFriend = await widget.controller.followUser(visitor.userId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            becameFriend ? '友達になりました' : '友達申請を送りました',
-          ),
-        ),
-      );
-      setState(() {});
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('友達申請に失敗しました: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _followSubmitting.remove(visitor.userId));
-      }
-    }
-  }
-
   List<Widget> _buildContent(PlaceDetail detail) {
     final postImages = _postImageUrls(detail);
     final heroImageUrl = postImages.isNotEmpty
@@ -206,6 +179,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                     )
                   : Image.network(
                       heroImageUrl,
+                      cacheWidth: 980,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => Container(
                         color: AppColors.cardElevated,
@@ -404,12 +378,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
   }
 
   Widget _buildVisitorRow(PlaceVisitor visitor) {
-    final social = widget.controller.socialStateForUser(visitor.userId);
-    final isFriend = visitor.isFriend || (social?.isFriend ?? false);
-    final isMe = visitor.isMe;
-    final canFollow = !isMe && !isFriend && (social?.canFollow ?? true);
-    final pending = social?.iFollowThem ?? false;
-    final submitting = _followSubmitting.contains(visitor.userId);
+    final avatarUrl = visitor.avatarUrl?.trim() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -424,51 +393,25 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
           CircleAvatar(
             radius: 18,
             backgroundColor: AppColors.gray,
-            child: Text(
-              visitor.userName.isNotEmpty
-                  ? visitor.userName.characters.first.toUpperCase()
-                  : '?',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
+            backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+            child: avatarUrl.isEmpty
+                ? Text(
+                    visitor.userName.isNotEmpty
+                        ? visitor.userName.characters.first.toUpperCase()
+                        : '?',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  )
+                : null,
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  visitor.userName,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  isMe
-                      ? 'あなた'
-                      : isFriend
-                      ? '友達'
-                      : '友達以外（投稿は非公開）',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.62),
-                  ),
-                ),
-              ],
+            child: Text(
+              visitor.userName,
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
-          if (canFollow)
-            FilledButton.tonal(
-              onPressed: submitting ? null : () => _followVisitor(visitor),
-              child: submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('友達申請'),
-            )
-          else if (pending)
-            const Text('申請中', style: TextStyle(color: Colors.white54))
-          else if (isFriend)
-            const Text('友達', style: TextStyle(color: AppColors.orangeHighlight)),
+          if (visitor.isMe)
+            const Text('あなた', style: TextStyle(color: Colors.white54)),
         ],
       ),
     );
@@ -476,7 +419,6 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
 
   List<Widget> _buildPosts(PlaceDetail detail) {
     final visitors = _visitorsFor(detail);
-    final hiddenVisitorCount = visitors.where((v) => !v.isMe && !v.isFriend).length;
 
     return [
       Text(
@@ -493,9 +435,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             border: Border.all(color: AppColors.border),
           ),
           child: Text(
-            hiddenVisitorCount > 0
-                ? '友達以外の人も訪問していますが、投稿は友達のみ表示されます。'
-                : 'まだ見られる投稿がありません',
+            'まだ見られる投稿がありません',
             style: const TextStyle(fontWeight: FontWeight.w700, height: 1.35),
           ),
         )
@@ -530,6 +470,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                               )
                             : Image.network(
                                 post.imageUrl!,
+                                cacheWidth: 180,
                                 width: 82,
                                 height: 82,
                                 fit: BoxFit.cover,
@@ -658,6 +599,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                   )
                 : Image.network(
                     url,
+                    cacheWidth: 280,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => Container(
                       color: AppColors.cardElevated,

@@ -8,7 +8,6 @@ class MapPinModel {
     required this.friendComment,
     required this.imageUrl,
     required this.isFriendVisited,
-    required this.friendAvatars,
     this.latitude,
     this.longitude,
   });
@@ -19,12 +18,10 @@ class MapPinModel {
   final String friendComment;
   final String imageUrl;
   final bool isFriendVisited;
-  final List<String> friendAvatars;
   final double? latitude;
   final double? longitude;
 
   factory MapPinModel.fromJson(Map<String, dynamic> json) {
-    final avatarsRaw = json['friendAvatars'] ?? json['friend_avatars'] ?? [];
     return MapPinModel(
       id: (json['id'] ?? '').toString(),
       placeName: (json['placeName'] ?? json['place_name'] ?? '').toString(),
@@ -35,7 +32,6 @@ class MapPinModel {
       isFriendVisited: _asBool(
         json['isFriendVisited'] ?? json['is_friend_visited'],
       ),
-      friendAvatars: (avatarsRaw as List).map((e) => e.toString()).toList(),
       latitude: _asNullableDouble(json['latitude'] ?? json['lat']),
       longitude: _asNullableDouble(json['longitude'] ?? json['lng']),
     );
@@ -49,7 +45,6 @@ class MapPinModel {
       friendComment: friendComment,
       imageUrl: imageUrl,
       isFriendVisited: isFriendVisited,
-      friendAvatars: friendAvatars,
       latitude: latitude,
       longitude: longitude,
     );

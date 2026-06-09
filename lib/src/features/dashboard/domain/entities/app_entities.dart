@@ -229,12 +229,14 @@ class PlaceVisitor {
     required this.userId,
     required this.userName,
     required this.isFriend,
+    this.avatarUrl,
     this.isMe = false,
   });
 
   final String userId;
   final String userName;
   final bool isFriend;
+  final String? avatarUrl;
   final bool isMe;
 }
 
@@ -246,7 +248,6 @@ class MapPin {
     required this.friendComment,
     required this.imageUrl,
     required this.isFriendVisited,
-    required this.friendAvatars,
     this.hasPostedActivity = false,
     this.visitors = const [],
     this.latitude,
@@ -261,7 +262,6 @@ class MapPin {
 
   /// 友達が投稿した店（従来のオレンジ強調用）。
   final bool isFriendVisited;
-  final List<String> friendAvatars;
 
   /// Who eats 上で誰かが訪問投稿した店（友達以外も含む）。
   final bool hasPostedActivity;
@@ -276,7 +276,6 @@ class MapPin {
     String? friendComment,
     String? imageUrl,
     bool? isFriendVisited,
-    List<String>? friendAvatars,
     bool? hasPostedActivity,
     List<PlaceVisitor>? visitors,
     double? latitude,
@@ -289,7 +288,6 @@ class MapPin {
       friendComment: friendComment ?? this.friendComment,
       imageUrl: imageUrl ?? this.imageUrl,
       isFriendVisited: isFriendVisited ?? this.isFriendVisited,
-      friendAvatars: friendAvatars ?? this.friendAvatars,
       hasPostedActivity: hasPostedActivity ?? this.hasPostedActivity,
       visitors: visitors ?? this.visitors,
       latitude: latitude ?? this.latitude,

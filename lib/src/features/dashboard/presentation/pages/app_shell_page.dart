@@ -353,12 +353,30 @@ class _AppShellPageState extends State<AppShellPage> {
             ),
           ),
           _RecordPage(
-            summary: controller.recordSummary!,
+            summary: controller.recordSummary ??
+                const RecordSummary(
+                  streakDays: 0,
+                  caloriesAvg: 0,
+                  proteinAvg: 0,
+                  aiSuggestion: '記録を読み込んでいます',
+                  monthlyShots: [],
+                ),
             controller: controller,
             onOpenPostDetail: _openPostDetail,
           ),
           _ProfilePage(
-            profile: controller.profileOverview!,
+            profile: controller.profileOverview ??
+                const ProfileOverview(
+                  name: '読み込み中',
+                  userCode: '',
+                  bio: '',
+                  avatarUrl: '',
+                  followers: 0,
+                  following: 0,
+                  friends: 0,
+                  pinnedPosts: [],
+                  recentPosts: [],
+                ),
             controller: controller,
             onOpenPostDetail: _openPostDetail,
             onOpenProfile: _openUserProfile,
@@ -994,6 +1012,7 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
           child: hasNetwork
               ? Image.network(
                   widget.post.imageUrl,
+                  cacheWidth: 1200,
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => Container(
                     color: AppColors.cardElevated,
@@ -1424,6 +1443,7 @@ class _PastPostPreview extends StatelessWidget {
             hasNetwork
                 ? Image.network(
                     post.imageUrl,
+                    cacheWidth: 1200,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => Container(
                       color: AppColors.blackElevated,
@@ -1675,6 +1695,7 @@ class _BerealFeedCard extends StatelessWidget {
               aspectRatio: 0.92,
               child: Image.network(
                 post.imageUrl,
+                cacheWidth: 680,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
                   color: AppColors.cardElevated,
@@ -1837,6 +1858,7 @@ class _MapTabState extends State<_MapTab> {
   final Set<String> _clusterIconLoading = {};
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
+  Timer? _viewportRefreshDebounce;
   String? _activeKeyword;
   LatLng _lastCameraTarget = _defaultCenter;
   double _lastZoom = 14;
@@ -1862,6 +1884,7 @@ class _MapTabState extends State<_MapTab> {
     widget.controller.addListener(_onShellControllerUpdate);
     googleMapsLoadFailedNotifier.addListener(_onGoogleMapsLoadFailureChanged);
     _prepareMarkerIcons();
+    unawaited(widget.controller.ensureMapPinsLoaded());
   }
 
   void _onShellControllerUpdate() {
@@ -1892,7 +1915,7 @@ class _MapTabState extends State<_MapTab> {
       setState(() {
         _lastCameraTarget = LatLng(lat, lng);
       });
-      await _refreshViewportPins();
+      _scheduleViewportRefresh();
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[MapTab] center on device location failed: $e\n$st');
@@ -1909,6 +1932,7 @@ class _MapTabState extends State<_MapTab> {
     );
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
+    _viewportRefreshDebounce?.cancel();
     _searchController.dispose();
     widget.onSearchExpansionChanged(false);
     super.dispose();
@@ -1936,6 +1960,25 @@ class _MapTabState extends State<_MapTab> {
                 }
               }
             : null,
+      );
+    }
+
+    if (widget.controller.mapPinsLoading ||
+        (!widget.controller.mapPinsLoaded &&
+            widget.controller.mapPinsLoadError == null)) {
+      return const AppStateView(
+        type: AppStateType.loading,
+        title: '地図を準備しています',
+        message: '周辺の店舗情報を読み込んでいます。',
+      );
+    }
+
+    if (widget.controller.mapPinsLoadError != null && pins.isEmpty) {
+      return AppStateView(
+        type: AppStateType.error,
+        title: '地図を読み込めませんでした',
+        message: widget.controller.mapPinsLoadError!,
+        onRetry: () => unawaited(widget.controller.ensureMapPinsLoaded()),
       );
     }
 
@@ -1968,12 +2011,6 @@ class _MapTabState extends State<_MapTab> {
             },
             onMapCreated: (controller) {
               _mapController = controller;
-              _log('Map created, refreshing viewport pins');
-              unawaited(
-                _refreshViewportPins().catchError((e, st) {
-                  _log('Error refreshing viewport pins: $e\n$st');
-                }),
-              );
               unawaited(_tryCenterOnDeviceLocation());
               unawaited(_tryFocusPendingPlace());
             },
@@ -2000,7 +2037,7 @@ class _MapTabState extends State<_MapTab> {
                 _pin3dAnimationFps.value = _pin3dFpsMapIdle;
               }
               await _update3dOverlayPositionsForVisiblePins();
-              await _refreshViewportPins();
+              _scheduleViewportRefresh();
             },
             markers: _buildMapMarkers(context, pins),
           ),
@@ -2276,7 +2313,6 @@ class _MapTabState extends State<_MapTab> {
           friendComment: detail.friendComment,
           imageUrl: detail.imageUrl,
           isFriendVisited: false,
-          friendAvatars: const [],
           hasPostedActivity: widget.controller.postedPlaceGoogleIds.contains(
             focus.placeGoogleId,
           ),
@@ -2370,7 +2406,7 @@ class _MapTabState extends State<_MapTab> {
         );
       }
       _activeKeyword = null;
-      await _refreshViewportPins();
+      _scheduleViewportRefresh();
     } else {
       await _applyKeywordFilter(suggestion.description);
       await _jumpToFirstSearchResult();
@@ -2404,6 +2440,14 @@ class _MapTabState extends State<_MapTab> {
         unawaited(_refreshViewportPins());
       }
     }
+  }
+
+  void _scheduleViewportRefresh() {
+    _viewportRefreshDebounce?.cancel();
+    _viewportRefreshDebounce = Timer(const Duration(milliseconds: 220), () {
+      if (!mounted) return;
+      unawaited(_refreshViewportPins());
+    });
   }
 
   Future<void> _update3dOverlayPositionsForVisiblePins() async {
@@ -3951,6 +3995,7 @@ class _MapPlaceSheet extends StatelessWidget {
                             )
                           : Image.network(
                               detail.imageUrl,
+                              cacheWidth: 224,
                               width: 112,
                               height: 92,
                               fit: BoxFit.cover,
@@ -4074,40 +4119,50 @@ class _MapPlaceSheet extends StatelessWidget {
                 Row(
                   children: [
                     const Text(
-                      '友達が行っています',
+                      '訪問した人',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const Spacer(),
                     Text(
-                      '${pin.friendAvatars.length} 人',
+                      '${pin.visitors.length} 人',
                       style: TextStyle(color: Colors.white70),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                SizedBox(
-                  height: 42,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: pin.friendAvatars.isEmpty
-                        ? 1
-                        : pin.friendAvatars.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) {
-                      if (pin.friendAvatars.isEmpty) {
-                        return const CircleAvatar(
+                if (pin.visitors.isEmpty)
+                  Text(
+                    '訪問した人はまだいません',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                  )
+                else
+                  SizedBox(
+                    height: 42,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: pin.visitors.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final visitor = pin.visitors[i];
+                        final avatarUrl = visitor.avatarUrl?.trim() ?? '';
+                        return CircleAvatar(
                           radius: 20,
                           backgroundColor: AppColors.gray,
-                          child: Icon(Icons.person_outline),
+                          backgroundImage: avatarUrl.isNotEmpty
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl.isEmpty
+                              ? Text(
+                                  visitor.userName.isNotEmpty
+                                      ? visitor.userName.characters.first
+                                          .toUpperCase()
+                                      : '?',
+                                )
+                              : null,
                         );
-                      }
-                      return CircleAvatar(
-                        radius: 20,
-                        backgroundImage: NetworkImage(pin.friendAvatars[i]),
-                      );
-                    },
+                      },
+                    ),
                   ),
-                ),
                 const SizedBox(height: 12),
                 const Text('写真', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
@@ -4133,6 +4188,7 @@ class _MapPlaceSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         child: Image.network(
                           detail.imageUrl,
+                          cacheWidth: 280,
                           width: 108,
                           fit: BoxFit.cover,
                         ),

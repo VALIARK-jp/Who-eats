@@ -296,7 +296,6 @@ class GooglePlacesDataSource {
           ? ''
           : buildPhotoUrl(photoReference: photoReference),
       isFriendVisited: false,
-      friendAvatars: const [],
       latitude: lat,
       longitude: lng,
     );

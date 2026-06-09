@@ -67,6 +67,7 @@ class ProfileFoodGrid extends StatelessWidget {
               )
             : Image.network(
                 thumb.imageUrl,
+                cacheWidth: 420,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => Container(
                   color: AppColors.cardElevated,

@@ -303,6 +303,7 @@ class _PhotoBlock extends StatelessWidget {
         children: [
           Image.network(
             post.imageUrl,
+            cacheWidth: 1200,
             height: 260,
             width: double.infinity,
             fit: BoxFit.cover,

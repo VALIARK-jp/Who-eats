@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -129,6 +131,9 @@ class AppShellController extends ChangeNotifier {
 
   List<FeedPost> feed = [];
   List<MapPin> mapPins = [];
+  bool mapPinsLoaded = false;
+  bool mapPinsLoading = false;
+  String? mapPinsLoadError;
   List<FriendCandidate> friends = [];
   List<FriendCandidate> incomingFriendRequests = [];
   List<FriendCandidate> outgoingPendingFollows = [];
@@ -348,36 +353,33 @@ class AppShellController extends ChangeNotifier {
   Future<void> initialize() async {
     _log('initialize start');
     loading = true;
+    mapPins = [];
+    mapPinsLoaded = false;
+    mapPinsLoading = false;
+    mapPinsLoadError = null;
+    postedPlaceGoogleIds = <String>{};
+    postedPlaceUserIcons = <String, String>{};
     notifyListeners();
     final deviceLocFuture = readDeviceLatLng();
+    await loadFeedScopePreference();
     final loc = await deviceLocFuture;
     if (loc != null) {
       deviceLatitude = loc.lat;
       deviceLongitude = loc.lng;
     }
-    await loadFeedScopePreference();
     feed = await _getHomeFeedUseCase(scope: feedTimelineScope);
-    mapPins = await _getMapPinsUseCase(
-      centerLat: deviceLatitude,
-      centerLng: deviceLongitude,
-    );
-    await refreshFriendLists();
-    recordSummary = await _getRecordSummaryUseCase();
-    profileOverview = await _getProfileOverviewUseCase();
-    notifications = await _getNotificationsUseCase();
-    pendingMealTags = await _getPendingMealTagsUseCase();
-    postedPlaceGoogleIds = {
-      ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
-    };
-    postedPlaceUserIcons = const {};
+    loading = false;
+    _log('initialize done feed=${feed.length}');
+    notifyListeners();
+
     if (deviceLatitude != null && deviceLongitude != null) {
       _log('device location lat=$deviceLatitude lng=$deviceLongitude');
     } else {
       _log('device location unavailable');
     }
-    loading = false;
-    _log('initialize done feed=${feed.length} pins=${mapPins.length}');
-    notifyListeners();
+
+    unawaited(ensureMapPinsLoaded());
+    unawaited(_loadSecondaryData());
   }
 
   Future<void> markAllNotificationsRead() async {
@@ -451,6 +453,8 @@ class AppShellController extends ChangeNotifier {
   Future<void> filterMapPins(String keyword) async {
     _log('filterMapPins keyword=$keyword');
     mapPins = await _searchMapPinsUseCase(keyword);
+    mapPinsLoaded = true;
+    mapPinsLoadError = null;
     _log('filterMapPins result=${mapPins.length}');
     notifyListeners();
   }
@@ -470,11 +474,38 @@ class AppShellController extends ChangeNotifier {
       radiusMeters: radiusMeters,
       keyword: keyword,
     );
+    mapPinsLoaded = true;
+    mapPinsLoadError = null;
     postedPlaceGoogleIds = {
       ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
     };
     _log('refreshMapPinsForViewport result=${mapPins.length}');
     notifyListeners();
+  }
+
+  Future<void> ensureMapPinsLoaded() async {
+    if (mapPinsLoaded || mapPinsLoading) return;
+    mapPinsLoading = true;
+    mapPinsLoadError = null;
+    notifyListeners();
+    try {
+      mapPins = await _getMapPinsUseCase(
+        centerLat: deviceLatitude,
+        centerLng: deviceLongitude,
+      );
+      postedPlaceGoogleIds = {
+        ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
+      };
+      postedPlaceUserIcons = const {};
+      mapPinsLoaded = true;
+      _log('ensureMapPinsLoaded result=${mapPins.length}');
+    } catch (e, st) {
+      mapPinsLoadError = '$e';
+      debugPrint('AppShellController.ensureMapPinsLoaded failed: $e\n$st');
+    } finally {
+      mapPinsLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> searchPlaceSuggestions(String query) async {
@@ -505,6 +536,25 @@ class AppShellController extends ChangeNotifier {
     outgoingPendingFollows = await _getOutgoingPendingFollowsUseCase();
     friendRecommendations = await _getFriendRecommendationsUseCase();
     notifyListeners();
+  }
+
+  Future<void> _loadSecondaryData() async {
+    try {
+      final results = await Future.wait([
+        refreshFriendLists(),
+        _getRecordSummaryUseCase(),
+        _getProfileOverviewUseCase(),
+        _getNotificationsUseCase(),
+        _getPendingMealTagsUseCase(),
+      ]);
+      recordSummary = results[1] as RecordSummary;
+      profileOverview = results[2] as ProfileOverview;
+      notifications = results[3] as List<AppNotification>;
+      pendingMealTags = results[4] as List<PendingMealTag>;
+      notifyListeners();
+    } catch (e, st) {
+      debugPrint('AppShellController._loadSecondaryData failed: $e\n$st');
+    }
   }
 
   FriendCandidate? socialStateForUser(String userId) {

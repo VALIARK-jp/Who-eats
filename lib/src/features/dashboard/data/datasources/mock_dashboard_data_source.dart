@@ -38,7 +38,6 @@ class MockDashboardDataSource {
       friendComment: '雰囲気も味もバランス良い',
       imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4',
       isFriendVisited: true,
-      friendAvatars: ['H', 'R', 'M', 'Y'],
       hasPostedActivity: true,
     ),
     MapPin(
@@ -48,7 +47,6 @@ class MockDashboardDataSource {
       friendComment: '深夜に沁みる',
       imageUrl: 'https://images.unsplash.com/photo-1557872943-16a5ac26437e',
       isFriendVisited: false,
-      friendAvatars: [],
     ),
   ];
 

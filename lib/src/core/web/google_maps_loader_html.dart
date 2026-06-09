@@ -1,6 +1,7 @@
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
+
 import 'dart:async';
 import 'dart:html';
-import 'dart:js_util' as js_util;
 
 import 'package:flutter/foundation.dart';
 
@@ -32,14 +33,6 @@ Future<void> loadGoogleMapsScript(String apiKey) async {
     }
     return;
   }
-
-  js_util.setProperty(
-    window,
-    'gm_authFailure',
-    js_util.allowInterop(() {
-      _setLoadFailure('Google Maps APIキーが拒否されました。API 制限またはリファラー制限を確認してください。');
-    }),
-  );
 
   final completer = Completer<void>();
   final script = ScriptElement()

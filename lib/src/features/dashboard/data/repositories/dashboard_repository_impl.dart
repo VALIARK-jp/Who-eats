@@ -202,6 +202,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     );
     if (dbPins.isNotEmpty) {
       _log('getMapPins source=supabase count=${dbPins.length}');
+      return dbPins;
     }
 
     if (_googlePlacesDataSource != null) {
@@ -214,18 +215,13 @@ class DashboardRepositoryImpl implements DashboardRepository {
               keyword: 'restaurant',
             );
         if (googlePins.isNotEmpty) {
-          _log('getMapPins source=google+db count=${googlePins.length}');
-          return _mergeMapPinsPreferDb(
-            dbPins: dbPins,
-            googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
-          );
+          _log('getMapPins source=google count=${googlePins.length}');
+          return googlePins.map((pin) => pin.toEntity()).toList();
         }
       } catch (e) {
         _log('getMapPins google failed: $e');
       }
     }
-
-    if (dbPins.isNotEmpty) return dbPins;
 
     if (_mapApiDataSource != null) {
       try {
@@ -255,6 +251,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
       keyword: keyword,
       mutualFriendIds: friendIds,
     );
+    if (dbPins.isNotEmpty) {
+      _log('searchMapPins source=supabase count=${dbPins.length}');
+      return dbPins;
+    }
 
     if (_googlePlacesDataSource != null) {
       try {
@@ -262,15 +262,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
           keyword: keyword,
         );
         _log('searchMapPins source=google count=${googlePins.length}');
-        return _mergeMapPinsPreferDb(
-          dbPins: dbPins,
-          googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
-        );
+        return googlePins.map((pin) => pin.toEntity()).toList();
       } catch (e) {
         _log('searchMapPins google failed: $e');
       }
     }
-    if (dbPins.isNotEmpty) return dbPins;
     _log('searchMapPins source=empty');
     return const [];
   }
@@ -296,6 +292,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
       keyword: keyword,
       mutualFriendIds: friendIds,
     );
+    if (dbPins.isNotEmpty) {
+      _log('searchMapPinsAround source=supabase count=${dbPins.length}');
+      return dbPins;
+    }
 
     if (_googlePlacesDataSource != null) {
       try {
@@ -307,15 +307,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
               keyword: keyword,
             );
         _log('searchMapPinsAround source=google count=${googlePins.length}');
-        return _mergeMapPinsPreferDb(
-          dbPins: dbPins,
-          googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
-        );
+        return googlePins.map((pin) => pin.toEntity()).toList();
       } catch (e) {
         _log('searchMapPinsAround google failed: $e');
       }
     }
-    if (dbPins.isNotEmpty) return dbPins;
     return searchMapPins(keyword ?? 'restaurant');
   }
 
@@ -531,28 +527,4 @@ class DashboardRepositoryImpl implements DashboardRepository {
     if (kDebugMode) debugPrint('[DashboardRepositoryImpl] $message');
   }
 
-  List<MapPin> _mergeMapPinsPreferDb({
-    required List<MapPin> dbPins,
-    required List<MapPin> googlePins,
-  }) {
-    final merged = <String, MapPin>{};
-    for (final pin in dbPins) {
-      merged[pin.id] = pin;
-    }
-    for (final pin in googlePins) {
-      final existing = merged[pin.id];
-      if (existing != null) {
-        merged[pin.id] = pin.copyWith(
-          hasPostedActivity: existing.hasPostedActivity,
-          isFriendVisited: existing.isFriendVisited,
-          visitors: existing.visitors,
-          friendComment: existing.friendComment,
-          rating: existing.rating > 0 ? existing.rating : pin.rating,
-        );
-      } else {
-        merged[pin.id] = pin;
-      }
-    }
-    return merged.values.toList();
-  }
 }
