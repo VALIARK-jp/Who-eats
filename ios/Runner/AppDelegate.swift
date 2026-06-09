@@ -1,3 +1,4 @@
+import FirebaseCore
 import Flutter
 import GoogleMaps
 import UIKit
@@ -8,6 +9,9 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
     if let apiKey = Bundle.main.object(forInfoDictionaryKey: "WHOEATS_IOS_MAPS_API_KEY") as? String,
        !apiKey.isEmpty {
       GMSServices.provideAPIKey(apiKey)
@@ -16,4 +20,3 @@ import UIKit
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }
-

@@ -1,7 +1,12 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { importPKCS8, SignJWT } from 'npm:jose@5.9.6';
 
-type PushEventType = 'like' | 'comment' | 'friend_request' | 'friend_accepted';
+type PushEventType =
+  | 'like'
+  | 'comment'
+  | 'friend_request'
+  | 'friend_accepted'
+  | 'test';
 
 interface PushRequestBody {
   target_user_id?: string;
@@ -57,6 +62,44 @@ async function getGoogleAccessToken(serviceAccountJson: string) {
   return data.access_token;
 }
 
+function parseFcmError(body: string): { code: string; message: string } {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: {
+        message?: string;
+        details?: Array<{ errorCode?: string }>;
+      };
+    };
+    const details = parsed.error?.details ?? [];
+    for (const detail of details) {
+      if (detail.errorCode) {
+        return {
+          code: detail.errorCode,
+          message: parsed.error?.message ?? detail.errorCode,
+        };
+      }
+    }
+    const message = (parsed.error?.message ?? body).trim();
+    if (message.includes('Permission denied')) {
+      return { code: 'PERMISSION_DENIED', message };
+    }
+    return {
+      code: 'FCM_ERROR',
+      message,
+    };
+  } catch {
+    const message = body.trim();
+    if (message.includes('Permission denied')) {
+      return { code: 'PERMISSION_DENIED', message };
+    }
+    return { code: 'FCM_ERROR', message };
+  }
+}
+
+function tokenPrefix(token: string) {
+  return token.length <= 12 ? token : `${token.slice(0, 12)}...`;
+}
+
 function buildNotification(eventType: PushEventType, actorName: string) {
   switch (eventType) {
     case 'like':
@@ -79,6 +122,11 @@ function buildNotification(eventType: PushEventType, actorName: string) {
         title: '友達になりました',
         body: `${actorName} さんと友達になりました`,
       };
+    case 'test':
+      return {
+        title: 'プッシュ通知テスト',
+        body: 'この端末へのプッシュ通知が届いています',
+      };
   }
 }
 
@@ -98,11 +146,19 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const fcmProjectId = Deno.env.get('FCM_PROJECT_ID') ?? '';
-  const serviceAccountJson = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '';
+  const fcmProjectId = (Deno.env.get('FCM_PROJECT_ID') ?? '').trim();
+  const serviceAccountJson = (Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '').trim();
 
   if (!supabaseUrl || !supabaseServiceRoleKey || !fcmProjectId || !serviceAccountJson) {
     return json(500, { error: 'Missing required environment variables' });
+  }
+
+  let serviceAccountEmail = '';
+  try {
+    serviceAccountEmail = (JSON.parse(serviceAccountJson) as { client_email?: string })
+      .client_email ?? '';
+  } catch {
+    return json(500, { error: 'FCM_SERVICE_ACCOUNT_JSON is invalid JSON' });
   }
 
   const authHeader = req.headers.get('Authorization') ?? '';
@@ -147,24 +203,25 @@ Deno.serve(async (req) => {
 
   const accessToken = await getGoogleAccessToken(serviceAccountJson);
   const notification = buildNotification(eventType, actorName);
-  const payload = {
-    notification,
-    data: {
-      event_type: eventType,
-      post_id: (body.post_id ?? '').toString(),
-      comment_id: (body.comment_id ?? '').toString(),
-      friend_id: (body.friend_id ?? '').toString(),
-      actor_user_id: authData.user.id,
-    },
-    android: { priority: 'high' },
-    apns: {
-      payload: { aps: { sound: 'default' } },
-    },
+  const dataPayload = {
+    event_type: eventType,
+    post_id: (body.post_id ?? '').toString(),
+    comment_id: (body.comment_id ?? '').toString(),
+    friend_id: (body.friend_id ?? '').toString(),
+    actor_user_id: authData.user.id,
   };
 
-  const results = await Promise.allSettled(
-    tokens.map(async (token) => {
-      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${fcmProjectId}/messages:send`, {
+  const sendErrors: Array<{
+    token_prefix: string;
+    code: string;
+    message: string;
+  }> = [];
+  let success = 0;
+
+  for (const token of tokens) {
+    const res = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${fcmProjectId}/messages:send`,
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -173,18 +230,56 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           message: {
             token,
-            ...payload,
+            notification,
+            data: dataPayload,
+            android: { priority: 'high' },
+            apns: {
+              headers: {
+                'apns-priority': '10',
+              },
+              payload: {
+                aps: {
+                  alert: {
+                    title: notification.title,
+                    body: notification.body,
+                  },
+                  sound: 'default',
+                },
+              },
+            },
           },
         }),
-      });
-      if (!res.ok) {
-        throw new Error(`FCM send failed: ${res.status} ${await res.text()}`);
-      }
-      return await res.json();
-    }),
-  );
+      },
+    );
 
-  const success = results.filter((r) => r.status === 'fulfilled').length;
-  const failed = results.length - success;
-  return json(200, { ok: true, sent: success, failed });
+    if (!res.ok) {
+      const bodyText = await res.text();
+      const parsed = parseFcmError(bodyText);
+      sendErrors.push({
+        token_prefix: tokenPrefix(token),
+        code: parsed.code,
+        message: parsed.message,
+        project_id: fcmProjectId,
+        service_account: serviceAccountEmail,
+      });
+
+      if (parsed.code === 'UNREGISTERED' || parsed.code === 'INVALID_ARGUMENT') {
+        await admin
+          .from('whoeats_device_push_tokens')
+          .delete()
+          .eq('fcm_token', token);
+      }
+      continue;
+    }
+
+    success += 1;
+  }
+
+  const failed = tokens.length - success;
+  return json(200, {
+    ok: success > 0,
+    sent: success,
+    failed,
+    errors: sendErrors,
+  });
 });
