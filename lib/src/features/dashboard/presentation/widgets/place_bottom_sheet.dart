@@ -3,7 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
-import 'friend_avatar_stack.dart';
+import '../controllers/app_shell_controller.dart';
 import 'glass_panel.dart';
 import 'segmented_tab.dart';
 
@@ -11,6 +11,7 @@ class PlaceBottomSheet extends StatefulWidget {
   const PlaceBottomSheet({
     super.key,
     required this.pin,
+    required this.controller,
     required this.detailFuture,
     required this.scrollController,
     this.onPostTap,
@@ -18,6 +19,7 @@ class PlaceBottomSheet extends StatefulWidget {
   });
 
   final MapPin pin;
+  final AppShellController controller;
   final Future<PlaceDetail> detailFuture;
   final ScrollController scrollController;
 
@@ -30,6 +32,7 @@ class PlaceBottomSheet extends StatefulWidget {
 
 class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
   int _tab = 0; // 0: posts, 1: photos, 2: place info
+  final Set<String> _followSubmitting = {};
 
   Future<void> _callPlace(PlaceDetail detail) async {
     final raw = (detail.phoneNumber ?? '').trim();
@@ -149,12 +152,44 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
     );
   }
 
+  List<PlaceVisitor> _visitorsFor(PlaceDetail detail) {
+    if (detail.visitors.isNotEmpty) return detail.visitors;
+    return widget.pin.visitors;
+  }
+
+  Future<void> _followVisitor(PlaceVisitor visitor) async {
+    if (visitor.isMe || visitor.isFriend) return;
+    setState(() => _followSubmitting.add(visitor.userId));
+    try {
+      final becameFriend = await widget.controller.followUser(visitor.userId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            becameFriend ? '友達になりました' : '友達申請を送りました',
+          ),
+        ),
+      );
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('友達申請に失敗しました: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _followSubmitting.remove(visitor.userId));
+      }
+    }
+  }
+
   List<Widget> _buildContent(PlaceDetail detail) {
     final postImages = _postImageUrls(detail);
     final heroImageUrl = postImages.isNotEmpty
         ? postImages.first
         : detail.imageUrl.trim();
     final leadPost = detail.posts.isNotEmpty ? detail.posts.first : null;
+    final visitors = _visitorsFor(detail);
 
     return [
       Stack(
@@ -228,14 +263,15 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _PlaceStatPill(
-                      icon: Icons.auto_awesome,
-                      label: '${detail.posts.length}件の投稿',
-                    ),
-                    if (widget.pin.friendAvatars.isNotEmpty)
+                    if (visitors.isNotEmpty)
                       _PlaceStatPill(
                         icon: Icons.people_alt_outlined,
-                        label: '${widget.pin.friendAvatars.length}人が投稿',
+                        label: '${visitors.length}人が訪問',
+                      ),
+                    if (detail.posts.isNotEmpty)
+                      _PlaceStatPill(
+                        icon: Icons.auto_awesome,
+                        label: '${detail.posts.length}件見られる投稿',
                       ),
                     if (detail.travelMinutes != null)
                       _PlaceStatPill(
@@ -294,7 +330,7 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             ),
           ),
         )
-      else
+      else if (visitors.isEmpty)
         GlassPanel(
           padding: const EdgeInsets.all(14),
           borderRadius: 18,
@@ -303,6 +339,17 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             style: TextStyle(fontWeight: FontWeight.w800, height: 1.35),
           ),
         ),
+      if (visitors.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        Text(
+          '訪問した人',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...visitors.map(_buildVisitorRow),
+      ],
       const SizedBox(height: 14),
       Container(
         decoration: BoxDecoration(
@@ -356,7 +403,81 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
     ];
   }
 
+  Widget _buildVisitorRow(PlaceVisitor visitor) {
+    final social = widget.controller.socialStateForUser(visitor.userId);
+    final isFriend = visitor.isFriend || (social?.isFriend ?? false);
+    final isMe = visitor.isMe;
+    final canFollow = !isMe && !isFriend && (social?.canFollow ?? true);
+    final pending = social?.iFollowThem ?? false;
+    final submitting = _followSubmitting.contains(visitor.userId);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.blackElevated.withValues(alpha: 0.67),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppColors.gray,
+            child: Text(
+              visitor.userName.isNotEmpty
+                  ? visitor.userName.characters.first.toUpperCase()
+                  : '?',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  visitor.userName,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  isMe
+                      ? 'あなた'
+                      : isFriend
+                      ? '友達'
+                      : '友達以外（投稿は非公開）',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white.withValues(alpha: 0.62),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (canFollow)
+            FilledButton.tonal(
+              onPressed: submitting ? null : () => _followVisitor(visitor),
+              child: submitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('友達申請'),
+            )
+          else if (pending)
+            const Text('申請中', style: TextStyle(color: Colors.white54))
+          else if (isFriend)
+            const Text('友達', style: TextStyle(color: AppColors.orangeHighlight)),
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildPosts(PlaceDetail detail) {
+    final visitors = _visitorsFor(detail);
+    final hiddenVisitorCount = visitors.where((v) => !v.isMe && !v.isFriend).length;
+
     return [
       Text(
         detail.posts.isEmpty ? 'この店の投稿' : 'この店の投稿 ${detail.posts.length}件',
@@ -371,9 +492,11 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: const Text(
-            'まだ投稿がありません',
-            style: TextStyle(fontWeight: FontWeight.w700),
+          child: Text(
+            hiddenVisitorCount > 0
+                ? '友達以外の人も訪問していますが、投稿は友達のみ表示されます。'
+                : 'まだ見られる投稿がありません',
+            style: const TextStyle(fontWeight: FontWeight.w700, height: 1.35),
           ),
         )
       else
@@ -478,12 +601,15 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
           ),
         ),
       const SizedBox(height: 6),
-      if (widget.pin.friendAvatars.isNotEmpty)
-        FriendAvatarStack(
-          avatarDisplays: widget.pin.friendAvatars,
-          maxVisible: 4,
-          avatarRadius: 16,
+      if (visitors.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(
+          '訪問した人',
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
         ),
+        const SizedBox(height: 6),
+        ...visitors.map(_buildVisitorRow),
+      ],
     ];
   }
 

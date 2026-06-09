@@ -224,6 +224,20 @@ class ProfilePostThumb {
   final String imageUrl;
 }
 
+class PlaceVisitor {
+  const PlaceVisitor({
+    required this.userId,
+    required this.userName,
+    required this.isFriend,
+    this.isMe = false,
+  });
+
+  final String userId;
+  final String userName;
+  final bool isFriend;
+  final bool isMe;
+}
+
 class MapPin {
   const MapPin({
     required this.id,
@@ -233,6 +247,8 @@ class MapPin {
     required this.imageUrl,
     required this.isFriendVisited,
     required this.friendAvatars,
+    this.hasPostedActivity = false,
+    this.visitors = const [],
     this.latitude,
     this.longitude,
   });
@@ -242,8 +258,14 @@ class MapPin {
   final double rating;
   final String friendComment;
   final String imageUrl;
+
+  /// 友達が投稿した店（従来のオレンジ強調用）。
   final bool isFriendVisited;
   final List<String> friendAvatars;
+
+  /// Who eats 上で誰かが訪問投稿した店（友達以外も含む）。
+  final bool hasPostedActivity;
+  final List<PlaceVisitor> visitors;
   final double? latitude;
   final double? longitude;
 
@@ -255,6 +277,8 @@ class MapPin {
     String? imageUrl,
     bool? isFriendVisited,
     List<String>? friendAvatars,
+    bool? hasPostedActivity,
+    List<PlaceVisitor>? visitors,
     double? latitude,
     double? longitude,
   }) {
@@ -266,6 +290,8 @@ class MapPin {
       imageUrl: imageUrl ?? this.imageUrl,
       isFriendVisited: isFriendVisited ?? this.isFriendVisited,
       friendAvatars: friendAvatars ?? this.friendAvatars,
+      hasPostedActivity: hasPostedActivity ?? this.hasPostedActivity,
+      visitors: visitors ?? this.visitors,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
     );
@@ -477,6 +503,7 @@ class PlaceDetail {
     required this.friendComment,
     required this.imageUrl,
     required this.posts,
+    this.visitors = const [],
     this.address,
     this.phoneNumber,
     this.openNow,
@@ -493,6 +520,7 @@ class PlaceDetail {
   final String friendComment;
   final String imageUrl;
   final List<PlacePostPreview> posts;
+  final List<PlaceVisitor> visitors;
   final String? address;
   final String? phoneNumber;
   final bool? openNow;

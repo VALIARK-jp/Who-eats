@@ -214,19 +214,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
               keyword: 'restaurant',
             );
         if (googlePins.isNotEmpty) {
-          final postedPlaceIds = dbPins.map((e) => e.id).toSet();
           _log('getMapPins source=google+db count=${googlePins.length}');
           return _mergeMapPinsPreferDb(
             dbPins: dbPins,
-            googlePins: googlePins
-                .map(
-                  (pin) => pin.toEntity().copyWith(
-                    isFriendVisited:
-                        pin.toEntity().isFriendVisited ||
-                        postedPlaceIds.contains(pin.id),
-                  ),
-                )
-                .toList(),
+            googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
           );
         }
       } catch (e) {
@@ -270,19 +261,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
         final googlePins = await _googlePlacesDataSource.searchNearbyPlaces(
           keyword: keyword,
         );
-        final postedPlaceIds = dbPins.map((e) => e.id).toSet();
         _log('searchMapPins source=google count=${googlePins.length}');
         return _mergeMapPinsPreferDb(
           dbPins: dbPins,
-          googlePins: googlePins
-              .map(
-                (pin) => pin.toEntity().copyWith(
-                  isFriendVisited:
-                      pin.toEntity().isFriendVisited ||
-                      postedPlaceIds.contains(pin.id),
-                ),
-              )
-              .toList(),
+          googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
         );
       } catch (e) {
         _log('searchMapPins google failed: $e');
@@ -324,19 +306,10 @@ class DashboardRepositoryImpl implements DashboardRepository {
               radiusMeters: radiusMeters,
               keyword: keyword,
             );
-        final postedPlaceIds = dbPins.map((e) => e.id).toSet();
         _log('searchMapPinsAround source=google count=${googlePins.length}');
         return _mergeMapPinsPreferDb(
           dbPins: dbPins,
-          googlePins: googlePins
-              .map(
-                (pin) => pin.toEntity().copyWith(
-                  isFriendVisited:
-                      pin.toEntity().isFriendVisited ||
-                      postedPlaceIds.contains(pin.id),
-                ),
-              )
-              .toList(),
+          googlePins: googlePins.map((pin) => pin.toEntity()).toList(),
         );
       } catch (e) {
         _log('searchMapPinsAround google failed: $e');
@@ -372,9 +345,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final isMockPlaceId = placeId.startsWith('m');
     _log('getPlaceDetail placeId=$placeId isMock=$isMockPlaceId');
 
+    final friendIds = _useSupabase ? await _social.fetchMutualFriendIds() : <String>{};
     final dbPosts = _useSupabase
         ? await _supabaseMapPins.fetchVisiblePlacePosts(placeGoogleId: placeId)
         : const <PlacePostPreview>[];
+    final visitors = _useSupabase
+        ? await _supabaseMapPins.fetchPlaceVisitors(
+            placeGoogleId: placeId,
+            mutualFriendIds: friendIds,
+          )
+        : const <PlaceVisitor>[];
 
     if (_googlePlacesDataSource != null) {
       try {
@@ -390,6 +370,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
           friendComment: entity.friendComment,
           imageUrl: entity.imageUrl,
           posts: dbPosts,
+          visitors: visitors,
           address: entity.address,
           phoneNumber: entity.phoneNumber,
           openNow: entity.openNow,
@@ -404,6 +385,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
         if (!isMockPlaceId) {
           final fromDb = await _supabaseMapPins.fetchPlaceDetailShell(
             placeGoogleId: placeId,
+            mutualFriendIds: friendIds,
           );
           if (fromDb != null) {
             _log('getPlaceDetail source=supabase');
@@ -417,6 +399,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     if (_useSupabase) {
       final fromDb = await _supabaseMapPins.fetchPlaceDetailShell(
         placeGoogleId: placeId,
+        mutualFriendIds: friendIds,
       );
       if (fromDb != null) {
         _log('getPlaceDetail source=supabase');
@@ -436,6 +419,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
           friendComment: entity.friendComment,
           imageUrl: entity.imageUrl,
           posts: dbPosts,
+          visitors: visitors,
           address: entity.address,
           phoneNumber: entity.phoneNumber,
           openNow: entity.openNow,
@@ -553,10 +537,21 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }) {
     final merged = <String, MapPin>{};
     for (final pin in dbPins) {
-      merged[pin.id] = pin.copyWith(isFriendVisited: true);
+      merged[pin.id] = pin;
     }
     for (final pin in googlePins) {
-      merged.putIfAbsent(pin.id, () => pin);
+      final existing = merged[pin.id];
+      if (existing != null) {
+        merged[pin.id] = pin.copyWith(
+          hasPostedActivity: existing.hasPostedActivity,
+          isFriendVisited: existing.isFriendVisited,
+          visitors: existing.visitors,
+          friendComment: existing.friendComment,
+          rating: existing.rating > 0 ? existing.rating : pin.rating,
+        );
+      } else {
+        merged[pin.id] = pin;
+      }
     }
     return merged.values.toList();
   }

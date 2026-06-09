@@ -367,18 +367,9 @@ class AppShellController extends ChangeNotifier {
     notifications = await _getNotificationsUseCase();
     pendingMealTags = await _getPendingMealTagsUseCase();
     postedPlaceGoogleIds = {
-      ...feed
-          .map((p) => p.placeGoogleId)
-          .whereType<String>()
-          .where((v) => v.isNotEmpty),
-      ...mapPins.where((p) => p.isFriendVisited).map((p) => p.id),
+      ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
     };
-    postedPlaceUserIcons = {
-      for (final p in feed)
-        if ((p.placeGoogleId ?? '').isNotEmpty &&
-            (p.userIconUrl ?? '').isNotEmpty)
-          p.placeGoogleId!: p.userIconUrl!,
-    };
+    postedPlaceUserIcons = const {};
     if (deviceLatitude != null && deviceLongitude != null) {
       _log('device location lat=$deviceLatitude lng=$deviceLongitude');
     } else {
@@ -480,8 +471,7 @@ class AppShellController extends ChangeNotifier {
       keyword: keyword,
     );
     postedPlaceGoogleIds = {
-      ...postedPlaceGoogleIds,
-      ...mapPins.where((p) => p.isFriendVisited).map((p) => p.id),
+      ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
     };
     _log('refreshMapPinsForViewport result=${mapPins.length}');
     notifyListeners();
@@ -515,6 +505,22 @@ class AppShellController extends ChangeNotifier {
     outgoingPendingFollows = await _getOutgoingPendingFollowsUseCase();
     friendRecommendations = await _getFriendRecommendationsUseCase();
     notifyListeners();
+  }
+
+  FriendCandidate? socialStateForUser(String userId) {
+    for (final c in friends) {
+      if (c.id == userId) return c;
+    }
+    for (final c in incomingFriendRequests) {
+      if (c.id == userId) return c;
+    }
+    for (final c in outgoingPendingFollows) {
+      if (c.id == userId) return c;
+    }
+    for (final c in friendRecommendations) {
+      if (c.id == userId) return c;
+    }
+    return null;
   }
 
   Future<bool> followUser(String targetUserId) async {

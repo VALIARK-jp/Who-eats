@@ -5,9 +5,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/legal/legal_document_page.dart';
+import '../../../../core/supabase/account_deletion_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../../auth/application/auth_session.dart';
+import '../../../auth/application/profile_onboarding_store.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
 import 'favorite_posts_page.dart';
@@ -23,6 +25,84 @@ class ProfileSettingsPage extends StatelessWidget {
   final AppShellController controller;
   final ValueChanged<FeedPost>? onOpenPostDetail;
   final ValueChanged<String>? onOpenProfile;
+
+  Future<void> _confirmAndDeleteAccount(BuildContext context) async {
+    final firstOk = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('アカウントを削除'),
+        content: const Text(
+          'アカウントを削除すると、プロフィール・投稿・いいね・コメント・'
+          'フォロー関係など、すべてのデータが完全に削除されます。\n\n'
+          'この操作は取り消せません。本当に削除しますか？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('削除する'),
+          ),
+        ],
+      ),
+    );
+    if (firstOk != true || !context.mounted) return;
+
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    final secondOk = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('最終確認'),
+        content: const Text(
+          '削除を実行すると、すぐにログアウトされ、'
+          '同じアカウントで再度ログインすることはできません。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('完全に削除する'),
+          ),
+        ],
+      ),
+    );
+    if (secondOk != true || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
+
+    try {
+      await AccountDeletionService().deleteCurrentAccount();
+      await ProfileOnboardingStore.clearForUser(uid);
+      if (!context.mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('アカウントを削除しました')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('アカウント削除に失敗しました: $e')),
+      );
+    }
+  }
 
   Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -181,6 +261,19 @@ class ProfileSettingsPage extends StatelessWidget {
           ),
           const Divider(),
           const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
+            title: const Text(
+              'アカウントを削除',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              'プロフィール・投稿などすべてのデータが完全に削除されます',
+            ),
+            onTap: () => _confirmAndDeleteAccount(context),
+          ),
+          const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.logout, color: Colors.red),

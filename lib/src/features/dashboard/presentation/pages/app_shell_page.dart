@@ -415,6 +415,7 @@ class _AppShellPageState extends State<AppShellPage> {
                       final pin = _activePlaceSheetPin!;
                       return PlaceBottomSheet(
                         pin: pin,
+                        controller: controller,
                         detailFuture: controller.getPlaceDetail(pin.id),
                         scrollController: scrollController,
                         onClose: _closePlaceSheet,
@@ -735,12 +736,7 @@ class _FeedTab extends StatelessWidget {
     final featuredPost = myPosts.isNotEmpty
         ? myPosts.first
         : (sortedFeed.isNotEmpty ? sortedFeed.first : null);
-    final myPastPosts = uid == null || featuredPost == null
-        ? const <FeedPost>[]
-        : [
-            for (final post in myPosts)
-              if (post.id != featuredPost.id) post,
-          ];
+    final swipeableMyPosts = myPosts;
     final remainingPosts = featuredPost == null
         ? sortedFeed
         : sortedFeed.where((post) => post.id != featuredPost.id).toList();
@@ -764,9 +760,16 @@ class _FeedTab extends StatelessWidget {
     }
     return Container(
       color: AppColors.black,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
-        children: [
+      child: RefreshIndicator(
+        color: AppColors.orange,
+        backgroundColor: AppColors.blackElevated,
+        onRefresh: controller.refreshFeed,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
+          children: [
           SegmentedTab<FeedTimelineScope>(
             items: const [
               SegmentedTabItem(
@@ -790,11 +793,12 @@ class _FeedTab extends StatelessWidget {
             _BerealFeaturedPanel(
               post: featuredPost,
               remainingCount: remainingPosts.length,
-              pastPosts: myPastPosts,
+              myPosts: swipeableMyPosts,
               currentUserId: uid,
               controller: controller,
               onTap: () => onTapPost(featuredPost),
               onOpenPlace: () => onOpenPlaceFromPost(featuredPost),
+              onTapPastPost: onTapPost,
             ),
             const SizedBox(height: 26),
           ],
@@ -814,6 +818,7 @@ class _FeedTab extends StatelessWidget {
             if (i != visibleOtherPosts.length - 1) const SizedBox(height: 18),
           ],
         ],
+        ),
       ),
     );
   }
@@ -882,20 +887,22 @@ class _BerealFeaturedPanel extends StatefulWidget {
   const _BerealFeaturedPanel({
     required this.post,
     required this.remainingCount,
-    required this.pastPosts,
+    required this.myPosts,
     required this.currentUserId,
     required this.controller,
     required this.onTap,
     required this.onOpenPlace,
+    required this.onTapPastPost,
   });
 
   final FeedPost post;
   final int remainingCount;
-  final List<FeedPost> pastPosts;
+  final List<FeedPost> myPosts;
   final String? currentUserId;
   final AppShellController controller;
   final VoidCallback onTap;
   final VoidCallback onOpenPlace;
+  final ValueChanged<FeedPost> onTapPastPost;
 
   @override
   State<_BerealFeaturedPanel> createState() => _BerealFeaturedPanelState();
@@ -904,13 +911,16 @@ class _BerealFeaturedPanel extends StatefulWidget {
 class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
   final TextEditingController _captionController = TextEditingController();
   final FocusNode _captionFocusNode = FocusNode();
+  late final PageController _olderPostsController;
   bool _captionEditorOpen = false;
   bool _savingCaption = false;
+  int _olderPostIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _captionController.text = widget.post.caption;
+    _olderPostsController = PageController();
   }
 
   @override
@@ -919,10 +929,20 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
     if (!_captionEditorOpen && oldWidget.post.caption != widget.post.caption) {
       _captionController.text = widget.post.caption;
     }
+    if (oldWidget.myPosts.length != widget.myPosts.length ||
+        (widget.myPosts.isNotEmpty &&
+            oldWidget.myPosts.isNotEmpty &&
+            oldWidget.myPosts.first.id != widget.myPosts.first.id)) {
+      _olderPostIndex = 0;
+      if (_olderPostsController.hasClients) {
+        _olderPostsController.jumpToPage(0);
+      }
+    }
   }
 
   @override
   void dispose() {
+    _olderPostsController.dispose();
     _captionFocusNode.dispose();
     _captionController.dispose();
     super.dispose();
@@ -997,10 +1017,14 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
         ? 'たった今'
         : _BerealFeedCard.formatTime(widget.post.createdAt!);
 
+    final olderPosts = widget.myPosts.length > 1
+        ? widget.myPosts.sublist(1)
+        : const <FeedPost>[];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.pastPosts.isEmpty)
+        if (olderPosts.isEmpty)
           Center(
             child: SizedBox(
               width: MediaQuery.sizeOf(context).width * 0.62,
@@ -1008,20 +1032,60 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
             ),
           )
         else
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                flex: 2,
-                child: _postImage(aspectRatio: 0.86),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: _postImage(aspectRatio: 0.86),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: AspectRatio(
+                      aspectRatio: 0.86,
+                      child: PageView.builder(
+                        controller: _olderPostsController,
+                        itemCount: olderPosts.length,
+                        onPageChanged: (index) {
+                          setState(() => _olderPostIndex = index);
+                        },
+                        itemBuilder: (context, index) {
+                          final pastPost = olderPosts[index];
+                          return _PastPostPreview(
+                            post: pastPost,
+                            onTap: () => widget.onTapPastPost(pastPost),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: AspectRatio(
-                  aspectRatio: 0.86,
-                  child: _PastPostSlot(pastPosts: widget.pastPosts),
+              if (olderPosts.length > 1) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.swipe_rounded,
+                      size: 14,
+                      color: Colors.white38,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '右の写真を横にスワイプして過去の投稿を見る (${_olderPostIndex + 1}/${olderPosts.length})',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+              ],
             ],
           ),
         const SizedBox(height: 18),
@@ -1332,57 +1396,14 @@ class _LatestCommentLine extends StatelessWidget {
   }
 }
 
-class _PastPostSlot extends StatelessWidget {
-  const _PastPostSlot({
-    required this.pastPosts,
+class _PastPostPreview extends StatelessWidget {
+  const _PastPostPreview({
+    required this.post,
+    this.onTap,
   });
 
-  final List<FeedPost> pastPosts;
-
-  @override
-  Widget build(BuildContext context) {
-    if (pastPosts.length == 1) {
-      return _PastPostPreview(post: pastPosts.first);
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.blackElevated,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border2),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text(
-              '自分の過去投稿',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                height: 1.1,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              pastPosts.isEmpty ? 'なし' : '${pastPosts.length}件',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PastPostPreview extends StatelessWidget {
-  const _PastPostPreview({required this.post});
-
   final FeedPost post;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1392,60 +1413,64 @@ class _PastPostPreview extends StatelessWidget {
         ? '自分の過去投稿'
         : _BerealFeedCard.formatTime(post.createdAt!);
 
-    return ClipRRect(
+    return InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(24),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          hasNetwork
-              ? Image.network(
-                  post.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            hasNetwork
+                ? Image.network(
+                    post.imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      color: AppColors.blackElevated,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_outlined),
+                    ),
+                  )
+                : Container(
                     color: AppColors.blackElevated,
                     alignment: Alignment.center,
                     child: const Icon(Icons.image_outlined),
                   ),
-                )
-              : Container(
-                  color: AppColors.blackElevated,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.image_outlined),
-                ),
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.45),
-                  ],
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            bottom: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.black.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-              ),
-              child: Text(
-                '自分の過去投稿 · $label',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
+            Positioned(
+              left: 12,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.black.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                ),
+                child: Text(
+                  '自分の過去投稿 · $label',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1672,6 +1697,95 @@ class _BerealFeedCard extends StatelessWidget {
             const SizedBox(height: 8),
           ],
           _LatestCommentLine(post: post, onTap: onTap),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickPlaceConfirmSheet extends StatelessWidget {
+  const _PickPlaceConfirmSheet({required this.pin});
+
+  final MapPin pin;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottom),
+      decoration: BoxDecoration(
+        color: AppColors.blackElevated.withValues(alpha: 0.98),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: AppColors.border2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'この店を選びますか？',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            pin.placeName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              height: 1.2,
+            ),
+          ),
+          if (pin.hasPostedActivity) ...[
+            const SizedBox(height: 8),
+            Text(
+              pin.visitors.isNotEmpty
+                  ? '${pin.visitors.length}人が訪問したお店'
+                  : 'Who eats で訪問記録があるお店',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.orangeHighlight.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(height: 22),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.orange,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Text(
+              'ここを選ぶ',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
         ],
       ),
     );
@@ -2068,7 +2182,15 @@ class _MapTabState extends State<_MapTab> {
     if (!context.mounted) return;
     _log('openBottomSheet placeId=${pin.id} name=${pin.placeName}');
     if (widget.onPickPlace != null) {
-      widget.onPickPlace!(pin);
+      final confirmed = await showModalBottomSheet<bool>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) => _PickPlaceConfirmSheet(pin: pin),
+      );
+      if (confirmed == true && context.mounted) {
+        widget.onPickPlace!(pin);
+      }
       return;
     }
     widget.onPlaceTap(pin);
@@ -2153,10 +2275,11 @@ class _MapTabState extends State<_MapTab> {
           rating: detail.rating,
           friendComment: detail.friendComment,
           imageUrl: detail.imageUrl,
-          isFriendVisited: widget.controller.postedPlaceGoogleIds.contains(
+          isFriendVisited: false,
+          friendAvatars: const [],
+          hasPostedActivity: widget.controller.postedPlaceGoogleIds.contains(
             focus.placeGoogleId,
           ),
-          friendAvatars: const [],
           latitude: lat,
           longitude: lng,
         );
@@ -2352,7 +2475,7 @@ class _MapTabState extends State<_MapTab> {
   }
 
   bool _isPostedPin(MapPin pin, Set<String> postedIds) {
-    return postedIds.contains(pin.id) || pin.isFriendVisited;
+    return pin.hasPostedActivity || postedIds.contains(pin.id);
   }
 
   List<Widget> _buildSingle3dOverlayWithTapTarget(
@@ -2364,7 +2487,6 @@ class _MapTabState extends State<_MapTab> {
     final pinAssetPath = isPostedPin
         ? 'assets/3d_pin_posted.html'
         : 'assets/3d_pin.html';
-    final postedIconUrl = widget.controller.postedPlaceUserIcons[pin.id];
     return [
       Positioned(
         left: offset.dx - 82,
@@ -2390,38 +2512,12 @@ class _MapTabState extends State<_MapTab> {
                       width: 150,
                       height: 150,
                       assetPath: pinAssetPath,
-                      initialIconUrl: isPostedPin ? postedIconUrl : null,
-                      initialIconAsset: isPostedPin ? 'doc/yuto.jpg' : null,
                       webviewBackground: Colors.transparent,
                       animationFpsListenable: _pin3dAnimationFps,
                     ),
                   ),
                 ),
               ),
-              if (isPostedPin)
-                Positioned(
-                  right: 4,
-                  top: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: AppColors.orange.withValues(alpha: 0.92),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.28),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.star_rounded,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
               const Positioned.fill(child: SizedBox.expand()),
             ],
           ),
@@ -2501,7 +2597,7 @@ class _MapTabState extends State<_MapTab> {
     for (final pin in pins) {
       latSum += pin.latitude ?? 0;
       lngSum += pin.longitude ?? 0;
-      if (pin.isFriendVisited) visitedCount++;
+      if (pin.hasPostedActivity) visitedCount++;
     }
     final center = LatLng(latSum / pins.length, lngSum / pins.length);
     final icon = _clusterIconFor(total: pins.length, visited: visitedCount);
@@ -2513,7 +2609,7 @@ class _MapTabState extends State<_MapTab> {
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       zIndexInt: 3,
       infoWindow: InfoWindow(
-        title: '友達が来た店舗: $visitedCount件',
+        title: '訪問記録あり: $visitedCount件',
         snippet: 'この範囲の全店舗: ${pins.length}店',
         onTap: () => _animateToPin(pins.first),
       ),
@@ -4461,7 +4557,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        'ピンをタップすると、その店を投稿先に設定します。',
+                        'ピンをタップして店名を確認し、「ここを選ぶ」で決定してください。',
                         style: TextStyle(fontSize: 12, color: Colors.white70),
                       ),
                     ),
@@ -4469,7 +4565,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                       child: _MapTab(
                         mapPins: widget.controller.mapPins,
                         controller: widget.controller,
-                        onPlaceTap: (pin) => Navigator.of(sheetContext).pop(pin),
+                        onPlaceTap: (_) {},
                         onSearchExpansionChanged: (_) {},
                         onEdgeSwipeBack: () => Navigator.of(sheetContext).maybePop(),
                         onPickPlace: (pin) => Navigator.of(sheetContext).pop(pin),

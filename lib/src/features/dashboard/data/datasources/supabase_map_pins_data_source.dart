@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -26,68 +24,42 @@ class SupabaseMapPinsDataSource {
   }) async {
     final centerLat = lat ?? _defaultLat;
     final centerLng = lng ?? _defaultLng;
-    final isAnon = _client.auth.currentUser == null;
+    if (_client.auth.currentUser == null) return const [];
 
     try {
-      final tPlaces = SupabaseTables.places;
-      final tAuthor = SupabaseTables.postAuthorEmbed;
-      final tImages = SupabaseTables.postImages;
-      var query = _client
-          .from(SupabaseTables.posts)
-          .select(
-            'id,caption,created_at,user_id,rating,'
-            '$tAuthor(name,icon_path),'
-            '$tPlaces!inner(google_place_id,name,latitude,longitude),'
-            '$tImages(storage_path,display_order)',
-          )
-          .eq('post_type', 'restaurant')
-          .isFilter('deleted_at', null);
+      final rows = await _client.rpc(
+        'get_restaurant_post_activity_in_radius',
+        params: {
+          'p_lat': centerLat,
+          'p_lng': centerLng,
+          'p_radius_meters': radiusMeters,
+        },
+      );
 
-      if (isAnon) {
-        query = query.eq('visibility', 'public');
-      }
-
-      final rows = await query
-          .order('created_at', ascending: false)
-          .limit(300);
-
+      final currentUserId = _client.auth.currentUser!.id;
       final aggregates = <String, _PlacePinAggregate>{};
       final q = (keyword ?? '').trim().toLowerCase();
 
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
-        final place = _extractEmbeddedMap(row[tPlaces]);
-        if (place == null) continue;
-
-        final placeId = (place['google_place_id'] ?? '').toString();
+        final placeId = (row['google_place_id'] ?? '').toString();
         if (placeId.isEmpty) continue;
 
-        final placeName = (place['name'] ?? '').toString();
-        final plat = (place['latitude'] as num?)?.toDouble();
-        final plng = (place['longitude'] as num?)?.toDouble();
+        final placeName = (row['place_name'] ?? '').toString();
+        final plat = (row['latitude'] as num?)?.toDouble();
+        final plng = (row['longitude'] as num?)?.toDouble();
         if (plat == null || plng == null) continue;
-        if (_distanceMeters(centerLat, centerLng, plat, plng) > radiusMeters) {
+
+        if (q.isNotEmpty && !placeName.toLowerCase().contains(q)) {
           continue;
         }
 
-        final caption = (row['caption'] ?? '').toString();
-        if (q.isNotEmpty &&
-            !placeName.toLowerCase().contains(q) &&
-            !caption.toLowerCase().contains(q)) {
-          continue;
-        }
+        final userId = (row['user_id'] ?? '').toString();
+        final userName = (row['user_name'] ?? '').toString().trim();
+        final isFriend =
+            mutualFriendIds.isNotEmpty && mutualFriendIds.contains(userId);
+        final isMe = userId == currentUserId;
 
-        final author =
-            _extractEmbeddedMap(row[SupabaseTables.profiles]) ??
-            _extractEmbeddedMap(row['whoeats_users']);
-        final userName = (author?['name'] ?? '').toString().trim();
-        final avatarToken = _avatarToken(userName);
-        final postUserId = (row['user_id'] ?? '').toString();
-        final isFriendPost =
-            mutualFriendIds.isNotEmpty && mutualFriendIds.contains(postUserId);
-        final rating = (row['rating'] as num?)?.toDouble();
-
-        final imageUrl = await _firstImageUrl(row[tImages]);
         final agg = aggregates.putIfAbsent(
           placeId,
           () => _PlacePinAggregate(
@@ -97,12 +69,11 @@ class SupabaseMapPinsDataSource {
             longitude: plng,
           ),
         );
-        agg.addPost(
-          caption: caption,
-          imageUrl: imageUrl,
-          avatarToken: avatarToken,
-          isFriendPost: isFriendPost,
-          rating: rating,
+        agg.addVisitor(
+          userId: userId,
+          userName: userName.isNotEmpty ? userName : 'user',
+          isFriend: isFriend,
+          isMe: isMe,
         );
       }
 
@@ -110,6 +81,43 @@ class SupabaseMapPinsDataSource {
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[SupabaseMapPinsDataSource] fetchPostedPinsAround: $e\n$st');
+      }
+      return const [];
+    }
+  }
+
+  Future<List<PlaceVisitor>> fetchPlaceVisitors({
+    required String placeGoogleId,
+    Set<String> mutualFriendIds = const {},
+  }) async {
+    if (_client.auth.currentUser == null) return const [];
+    try {
+      final rows = await _client.rpc(
+        'get_place_visitors',
+        params: {'p_google_place_id': placeGoogleId},
+      );
+      final currentUserId = _client.auth.currentUser!.id;
+      final visitors = <PlaceVisitor>[];
+      final seen = <String>{};
+      for (final raw in (rows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        final userId = (row['user_id'] ?? '').toString();
+        if (userId.isEmpty || seen.contains(userId)) continue;
+        seen.add(userId);
+        final userName = (row['user_name'] ?? '').toString().trim();
+        visitors.add(
+          PlaceVisitor(
+            userId: userId,
+            userName: userName.isNotEmpty ? userName : 'user',
+            isFriend: mutualFriendIds.contains(userId),
+            isMe: userId == currentUserId,
+          ),
+        );
+      }
+      return visitors;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[SupabaseMapPinsDataSource] fetchPlaceVisitors: $e\n$st');
       }
       return const [];
     }
@@ -176,6 +184,7 @@ class SupabaseMapPinsDataSource {
 
   Future<PlaceDetail?> fetchPlaceDetailShell({
     required String placeGoogleId,
+    Set<String> mutualFriendIds = const {},
   }) async {
     try {
       final tPlaces = SupabaseTables.places;
@@ -187,12 +196,18 @@ class SupabaseMapPinsDataSource {
       if (placeRow == null) return null;
 
       final posts = await fetchVisiblePlacePosts(placeGoogleId: placeGoogleId);
+      final visitors = await fetchPlaceVisitors(
+        placeGoogleId: placeGoogleId,
+        mutualFriendIds: mutualFriendIds,
+      );
       final name = (placeRow['name'] ?? '').toString();
       final lat = (placeRow['latitude'] as num?)?.toDouble();
       final lng = (placeRow['longitude'] as num?)?.toDouble();
       final lead = posts.isNotEmpty
           ? posts.first.comment
-          : '友達の投稿はまだありません';
+          : visitors.isNotEmpty
+          ? '${visitors.length}人が訪問'
+          : 'まだ訪問記録がありません';
 
       return PlaceDetail(
         placeId: placeGoogleId,
@@ -201,6 +216,7 @@ class SupabaseMapPinsDataSource {
         friendComment: lead,
         imageUrl: posts.isNotEmpty ? (posts.first.imageUrl ?? '') : '',
         posts: posts,
+        visitors: visitors,
         address: (placeRow['address'] ?? '').toString(),
         phoneNumber: '',
         openNow: null,
@@ -240,29 +256,6 @@ class SupabaseMapPinsDataSource {
     return null;
   }
 
-  String _avatarToken(String name) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return '?';
-    final runes = trimmed.runes;
-    if (runes.isEmpty) return '?';
-    return String.fromCharCode(runes.first).toUpperCase();
-  }
-
-  double _distanceMeters(double lat1, double lng1, double lat2, double lng2) {
-    const r = 6371000.0;
-    final dLat = _deg2rad(lat2 - lat1);
-    final dLng = _deg2rad(lng2 - lng1);
-    final a =
-        math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_deg2rad(lat1)) *
-            math.cos(_deg2rad(lat2)) *
-            math.sin(dLng / 2) *
-            math.sin(dLng / 2);
-    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    return r * c;
-  }
-
-  double _deg2rad(double d) => d * (math.pi / 180.0);
 }
 
 class _PlacePinAggregate {
@@ -277,47 +270,43 @@ class _PlacePinAggregate {
   final String placeName;
   final double latitude;
   final double longitude;
-  final List<String> _captions = [];
-  final List<String> _imageUrls = [];
-  final List<String> _friendAvatarTokens = [];
-  final List<double> _ratings = [];
+  final List<PlaceVisitor> _visitors = [];
   bool _hasFriendPost = false;
 
-  void addPost({
-    required String caption,
-    required String imageUrl,
-    required String avatarToken,
-    required bool isFriendPost,
-    double? rating,
+  void addVisitor({
+    required String userId,
+    required String userName,
+    required bool isFriend,
+    required bool isMe,
   }) {
-    if (caption.isNotEmpty) _captions.add(caption);
-    if (imageUrl.isNotEmpty) _imageUrls.add(imageUrl);
-    if (isFriendPost) {
-      _hasFriendPost = true;
-      if (!_friendAvatarTokens.contains(avatarToken)) {
-        _friendAvatarTokens.add(avatarToken);
-      }
-    }
-    if (rating != null && rating > 0) _ratings.add(rating);
+    if (_visitors.any((v) => v.userId == userId)) return;
+    _visitors.add(
+      PlaceVisitor(
+        userId: userId,
+        userName: userName,
+        isFriend: isFriend,
+        isMe: isMe,
+      ),
+    );
+    if (isFriend) _hasFriendPost = true;
   }
 
   MapPin toMapPin() {
-    final comment = _captions.isNotEmpty
-        ? _captions.first
-        : (_friendAvatarTokens.length > 1
-              ? '${_friendAvatarTokens.length}人の友達が訪問'
+    final comment = _visitors.length > 1
+        ? '${_visitors.length}人が訪問'
+        : (_visitors.isNotEmpty
+              ? '${_visitors.first.userName}が訪問'
               : '投稿あり');
-    final avgRating = _ratings.isEmpty
-        ? 0.0
-        : _ratings.reduce((a, b) => a + b) / _ratings.length;
     return MapPin(
       id: googlePlaceId,
       placeName: placeName,
-      rating: avgRating > 0 ? avgRating : 0,
+      rating: 0,
       friendComment: comment,
-      imageUrl: _imageUrls.isNotEmpty ? _imageUrls.first : '',
+      imageUrl: '',
       isFriendVisited: _hasFriendPost,
-      friendAvatars: _friendAvatarTokens.take(4).toList(),
+      friendAvatars: const [],
+      hasPostedActivity: _visitors.isNotEmpty,
+      visitors: List<PlaceVisitor>.unmodifiable(_visitors),
       latitude: latitude,
       longitude: longitude,
     );

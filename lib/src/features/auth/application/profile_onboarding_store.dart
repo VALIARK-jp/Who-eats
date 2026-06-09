@@ -37,6 +37,12 @@ class ProfileOnboardingStore {
     await prefs.remove(_key(userId));
   }
 
+  /// アカウント削除後に端末キャッシュを消す。
+  static Future<void> clearForUser(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key(userId));
+  }
+
   static Future<void> markPendingEmailSignup(String email) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kPendingEmailSignup, email.trim().toLowerCase());
