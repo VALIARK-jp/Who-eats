@@ -1,3 +1,5 @@
+import java.io.FileInputStream
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -27,6 +29,13 @@ val androidMapsApiKey =
         ?: (project.findProperty("MAPS_API_KEY") as String?)
         ?: "YOUR_ANDROID_MAPS_API_KEY"
 
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        load(FileInputStream(keystorePropertiesFile))
+    }
+}
+
 android {
     namespace = "com.valiark.whoeats"
     compileSdk = flutter.compileSdkVersion
@@ -53,9 +62,15 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (!keystorePropertiesFile.exists()) {
+                error("android/key.properties is missing. Create a release keystore first.")
+            }
+            signingConfig = signingConfigs.create("release") {
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
         }
     }
 }
