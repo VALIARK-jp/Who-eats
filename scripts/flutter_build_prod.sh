@@ -40,4 +40,4 @@ fi
 
 "$ROOT/scripts/ios_google_service_info.sh" prod
 sanitize_env_file "$ENV_PROD" .env
-flutter build ipa "$@"
+flutter build ipa --dart-define-from-file="$ENV_PROD" "$@"

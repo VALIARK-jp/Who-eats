@@ -43,11 +43,11 @@ sanitize_env_file "$ENV_PROD" .env
 case "${1:-appbundle}" in
   appbundle)
     shift || true
-    flutter build appbundle --release "$@"
+    flutter build appbundle --release --dart-define-from-file="$ENV_PROD" "$@"
     ;;
   apk)
     shift || true
-    flutter build apk --release "$@"
+    flutter build apk --release --dart-define-from-file="$ENV_PROD" "$@"
     ;;
   *)
     echo "Usage: $0 [appbundle|apk] [flutter build args...]" >&2
