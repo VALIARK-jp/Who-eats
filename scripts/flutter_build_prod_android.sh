@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a prod IPA / release bundle against valiark-prod.
+# Build a prod Android release bundle or APK against valiark-prod.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,17 +12,17 @@ if [[ ! -f "$ENV_PROD" ]]; then
 fi
 
 node "$ROOT/scripts/check-prod-config.mjs"
-chmod +x "$ROOT/scripts/ios_google_service_info.sh"
 
 ORIGINAL_ENV_EXISTS=0
 BACKUP_ENV="$(mktemp "${TMPDIR:-/tmp}/whoeats-env.XXXXXX")"
+
 sanitize_env_file() {
   local src="$1"
   local dst="$2"
   grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$src" > "$dst"
 }
+
 cleanup() {
-  "$ROOT/scripts/ios_google_service_info.sh" dev >/dev/null 2>&1 || true
   if [[ "$ORIGINAL_ENV_EXISTS" -eq 1 ]]; then
     mv -f "$BACKUP_ENV" .env
   else
@@ -38,6 +38,19 @@ else
   cp "$ENV_PROD" "$BACKUP_ENV"
 fi
 
-"$ROOT/scripts/ios_google_service_info.sh" prod
 sanitize_env_file "$ENV_PROD" .env
-flutter build ipa "$@"
+
+case "${1:-appbundle}" in
+  appbundle)
+    shift || true
+    flutter build appbundle --release "$@"
+    ;;
+  apk)
+    shift || true
+    flutter build apk --release "$@"
+    ;;
+  *)
+    echo "Usage: $0 [appbundle|apk] [flutter build args...]" >&2
+    exit 1
+    ;;
+esac

@@ -71,6 +71,18 @@ Who eats の prod では次を想定する。
 ./scripts/flutter_build_prod.sh
 ```
 
+### Android release build
+
+```bash
+./scripts/flutter_build_prod_android.sh
+```
+
+APK が欲しい場合は:
+
+```bash
+./scripts/flutter_build_prod_android.sh apk
+```
+
 ---
 
 ## 5. 使い分け
@@ -81,3 +93,4 @@ Who eats の prod では次を想定する。
 | Edge Functions を prod に載せる | `./scripts/valiark-prod-supabase-setup.sh functions` |
 | prod 相当でローカル確認 | `./scripts/flutter_run_prod.sh` |
 | release build | `./scripts/flutter_build_prod.sh` |
+| Android release build | `./scripts/flutter_build_prod_android.sh` |

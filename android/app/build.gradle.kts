@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -33,10 +35,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -61,6 +60,16 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_11)
+    }
+}
+
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

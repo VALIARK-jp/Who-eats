@@ -10,7 +10,7 @@ Who eats UI prototype built with Flutter (clean architecture + mock-first).
 - **起動・読み込みの重さ改善メモ:** [docs/performance_startup_loading_plan.md](docs/performance_startup_loading_plan.md)
 - **環境値の優先順位:** `--dart-define=KEY=value` を付けた場合は、ルートの `.env` より優先（`lib/src/core/config/app_config.dart` の `AppConfig`）。
 - **初回:** `cp .env.example .env` で `.env` を作る（`pubspec.yaml` の asset に含まれるため必須）。または [scripts/flutter_run_dev.sh](scripts/flutter_run_dev.sh) が無ければ自動コピーしてから `flutter run`。
-- **prod:** `cp .env.prod.example .env.prod` のうえ、[scripts/flutter_run_prod.sh](scripts/flutter_run_prod.sh) / [scripts/flutter_build_prod.sh](scripts/flutter_build_prod.sh) を使う。
+- **prod:** `cp .env.prod.example .env.prod` のうえ、[scripts/flutter_run_prod.sh](scripts/flutter_run_prod.sh) / [scripts/flutter_build_prod.sh](scripts/flutter_build_prod.sh) / [scripts/flutter_build_prod_android.sh](scripts/flutter_build_prod_android.sh) を使う。
 
 ## Map API integration (pins + place detail)
 
