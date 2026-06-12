@@ -9,7 +9,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/supabase/user_profile_sync.dart';
-import 'profile_onboarding_store.dart';
 
 /// LINE / Apple ネイティブ認証をどの画面から開いたか（Edge で新規作成可否を分岐）。
 enum NativeAuthFlow {
@@ -112,12 +111,6 @@ class AuthService {
         data: {'displayName': displayName, 'name': displayName},
         emailRedirectTo: AppConfig.authRedirectUrl,
       );
-      final userId = response.user?.id;
-      if (userId != null) {
-        await ProfileOnboardingStore.requireSetup(userId);
-      } else {
-        await ProfileOnboardingStore.markPendingEmailSignup(email);
-      }
       return response;
     } on http.ClientException catch (e) {
       debugPrint('signUpWithEmail network: $e');
@@ -171,13 +164,6 @@ class AuthService {
           );
           return true;
         }());
-      }
-
-      if (flow == NativeAuthFlow.signup) {
-        final userId = _supabase.auth.currentUser?.id;
-        if (userId != null) {
-          await ProfileOnboardingStore.requireSetup(userId);
-        }
       }
 
       return nativeResponse;
@@ -250,13 +236,6 @@ class AuthService {
             debugPrint('[AuthService] Apple metadata update skipped: $e\n$st');
             return true;
           }());
-        }
-      }
-
-      if (flow == NativeAuthFlow.signup) {
-        final userId = _supabase.auth.currentUser?.id;
-        if (userId != null) {
-          await ProfileOnboardingStore.requireSetup(userId);
         }
       }
 

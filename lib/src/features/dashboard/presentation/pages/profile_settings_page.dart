@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/legal/legal_document_page.dart';
 import '../../../../core/user/user_code_format.dart';
+import '../../../../core/user/user_display_name_format.dart';
 import '../../../../core/supabase/account_deletion_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
@@ -306,7 +307,7 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     super.initState();
     final profile = widget.controller.profileOverview;
     if (profile != null) {
-      _nameController.text = profile.name;
+      _nameController.text = UserDisplayNameFormat.display(profile.name);
       _userCodeController.text = UserCodeFormat.bodyFromStored(profile.userCode);
       _bioController.text = profile.bio;
       _defaultVisibility = _normalizeVisibility(profile.defaultVisibility);
@@ -350,6 +351,16 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
 
     setState(() => _isSaving = true);
     try {
+      final name = UserDisplayNameFormat.normalizeInput(_nameController.text);
+      if (name.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ユーザーネームを入力してください')),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
+
       final codeBody = _userCodeController.text.trim();
       if (codeBody.isNotEmpty &&
           !UserCodeFormat.bodyPattern.hasMatch(
@@ -371,7 +382,7 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
       await Supabase.instance.client
           .from(SupabaseTables.profiles)
           .update({
-            'name': _nameController.text.trim(),
+            'name': name,
             if (userCode.isNotEmpty) 'user_code': userCode,
             'bio': _bioController.text.trim(),
             'default_visibility': _defaultVisibility,
@@ -415,8 +426,10 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
           const SizedBox(height: 16),
           TextField(
             controller: _nameController,
+            maxLength: UserDisplayNameFormat.maxLength,
             decoration: const InputDecoration(
               labelText: 'ユーザーネーム',
+              helperText: '10文字以内',
               border: OutlineInputBorder(),
             ),
           ),

@@ -8,7 +8,7 @@ abstract final class UserCodeFormat {
 
   static final bodyPattern = RegExp(r'^[A-Za-z0-9_]+$');
 
-  /// UI 表示用。長いコードは切り詰める。
+  /// 表示・保存用（DB: `whoeats_users_user_code_length_check` と同期）。
   static String display(String code) {
     final trimmed = code.trim();
     if (trimmed.length <= maxLength) return trimmed;
