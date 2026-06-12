@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../dashboard/presentation/pages/app_shell_page.dart';
 import '../application/profile_onboarding_store.dart';
+import 'password_recovery_page.dart';
 import 'profile_setup_page.dart';
 
 /// ログイン後: 初回プロフィール入力 → メインシェル（Panda Talk の AuthGate 同型）。
@@ -18,14 +19,26 @@ class AuthShellPage extends StatefulWidget {
 class _AuthShellPageState extends State<AuthShellPage> {
   bool? _prefsLoaded;
   bool _profileSetupDone = true;
+  bool _passwordRecoveryPending = false;
   StreamSubscription<AuthState>? _authSub;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        _onPasswordRecovery();
+      }
       _load();
+    });
+  }
+
+  void _onPasswordRecovery() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => _passwordRecoveryPending = true);
     });
   }
 
@@ -63,6 +76,14 @@ class _AuthShellPageState extends State<AuthShellPage> {
     if (_prefsLoaded != true) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_passwordRecoveryPending) {
+      return PasswordRecoveryPage(
+        onComplete: () {
+          if (mounted) setState(() => _passwordRecoveryPending = false);
+        },
       );
     }
 
