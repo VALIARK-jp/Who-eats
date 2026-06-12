@@ -6,15 +6,16 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/user/user_code_format.dart';
+import '../../../core/user/user_display_name_format.dart';
 import '../../../core/supabase/profile_icon_service.dart';
 import '../../../core/supabase/supabase_storage_urls.dart';
 import '../../../core/supabase/supabase_tables.dart';
+import '../../../core/supabase/user_profile_sync.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../dashboard/presentation/controllers/app_shell_controller.dart';
-import '../application/auth_service.dart';
 import '../application/profile_onboarding_store.dart';
 
-/// 初回ログイン後のプロフィール入力（[whoeats_users] が正本）。
+/// 初回ログイン後のプロフィール入力（name / user_code が null のときのみ）。
 class ProfileSetupPage extends StatefulWidget {
   const ProfileSetupPage({super.key, required this.onComplete});
 
@@ -25,7 +26,6 @@ class ProfileSetupPage extends StatefulWidget {
 }
 
 class _ProfileSetupPageState extends State<ProfileSetupPage> {
-  final _auth = AuthService();
   final _nameController = TextEditingController();
   final _userCodeController = TextEditingController();
   final _bioController = TextEditingController();
@@ -35,51 +35,47 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   String? _remoteIconUrl;
   bool _submitting = false;
   String? _error;
+  String? _userCodeError;
 
   static RegExp get _codeBody =>
       RegExp('^[A-Za-z0-9_]{1,${UserCodeFormat.maxBodyLength}}\$');
 
+  bool get _canSubmit {
+    final name = _nameController.text.trim();
+    final codeBody = _userCodeController.text.trim();
+    return name.isNotEmpty && _codeBody.hasMatch(codeBody);
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prefill());
+    void onRequiredFieldChanged() {
+      if (mounted) {
+        setState(() {
+          _userCodeError = null;
+          _error = null;
+        });
+      }
+    }
+
+    _nameController.addListener(onRequiredFieldChanged);
+    _userCodeController.addListener(onRequiredFieldChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prepareRow());
   }
 
-  Future<void> _prefill() async {
+  Future<void> _prepareRow() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
-    await Supabase.instance.client.auth.refreshSession();
-    final refreshed = Supabase.instance.client.auth.currentUser ?? user;
-    final metadata = refreshed.userMetadata ?? const <String, dynamic>{};
-    final provider = refreshed.appMetadata['provider'] as String? ?? 'email';
-    final isLine = provider == 'line';
-
-    final displayName = metadata['displayName'] as String? ??
-        metadata['name'] as String? ??
-        '';
-    if (displayName.isNotEmpty) _nameController.text = displayName;
-
-    final photo = metadata['photoURL'] as String?;
-    if (isLine && photo != null && photo.isNotEmpty) {
-      setState(() => _remoteIconUrl = photo);
-    }
-
     try {
-      await _auth.ensureUserProfileRow();
+      await syncCurrentUserProfile();
       final row = await Supabase.instance.client
           .from(SupabaseTables.profiles)
-          .select('user_code, name, bio, icon_path')
+          .select('bio, icon_path')
           .eq('id', user.id)
           .maybeSingle();
       if (!mounted || row == null) return;
-      if (_nameController.text.isEmpty) {
-        _nameController.text = row['name'] as String? ?? '';
-      }
-      final code = row['user_code'] as String? ?? '';
-      if (_userCodeController.text.isEmpty && code.isNotEmpty) {
-        _userCodeController.text = UserCodeFormat.bodyFromStored(code);
-      }
+
       if (_bioController.text.isEmpty) {
         _bioController.text = row['bio'] as String? ?? '';
       }
@@ -91,7 +87,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         );
         if (!mounted) return;
         if (resolved != null && resolved.isNotEmpty) {
-          setState(() => _remoteIconUrl ??= resolved);
+          setState(() => _remoteIconUrl = resolved);
         }
       }
     } catch (_) {}
@@ -131,47 +127,50 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
 
   Future<void> _submit() async {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
+    if (user == null || !_canSubmit) return;
 
-    final name = _nameController.text.trim();
+    final name = UserDisplayNameFormat.normalizeInput(_nameController.text);
     final codeBody = _userCodeController.text.trim();
     final bio = _bioController.text.trim();
-
-    if (name.isEmpty) {
-      setState(() => _error = '名前を入力してください');
-      return;
-    }
-    if (!_codeBody.hasMatch(codeBody)) {
-      setState(() => _error = 'ユーザーコードは英数字と_のみ（${UserCodeFormat.maxBodyLength}文字以内、@は自動で付きます）');
-      return;
-    }
     final userCode = UserCodeFormat.fromBody(codeBody);
 
     setState(() {
       _submitting = true;
       _error = null;
+      _userCodeError = null;
     });
 
     try {
       if (!await _isUserCodeAvailable(userCode)) {
         setState(() {
           _submitting = false;
-          _error = 'このユーザーコードは既に使われています';
+          _userCodeError = 'このユーザーコードは使われています';
         });
         return;
       }
 
-      String? iconPath = _remoteIconUrl;
+      String? iconPath;
       if (_pickedIcon != null) {
-        iconPath = await ProfileIconService().uploadAndSaveProfileIcon(_pickedIcon!);
+        iconPath = await ProfileIconService().uploadAndSaveProfileIcon(
+          _pickedIcon!,
+        );
+      } else if (_remoteIconUrl != null && _remoteIconUrl!.isNotEmpty) {
+        iconPath = _remoteIconUrl;
       }
 
-      await Supabase.instance.client.from(SupabaseTables.profiles).update({
+      final payload = <String, dynamic>{
         'name': name,
         'user_code': userCode,
         'bio': bio.isEmpty ? null : bio,
-        'icon_path': ?iconPath,
-      }).eq('id', user.id);
+      };
+      if (iconPath != null && iconPath.isNotEmpty) {
+        payload['icon_path'] = iconPath;
+      }
+
+      await Supabase.instance.client
+          .from(SupabaseTables.profiles)
+          .update(payload)
+          .eq('id', user.id);
 
       await ProfileOnboardingStore.setCompleted(user.id);
 
@@ -181,6 +180,19 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         } catch (_) {}
         widget.onComplete();
       }
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      if (e.code == '23505') {
+        setState(() {
+          _submitting = false;
+          _userCodeError = 'このユーザーコードは使われています';
+        });
+        return;
+      }
+      setState(() {
+        _submitting = false;
+        _error = '保存に失敗しました。もう一度お試しください';
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -202,16 +214,16 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
             Text(
               'プロフィールをつくろう',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                fontWeight: FontWeight.w800,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
-              'ホームの地図はこのまま使えます。投稿・友達などはプロフィール登録後に解放されます。',
+              'ユーザーネームとユーザーコードは必須です。アイコンと自己紹介は任意です。',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSubtle,
-                    height: 1.45,
-                  ),
+                color: AppColors.textSubtle,
+                height: 1.45,
+              ),
             ),
             const SizedBox(height: 20),
             Center(
@@ -233,27 +245,41 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
             ),
             const SizedBox(height: 8),
             const Center(
-              child: Text('タップしてアイコンを選ぶ', style: TextStyle(color: AppColors.textSubtle)),
+              child: Text(
+                'タップしてアイコンを選ぶ（任意）',
+                style: TextStyle(color: AppColors.textSubtle),
+              ),
             ),
             const SizedBox(height: 20),
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(labelText: '名前'),
+              maxLength: UserDisplayNameFormat.maxLength,
+              enabled: !_submitting,
+              decoration: const InputDecoration(
+                labelText: 'ユーザーネーム',
+                helperText: '10文字以内・必須',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _userCodeController,
               maxLength: UserCodeFormat.maxBodyLength,
-              decoration: const InputDecoration(
+              enabled: !_submitting,
+              decoration: InputDecoration(
                 labelText: 'ユーザーコード',
                 prefixText: '@',
-                helperText: '英数字と _ のみ（15文字以内）',
+                helperText: '英数字と _ のみ（15文字以内・必須）',
+                errorText: _userCodeError,
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _bioController,
-              decoration: const InputDecoration(labelText: '一言'),
+              enabled: !_submitting,
+              decoration: const InputDecoration(
+                labelText: '自己紹介',
+                helperText: '任意（160文字以内）',
+              ),
               maxLines: 3,
               maxLength: 160,
             ),
@@ -263,8 +289,8 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
             ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: Text(_submitting ? '保存中…' : 'はじめる'),
+              onPressed: _canSubmit && !_submitting ? _submit : null,
+              child: Text(_submitting ? '保存中…' : '保存する'),
             ),
           ],
         ),

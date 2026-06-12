@@ -7,6 +7,7 @@ import '../../../../core/push/push_notification_service.dart';
 import '../../../../core/supabase/supabase_storage_urls.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../../../core/user/user_code_format.dart';
+import '../../../../core/user/user_display_name_format.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/post_visibility.dart';
 
@@ -1052,7 +1053,9 @@ class SupabaseSocialDataSource {
     final author =
         _extractEmbedded(row[SupabaseTables.profiles]) ??
         _extractEmbedded(row['whoeats_users']);
-    final displayName = (author?['name'] ?? '').toString().trim();
+    final displayName = UserDisplayNameFormat.display(
+      (author?['name'] ?? '').toString().trim(),
+    );
     final email = (author?['email'] ?? '').toString();
     final userName = displayName.isNotEmpty
         ? displayName
@@ -1157,7 +1160,7 @@ class SupabaseSocialDataSource {
 
       if (row == null) {
         return ProfileOverview(
-          name: 'ユーザー',
+          name: '',
           userCode: '',
           bio: '',
           avatarUrl: '',
@@ -1169,7 +1172,9 @@ class SupabaseSocialDataSource {
         );
       }
 
-      final name = (row['name'] ?? '').toString().trim();
+      final name = UserDisplayNameFormat.display(
+        (row['name'] ?? '').toString().trim(),
+      );
       final userCode = UserCodeFormat.display(
         (row['user_code'] ?? '').toString().trim(),
       );
@@ -1182,7 +1187,7 @@ class SupabaseSocialDataSource {
           await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
 
       return ProfileOverview(
-        name: name.isNotEmpty ? name : 'ユーザー',
+        name: name,
         userCode: userCode,
         bio: bio,
         avatarUrl: avatarUrl,
