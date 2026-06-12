@@ -24,26 +24,45 @@ class CalendarRecordView extends StatefulWidget {
 
 class _CalendarRecordViewState extends State<CalendarRecordView> {
   late final Set<String> _activeDays;
+  late DateTime _currentMonth;
   late String _selectedDay;
   List<RecordDayEntry> _dayEntries = [];
   bool _loadingDay = false;
 
+  int get _daysInMonth =>
+      DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
+
+  String get _monthTitle => '${_currentMonth.year}年${_currentMonth.month}月';
+
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _currentMonth.year == now.year && _currentMonth.month == now.month;
+  }
+
+  Set<String> get _currentActiveDays => _isCurrentMonth ? _activeDays : {};
+
   @override
   void initState() {
     super.initState();
-    _activeDays = widget.summary.monthlyShots.toSet();
     final now = DateTime.now();
-    _selectedDay = widget.summary.monthlyShots.isNotEmpty
-        ? widget.summary.monthlyShots.first
-        : '${now.day}';
+    _currentMonth = DateTime(now.year, now.month);
+    final monthlyShots = [...widget.summary.monthlyShots]
+      ..sort((a, b) {
+        final ai = int.tryParse(a) ?? 0;
+        final bi = int.tryParse(b) ?? 0;
+        return ai.compareTo(bi);
+      });
+    _activeDays = monthlyShots.toSet();
+    _selectedDay = monthlyShots.isNotEmpty
+        ? monthlyShots.first
+        : '${now.day.clamp(1, _daysInMonth)}';
     _loadSelectedDay();
   }
 
   Future<void> _loadSelectedDay() async {
     setState(() => _loadingDay = true);
     final day = int.tryParse(_selectedDay) ?? 1;
-    final now = DateTime.now();
-    final date = DateTime(now.year, now.month, day);
+    final date = DateTime(_currentMonth.year, _currentMonth.month, day);
     final entries = await widget.loadDayEntries(date);
     if (!mounted) return;
     setState(() {
@@ -52,10 +71,19 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
     });
   }
 
+  void _changeMonth(int delta) {
+    setState(() {
+      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + delta);
+      final limitedDay = int.tryParse(_selectedDay) ?? 1;
+      _selectedDay = '${limitedDay.clamp(1, _daysInMonth)}';
+    });
+    _loadSelectedDay();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final days = List.generate(31, (i) => '${i + 1}');
-    final active = _activeDays.contains(_selectedDay);
+    final days = List.generate(_daysInMonth, (i) => '${i + 1}');
+    final active = _currentActiveDays.contains(_selectedDay);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
@@ -71,9 +99,32 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '今月のカレンダー',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => _changeMonth(-1),
+                    icon: const Icon(Icons.chevron_left, size: 20),
+                    color: AppColors.textSubtle,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _monthTitle,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: () => _changeMonth(1),
+                    icon: const Icon(Icons.chevron_right, size: 20),
+                    color: AppColors.textSubtle,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               GridView.builder(
@@ -174,7 +225,13 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                   padding: EdgeInsets.only(top: 12),
                   child: LinearProgressIndicator(minHeight: 2),
                 )
-              else if (_dayEntries.isNotEmpty) ...[
+              else if (_dayEntries.isEmpty) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'この日は記録がありません。',
+                  style: TextStyle(color: AppColors.textInactive, fontSize: 12),
+                ),
+              ] else ...[
                 const SizedBox(height: 12),
                 const Text(
                   '訪れたお店・自炊',
@@ -194,7 +251,9 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.blackElevated.withValues(alpha: 0.7),
+                            color: AppColors.blackElevated.withValues(
+                              alpha: 0.7,
+                            ),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(color: AppColors.border),
                           ),
@@ -234,10 +293,11 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    for (final token in _dayEntries
-                        .expand((e) => e.companionNames)
-                        .toSet()
-                        .take(6))
+                    for (final token
+                        in _dayEntries
+                            .expand((e) => e.companionNames)
+                            .toSet()
+                            .take(6))
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: Builder(
@@ -265,24 +325,34 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('栄養サマリ', style: TextStyle(fontWeight: FontWeight.w800)),
+              const Text(
+                '栄養サマリ',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
               const SizedBox(height: 8),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.blackElevated.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: const Text(
-                  '準備中 — 栄養・AI分析は今後のアップデートで提供予定です',
-                  style: TextStyle(
-                    color: AppColors.textSubtle,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _NutritionKpi(
+                      label: '平均カロリー',
+                      value: '${widget.summary.caloriesAvg} kcal',
+                    ),
+                    _NutritionKpi(
+                      label: '平均たんぱく質',
+                      value: '${widget.summary.proteinAvg} g',
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 10),
@@ -304,10 +374,7 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                 ],
               ),
               const SizedBox(height: 10),
-              const Text(
-                'メモ',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
+              const Text('メモ', style: TextStyle(fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
               Text(widget.summary.aiSuggestion),
             ],
@@ -328,9 +395,39 @@ class _Kpi extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: AppColors.textSubtle, fontSize: 12)),
+        Text(
+          label,
+          style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+        ),
         const SizedBox(height: 6),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+        ),
+      ],
+    );
+  }
+}
+
+class _NutritionKpi extends StatelessWidget {
+  const _NutritionKpi({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(color: AppColors.textSubtle, fontSize: 11),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+        ),
       ],
     );
   }
