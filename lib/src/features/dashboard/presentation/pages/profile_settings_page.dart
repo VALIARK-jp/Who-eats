@@ -13,6 +13,7 @@ import '../../../../core/supabase/supabase_tables.dart';
 import '../../../auth/application/auth_session.dart';
 import '../../../auth/application/profile_onboarding_store.dart';
 import '../../domain/entities/app_entities.dart';
+import '../../domain/post_visibility.dart';
 import '../controllers/app_shell_controller.dart';
 import 'favorite_posts_page.dart';
 
@@ -187,8 +188,6 @@ class ProfileSettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _FeedScopeSettingsSection(controller: controller),
-          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 60,
@@ -283,93 +282,6 @@ class ProfileSettingsPage extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _FeedScopeSettingsSection extends StatefulWidget {
-  const _FeedScopeSettingsSection({required this.controller});
-
-  final AppShellController controller;
-
-  @override
-  State<_FeedScopeSettingsSection> createState() =>
-      _FeedScopeSettingsSectionState();
-}
-
-class _FeedScopeSettingsSectionState extends State<_FeedScopeSettingsSection> {
-  FeedTimelineScope? _selected;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await widget.controller.loadFeedScopePreference();
-    if (!mounted) return;
-    setState(() {
-      _selected = widget.controller.feedTimelineScope;
-      _loading = false;
-    });
-  }
-
-  Future<void> _onSelect(FeedTimelineScope scope) async {
-    setState(() => _selected = scope);
-    await widget.controller.setDefaultFeedTimelineScope(scope);
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('ホームの初期表示を「${scope.label}」にしました')));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading || _selected == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'ホームの初期表示',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'タイムラインを開いたときのデフォルトです。画面上部のチップでもいつでも切り替えられます。',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        RadioGroup<FeedTimelineScope>(
-          groupValue: _selected,
-          onChanged: (v) {
-            if (v != null) _onSelect(v);
-          },
-          child: Column(
-            children: [
-              for (final scope in FeedTimelineScope.values)
-                RadioListTile<FeedTimelineScope>(
-                  value: scope,
-                  title: Text(
-                    scope.label,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(scope.description),
-                  contentPadding: EdgeInsets.zero,
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
@@ -485,14 +397,7 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     }
   }
 
-  String _normalizeVisibility(String value) {
-    return switch (value.trim()) {
-      'public' => 'public',
-      'private' => 'private',
-      'friends' => 'friends',
-      _ => 'friends',
-    };
-  }
+  String _normalizeVisibility(String value) => PostVisibility.normalize(value);
 
   @override
   Widget build(BuildContext context) {
@@ -543,9 +448,18 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
           const SizedBox(height: 8),
           SegmentedButton<String>(
             segments: const [
-              ButtonSegment(value: 'public', label: Text('全体公開')),
-              ButtonSegment(value: 'friends', label: Text('友達のみ')),
-              ButtonSegment(value: 'private', label: Text('自分のみ')),
+              ButtonSegment(
+                value: PostVisibility.friends,
+                label: Text('友達'),
+              ),
+              ButtonSegment(
+                value: PostVisibility.near,
+                label: Text('友達の友達'),
+              ),
+              ButtonSegment(
+                value: PostVisibility.public_,
+                label: Text('公開'),
+              ),
             ],
             selected: {_defaultVisibility},
             onSelectionChanged: _isSaving
@@ -555,12 +469,10 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
                   }),
           ),
           const SizedBox(height: 8),
-          Text(switch (_defaultVisibility) {
-            'public' => '新しい投稿は全体公開で作成されます。',
-            'friends' => '新しい投稿は友達のみ公開で作成されます。',
-            'private' => '新しい投稿は自分のみ公開で作成されます。',
-            _ => '',
-          }, style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            PostVisibility.defaultForNewPostDescription(_defaultVisibility),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _isSaving ? null : _saveProfile,

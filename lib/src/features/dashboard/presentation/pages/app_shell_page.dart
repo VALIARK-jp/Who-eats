@@ -20,6 +20,7 @@ import '../../../auth/presentation/signup_page.dart';
 import '../../../../core/supabase/post_submit_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
+import '../../domain/post_visibility.dart';
 import '../controllers/app_shell_controller.dart';
 import '../map/map_display_config.dart';
 import '../widgets/floating_bottom_nav.dart';
@@ -4638,7 +4639,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
     _selectedPlaceLng = widget.draft.placeLongitude;
     _selectedPlaceName = widget.draft.placeName;
     _postType = widget.draft.postType;
-    _visibility = widget.draft.visibility;
+    _visibility = PostVisibility.normalize(widget.draft.visibility);
     _rating = widget.draft.rating;
     _companionIds.addAll(widget.draft.companionUserIds);
   }
@@ -5023,23 +5024,29 @@ class _PostCreationPageState extends State<PostCreationPage> {
                     const SizedBox(height: 6),
                     SegmentedButton<String>(
                       segments: const [
-                        ButtonSegment(value: 'public', label: Text('全体公開')),
-                        ButtonSegment(value: 'friends', label: Text('友達のみ')),
-                        ButtonSegment(value: 'private', label: Text('自分のみ')),
+                        ButtonSegment(
+                          value: PostVisibility.friends,
+                          label: Text('友達'),
+                        ),
+                        ButtonSegment(
+                          value: PostVisibility.near,
+                          label: Text('友達の友達'),
+                        ),
+                        ButtonSegment(
+                          value: PostVisibility.public_,
+                          label: Text('公開'),
+                        ),
                       ],
-                      selected: {_visibility},
+                      selected: {PostVisibility.normalize(_visibility)},
                       onSelectionChanged: (s) {
-                        setState(() => _visibility = s.first);
+                        setState(
+                          () => _visibility = PostVisibility.normalize(s.first),
+                        );
                       },
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      switch (_visibility) {
-                        'public' => '誰でも見られます。',
-                        'friends' => '相互フォローの友達だけが見られます。',
-                        'private' => '自分だけが見られます。',
-                        _ => '',
-                      },
+                      PostVisibility.postEditorDescription(_visibility),
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.7),

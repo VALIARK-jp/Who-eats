@@ -8,6 +8,7 @@ import '../../../../core/supabase/supabase_storage_urls.dart';
 import '../../../../core/supabase/supabase_tables.dart';
 import '../../../../core/user/user_code_format.dart';
 import '../../domain/entities/app_entities.dart';
+import '../../domain/post_visibility.dart';
 
 /// Friends, profile, feed, notifications, record summary from Supabase.
 class SupabaseSocialDataSource {
@@ -196,7 +197,7 @@ class SupabaseSocialDataSource {
       var query = _client
           .from(SupabaseTables.posts)
           .select('''
-            id,caption,created_at,post_type,rating,user_id,
+            id,caption,created_at,post_type,rating,user_id,visibility,
             $tAuthor(name,icon_path,email),
             $tPlaces(name,google_place_id),
             $tImages(storage_path,display_order)
@@ -240,14 +241,17 @@ class SupabaseSocialDataSource {
       final list = <FeedPost>[];
       for (final row in rawRows) {
         final postUserId = (row['user_id'] ?? '').toString();
-        if (uid != null && scope == FeedTimelineScope.friends) {
-          if (postUserId != uid && !friendIds.contains(postUserId)) continue;
-        } else if (uid != null && scope == FeedTimelineScope.near) {
-          final allowed =
-              nearIds.contains(postUserId) ||
-              friendIds.contains(postUserId) ||
-              postUserId == uid;
-          if (!allowed) continue;
+        final postVisibility = (row['visibility'] ?? '').toString();
+        if (uid != null &&
+            !PostVisibility.matchesFeedScope(
+              scope: scope.name,
+              postVisibility: postVisibility,
+              authorUserId: postUserId,
+              viewerUserId: uid,
+              friendIds: friendIds,
+              nearIds: nearIds,
+            )) {
+          continue;
         }
 
         final postId = row['id'].toString();
@@ -750,7 +754,7 @@ class SupabaseSocialDataSource {
       final row = await _client
           .from(SupabaseTables.posts)
           .select('''
-            id,caption,created_at,post_type,rating,user_id,
+            id,caption,created_at,post_type,rating,user_id,visibility,
             $tAuthor(name,icon_path,email),
             $tPlaces(name,google_place_id),
             $tImages(storage_path,display_order)
@@ -1219,14 +1223,7 @@ class SupabaseSocialDataSource {
     }
   }
 
-  String _normalizeVisibility(String value) {
-    return switch (value.trim()) {
-      'public' => 'public',
-      'private' => 'private',
-      'friends' => 'friends',
-      _ => 'friends',
-    };
-  }
+  String _normalizeVisibility(String value) => PostVisibility.normalize(value);
 
   Future<List<ProfilePostThumb>> fetchProfilePostThumbs({
     required bool pinnedOnly,
