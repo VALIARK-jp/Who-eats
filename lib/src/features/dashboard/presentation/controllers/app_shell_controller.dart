@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/location/device_location.dart';
-import '../../application/feed_preferences_store.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/usecases/dashboard_usecases.dart';
 
@@ -323,33 +322,10 @@ class AppShellController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadFeedScopePreference() async {
-    final uid = currentUserId;
-    if (uid == null) return;
-    feedTimelineScope = await FeedPreferencesStore.loadDefaultScope(uid);
-    notifyListeners();
-  }
-
   Future<void> setFeedTimelineScope(FeedTimelineScope scope) async {
     if (feedTimelineScope == scope) return;
     feedTimelineScope = scope;
-    final uid = currentUserId;
-    if (uid != null) {
-      await FeedPreferencesStore.saveDefaultScope(uid, scope);
-    }
     await refreshFeed();
-  }
-
-  Future<void> setDefaultFeedTimelineScope(FeedTimelineScope scope) async {
-    final uid = currentUserId;
-    if (uid == null) return;
-    await FeedPreferencesStore.saveDefaultScope(uid, scope);
-    if (feedTimelineScope != scope) {
-      feedTimelineScope = scope;
-      await refreshFeed();
-    } else {
-      notifyListeners();
-    }
   }
 
   Future<void> refreshFeed() async {
@@ -368,7 +344,6 @@ class AppShellController extends ChangeNotifier {
     postedPlaceUserIcons = <String, String>{};
     notifyListeners();
     final deviceLocFuture = resolveDeviceLocationAccess(requestIfNeeded: false);
-    await loadFeedScopePreference();
     final access = await deviceLocFuture;
     mapLocationAccessStatus = access.status;
     final loc = access.location;
