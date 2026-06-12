@@ -11,7 +11,9 @@ import '../../../../core/user/user_display_name_format.dart';
 import '../../../../core/supabase/account_deletion_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
+import '../../../auth/application/auth_service.dart';
 import '../../../auth/application/auth_session.dart';
+import '../../../auth/application/auth_user_kind.dart';
 import '../../../auth/application/profile_onboarding_store.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/post_visibility.dart';
@@ -108,6 +110,59 @@ class ProfileSettingsPage extends StatelessWidget {
     }
   }
 
+  Future<void> _requestPasswordChange(BuildContext context) async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (!isEmailPasswordUser(user)) return;
+
+    final email = user?.email?.trim();
+    if (email == null || email.isEmpty) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('メールアドレスが登録されていません')),
+      );
+      return;
+    }
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('パスワードを変更'),
+        content: Text(
+          '$email 宛にパスワード変更用のメールを送信します。\n\n'
+          'メール内のリンクを、この端末で開いて新しいパスワードを設定してください。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('メールを送信'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+
+    try {
+      await AuthService().requestPasswordResetForCurrentUser();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('パスワード変更用のメールを送信しました')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _confirmAndSignOutFromProfile(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -142,7 +197,9 @@ class ProfileSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final signedIn = Supabase.instance.client.auth.currentUser != null;
+    final user = Supabase.instance.client.auth.currentUser;
+    final signedIn = user != null;
+    final canChangePassword = isEmailPasswordUser(user);
 
     if (!AppConfig.hasSupabase || !signedIn) {
       return Scaffold(
@@ -227,6 +284,30 @@ class ProfileSettingsPage extends StatelessWidget {
               ),
             ),
           ),
+          if (canChangePassword) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 60,
+              child: FilledButton.tonal(
+                onPressed: () => _requestPasswordChange(context),
+                style: FilledButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('パスワードを変更', style: TextStyle(fontSize: 16)),
+                    Icon(Icons.chevron_right),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 32),
           const Divider(),
           ListTile(

@@ -325,6 +325,27 @@ class AuthService {
     }
   }
 
+  /// ログイン中ユーザーのメールへパスワードリセットリンクを送る。
+  Future<void> requestPasswordResetForCurrentUser() async {
+    final email = _supabase.auth.currentUser?.email?.trim();
+    if (email == null || email.isEmpty) {
+      throw Exception('メールアドレスが登録されていません');
+    }
+    await requestPasswordReset(email);
+  }
+
+  /// パスワードリカバリーセッション確立後に新パスワードを保存する。
+  Future<void> updatePassword(String newPassword) async {
+    try {
+      await _supabase.auth.updateUser(UserAttributes(password: newPassword));
+    } on http.ClientException catch (e) {
+      debugPrint('updatePassword network: $e');
+      throw Exception('ネットワーク接続に問題があります。インターネット接続を確認してください。');
+    } on AuthException catch (error) {
+      throw Exception(_authMessage(error));
+    }
+  }
+
   /// Resend signup confirmation for the current session user (e.g. after signUp, before confirm).
   Future<void> resendEmailVerification() async {
     final user = _supabase.auth.currentUser;
