@@ -789,6 +789,17 @@ class _FeedTab extends StatelessWidget {
         const Duration(hours: 24);
   }
 
+  static List<FeedPost> _getTodayPosts(List<FeedPost> posts) {
+    final today = DateTime.now();
+    return posts.where((post) {
+      if (post.createdAt == null) return false;
+      final postDate = post.createdAt!.toLocal();
+      return postDate.year == today.year &&
+          postDate.month == today.month &&
+          postDate.day == today.day;
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = controller.currentUserId;
@@ -807,10 +818,12 @@ class _FeedTab extends StatelessWidget {
         ),
       );
     }
-    final featuredPost = myPosts.isNotEmpty
-        ? myPosts.first
+    final todayMyPosts = _getTodayPosts(myPosts);
+    final hasTodayMyPosts = todayMyPosts.isNotEmpty;
+    final featuredPost = hasTodayMyPosts
+        ? todayMyPosts.first
         : (sortedFeed.isNotEmpty ? sortedFeed.first : null);
-    final swipeableMyPosts = myPosts;
+    final swipeableMyPosts = todayMyPosts;
     final remainingPosts = featuredPost == null
         ? sortedFeed
         : sortedFeed.where((post) => post.id != featuredPost.id).toList();
@@ -854,10 +867,9 @@ class _FeedTab extends StatelessWidget {
               onChanged: controller.setFeedTimelineScope,
             ),
             const SizedBox(height: 20),
-            if (featuredPost != null) ...[
+            if (hasTodayMyPosts) ...[
               _BerealFeaturedPanel(
-                post: featuredPost,
-                remainingCount: remainingPosts.length,
+                post: featuredPost!,
                 myPosts: swipeableMyPosts,
                 currentUserId: uid,
                 controller: controller,
@@ -953,7 +965,6 @@ class _FeedRefreshLockCard extends StatelessWidget {
 class _BerealFeaturedPanel extends StatefulWidget {
   const _BerealFeaturedPanel({
     required this.post,
-    required this.remainingCount,
     required this.myPosts,
     required this.currentUserId,
     required this.controller,
@@ -963,7 +974,6 @@ class _BerealFeaturedPanel extends StatefulWidget {
   });
 
   final FeedPost post;
-  final int remainingCount;
   final List<FeedPost> myPosts;
   final String? currentUserId;
   final AppShellController controller;
@@ -1086,14 +1096,10 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
         ? 'たった今'
         : _BerealFeedCard.formatTime(widget.post.createdAt!);
 
-    final olderPosts = widget.myPosts.length > 1
-        ? widget.myPosts.sublist(1)
-        : const <FeedPost>[];
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (olderPosts.isEmpty)
+        if (widget.myPosts.length == 1)
           Center(
             child: SizedBox(
               width: MediaQuery.sizeOf(context).width * 0.62,
@@ -1104,33 +1110,24 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Expanded(flex: 2, child: _postImage(aspectRatio: 0.86)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: AspectRatio(
-                      aspectRatio: 0.86,
-                      child: PageView.builder(
-                        controller: _olderPostsController,
-                        itemCount: olderPosts.length,
-                        onPageChanged: (index) {
-                          setState(() => _olderPostIndex = index);
-                        },
-                        itemBuilder: (context, index) {
-                          final pastPost = olderPosts[index];
-                          return _PastPostPreview(
-                            post: pastPost,
-                            onTap: () => widget.onTapPastPost(pastPost),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
+              AspectRatio(
+                aspectRatio: 0.86,
+                child: PageView.builder(
+                  controller: _olderPostsController,
+                  itemCount: widget.myPosts.length,
+                  onPageChanged: (index) {
+                    setState(() => _olderPostIndex = index);
+                  },
+                  itemBuilder: (context, index) {
+                    final post = widget.myPosts[index];
+                    return _PastPostPreview(
+                      post: post,
+                      onTap: () => widget.onTapPastPost(post),
+                    );
+                  },
+                ),
               ),
-              if (olderPosts.length > 1) ...[
+              if (widget.myPosts.length > 1) ...[
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1142,7 +1139,7 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      '右の写真を横にスワイプして過去の投稿を見る (${_olderPostIndex + 1}/${olderPosts.length})',
+                      '写真を横にスワイプして確認 (${_olderPostIndex + 1}/${widget.myPosts.length})',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.55),
