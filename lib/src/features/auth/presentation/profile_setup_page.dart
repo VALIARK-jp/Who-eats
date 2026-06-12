@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/user/user_code_format.dart';
 import '../../../core/supabase/profile_icon_service.dart';
+import '../../../core/supabase/supabase_storage_urls.dart';
 import '../../../core/supabase/supabase_tables.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../dashboard/presentation/controllers/app_shell_controller.dart';
@@ -34,7 +36,8 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   bool _submitting = false;
   String? _error;
 
-  static final _codeBody = RegExp(r'^[A-Za-z0-9_]{1,29}$');
+  static RegExp get _codeBody =>
+      RegExp('^[A-Za-z0-9_]{1,${UserCodeFormat.maxBodyLength}}\$');
 
   @override
   void initState() {
@@ -75,14 +78,21 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       }
       final code = row['user_code'] as String? ?? '';
       if (_userCodeController.text.isEmpty && code.isNotEmpty) {
-        _userCodeController.text = code.startsWith('@') ? code.substring(1) : code;
+        _userCodeController.text = UserCodeFormat.bodyFromStored(code);
       }
       if (_bioController.text.isEmpty) {
         _bioController.text = row['bio'] as String? ?? '';
       }
       final icon = row['icon_path'] as String?;
       if (_pickedIcon == null && icon != null && icon.isNotEmpty) {
-        setState(() => _remoteIconUrl ??= icon);
+        final resolved = await SupabaseStorageUrls.resolveProfileIconUrl(
+          Supabase.instance.client,
+          icon,
+        );
+        if (!mounted) return;
+        if (resolved != null && resolved.isNotEmpty) {
+          setState(() => _remoteIconUrl ??= resolved);
+        }
       }
     } catch (_) {}
   }
@@ -132,10 +142,10 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       return;
     }
     if (!_codeBody.hasMatch(codeBody)) {
-      setState(() => _error = 'ユーザーコードは英数字と_のみ（@は自動で付きます）');
+      setState(() => _error = 'ユーザーコードは英数字と_のみ（${UserCodeFormat.maxBodyLength}文字以内、@は自動で付きます）');
       return;
     }
-    final userCode = '@$codeBody';
+    final userCode = UserCodeFormat.fromBody(codeBody);
 
     setState(() {
       _submitting = true;
@@ -233,10 +243,11 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _userCodeController,
+              maxLength: UserCodeFormat.maxBodyLength,
               decoration: const InputDecoration(
                 labelText: 'ユーザーコード',
                 prefixText: '@',
-                helperText: '英数字と _ のみ',
+                helperText: '英数字と _ のみ（15文字以内）',
               ),
             ),
             const SizedBox(height: 12),

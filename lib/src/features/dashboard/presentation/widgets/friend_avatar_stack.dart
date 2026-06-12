@@ -38,11 +38,16 @@ class FriendAvatarStack extends StatelessWidget {
           for (int i = 0; i < visible.length; i++)
             Positioned(
               left: i * overlap,
-              child: FriendAvatar(
-                radius: avatarRadius,
-                displayName: visible[i],
-                avatarUrl: _asUrl(visible[i]),
-                showStatusDot: statusDot,
+              child: Builder(
+                builder: (context) {
+                  final resolved = FriendAvatar.fromToken(visible[i]);
+                  return FriendAvatar(
+                    radius: avatarRadius,
+                    displayName: resolved.displayName,
+                    avatarUrl: resolved.avatarUrl,
+                    showStatusDot: statusDot,
+                  );
+                },
               ),
             ),
           if (showPlusBadge && hiddenCount > 0)
@@ -70,13 +75,6 @@ class FriendAvatarStack extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String? _asUrl(String v) {
-    final s = v.trim();
-    if (s.isEmpty) return null;
-    if (s.startsWith('http://') || s.startsWith('https://')) return s;
-    return null;
   }
 }
 

@@ -40,8 +40,14 @@
             requestAnimationFrame(animate);
         };
 
+        textureLoader.setCrossOrigin('anonymous');
+        window.__iconTextureReady = true;
         window.updateIcon = function (urlOrBase64) {
-            if (!urlOrBase64) return;
+            if (!urlOrBase64) {
+                window.__iconTextureReady = true;
+                return;
+            }
+            window.__iconTextureReady = false;
             textureLoader.load(urlOrBase64, (texture) => {
                 const image = texture.image;
                 const aspect = image.width / image.height;
@@ -58,6 +64,10 @@
                 iconMesh.material.needsUpdate = true;
                 iconMesh.visible = true;
                 iconFrame.visible = true;
+                if (foodGroup) foodGroup.visible = false;
+                window.__iconTextureReady = true;
+            }, undefined, () => {
+                window.__iconTextureReady = true;
             });
         };
 

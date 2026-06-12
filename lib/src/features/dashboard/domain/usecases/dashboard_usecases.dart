@@ -29,11 +29,21 @@ class SearchMapPinsAroundUseCase {
     required double lng,
     required int radiusMeters,
     String? keyword,
+    double? boundsMinLat,
+    double? boundsMaxLat,
+    double? boundsMinLng,
+    double? boundsMaxLng,
+    double zoom = 14,
   }) => _repository.searchMapPinsAround(
     lat: lat,
     lng: lng,
     radiusMeters: radiusMeters,
     keyword: keyword,
+    boundsMinLat: boundsMinLat,
+    boundsMaxLat: boundsMaxLat,
+    boundsMinLng: boundsMinLng,
+    boundsMaxLng: boundsMaxLng,
+    zoom: zoom,
   );
 }
 

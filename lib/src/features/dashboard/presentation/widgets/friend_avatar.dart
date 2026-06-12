@@ -17,12 +17,45 @@ class FriendAvatar extends StatelessWidget {
   final bool showStatusDot;
   final double radius;
 
+  static String? networkUrl(String? raw) {
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    return null;
+  }
+
+  /// [token] は表示名の頭文字、または signed URL。
+  static ({String displayName, String? avatarUrl}) fromToken(String token) {
+    final url = networkUrl(token);
+    if (url != null) {
+      return (displayName: '?', avatarUrl: url);
+    }
+    final trimmed = token.trim();
+    return (
+      displayName: trimmed.isNotEmpty ? trimmed : '?',
+      avatarUrl: null,
+    );
+  }
+
+  static ({String displayName, String? avatarUrl}) fromUser({
+    required String name,
+    String? avatarUrl,
+  }) {
+    final url = networkUrl(avatarUrl);
+    final trimmedName = name.trim();
+    final initial = trimmedName.isNotEmpty
+        ? trimmedName.characters.first.toUpperCase()
+        : '?';
+    return (displayName: initial, avatarUrl: url);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
-    final bool hasNetwork = avatarUrl != null &&
-        avatarUrl!.isNotEmpty &&
-        (avatarUrl!.startsWith('http://') || avatarUrl!.startsWith('https://'));
+    final resolved = fromUser(name: displayName, avatarUrl: avatarUrl);
+    final initial = resolved.displayName;
+    final network = resolved.avatarUrl;
 
     return SizedBox(
       width: radius * 2,
@@ -33,8 +66,10 @@ class FriendAvatar extends StatelessWidget {
           CircleAvatar(
             radius: radius,
             backgroundColor: AppColors.blackElevated,
-            backgroundImage: hasNetwork ? NetworkImage(avatarUrl!) : null,
-            child: hasNetwork ? null : Text(initial, style: const TextStyle(fontWeight: FontWeight.w800)),
+            backgroundImage: network != null ? NetworkImage(network) : null,
+            child: network != null
+                ? null
+                : Text(initial, style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
           if (showStatusDot)
             Positioned(

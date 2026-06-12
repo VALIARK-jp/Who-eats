@@ -134,6 +134,7 @@ class PostComment {
     required this.userName,
     required this.body,
     required this.createdAt,
+    this.userIconUrl,
     this.isMine = false,
   });
 
@@ -142,6 +143,7 @@ class PostComment {
   final String userName;
   final String body;
   final DateTime createdAt;
+  final String? userIconUrl;
   final bool isMine;
 }
 
@@ -250,6 +252,7 @@ class MapPin {
     required this.isFriendVisited,
     this.hasPostedActivity = false,
     this.visitors = const [],
+    this.mapPinIconUrl,
     this.latitude,
     this.longitude,
   });
@@ -266,6 +269,9 @@ class MapPin {
   /// Who eats 上で誰かが訪問投稿した店（友達以外も含む）。
   final bool hasPostedActivity;
   final List<PlaceVisitor> visitors;
+
+  /// 地図ピン上に載せるアイコン（友達 → 自分の優先順。他人は載せない）。
+  final String? mapPinIconUrl;
   final double? latitude;
   final double? longitude;
 
@@ -278,6 +284,7 @@ class MapPin {
     bool? isFriendVisited,
     bool? hasPostedActivity,
     List<PlaceVisitor>? visitors,
+    String? mapPinIconUrl,
     double? latitude,
     double? longitude,
   }) {
@@ -290,6 +297,7 @@ class MapPin {
       isFriendVisited: isFriendVisited ?? this.isFriendVisited,
       hasPostedActivity: hasPostedActivity ?? this.hasPostedActivity,
       visitors: visitors ?? this.visitors,
+      mapPinIconUrl: mapPinIconUrl ?? this.mapPinIconUrl,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
     );
@@ -362,6 +370,7 @@ class ProfileOverview {
     required this.friends,
     required this.pinnedPosts,
     required this.recentPosts,
+    this.defaultVisibility = 'friends',
   });
 
   final String name;
@@ -373,6 +382,7 @@ class ProfileOverview {
   final int friends;
   final List<ProfilePostThumb> pinnedPosts;
   final List<ProfilePostThumb> recentPosts;
+  final String defaultVisibility;
 
   List<String> get pinnedShots =>
       pinnedPosts.map((p) => p.imageUrl).where((u) => u.isNotEmpty).toList();

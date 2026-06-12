@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/user/user_code_format.dart';
 import '../../../core/supabase/supabase_tables.dart';
 import '../../../core/supabase/user_profile_sync.dart';
 
@@ -8,7 +9,9 @@ const _kProfileSetupPrefix = 'whoeats_profile_setup_done_v1_';
 const _kPendingEmailSignup = 'whoeats_pending_profile_setup_email_v1';
 const _kAuthMetadataCompleteKey = 'profileSetupComplete';
 
-final _userCodePattern = RegExp(r'^@[A-Za-z0-9_]+$');
+final _userCodePattern = RegExp(
+  '^@([A-Za-z0-9_]{1,${UserCodeFormat.maxBodyLength}})\$',
+);
 
 class ProfileOnboardingStore {
   static String _key(String userId) => '$_kProfileSetupPrefix$userId';
@@ -74,7 +77,7 @@ class ProfileOnboardingStore {
     required String userCode,
   }) {
     final normalizedName = name.trim();
-    final normalizedCode = userCode.trim();
+    final normalizedCode = UserCodeFormat.display(userCode.trim());
     if (normalizedName.isEmpty || normalizedName == 'User') {
       return false;
     }

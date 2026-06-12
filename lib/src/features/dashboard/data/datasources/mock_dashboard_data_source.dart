@@ -104,49 +104,10 @@ class MockDashboardDataSource {
     PlaceSuggestion(placeId: 'm2', description: '渋谷らーめん本舗'),
   ];
 
-  Future<List<FriendCandidate>> getFriendCandidates() async => const [
-    FriendCandidate(
-      id: 'f1',
-      name: 'yuma_21',
-      avatarUrl: '',
-      mutualCount: 2,
-      isFriend: false,
-    ),
-    FriendCandidate(
-      id: 'f2',
-      name: 'saya_27',
-      avatarUrl: '',
-      mutualCount: 4,
-      isFriend: false,
-    ),
-    FriendCandidate(
-      id: 'f3',
-      name: 'mana_03',
-      avatarUrl: '',
-      mutualCount: 1,
-      isFriend: true,
-    ),
-    FriendCandidate(
-      id: 'f4',
-      name: 'takumi_99',
-      avatarUrl: '',
-      mutualCount: 3,
-      isFriend: false,
-    ),
-  ];
+  Future<List<FriendCandidate>> getFriendCandidates() async => const [];
 
   Future<List<FriendCandidate>> searchUsersByCode(String query) async {
-    final q = query.trim().toLowerCase();
-    if (q.length < 2) return const [];
-    final normalized = q.replaceFirst('@', '');
-    final candidates = await getFriendCandidates();
-    return candidates
-        .where(
-          (c) =>
-              c.name.toLowerCase().contains(q) ||
-              c.name.toLowerCase().contains(normalized),
-        )
-        .toList();
+    return const [];
   }
 
   Future<RecordSummary> getRecordSummary() async => const RecordSummary(

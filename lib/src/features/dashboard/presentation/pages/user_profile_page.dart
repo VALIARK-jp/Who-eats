@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/user/user_code_format.dart';
 import '../../domain/entities/app_entities.dart';
 import '../controllers/app_shell_controller.dart';
+import '../widgets/friend_avatar.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/orange_glow_button.dart';
 import '../widgets/report_reason_sheet.dart';
@@ -209,23 +211,10 @@ class _UserProfilePageState extends State<UserProfilePage> {
                       borderRadius: 20,
                       child: Column(
                         children: [
-                          CircleAvatar(
+                          FriendAvatar(
+                            displayName: profile.name,
+                            avatarUrl: FriendAvatar.networkUrl(profile.avatarUrl),
                             radius: 40,
-                            backgroundColor: AppColors.blackElevated,
-                            backgroundImage: profile.avatarUrl.isNotEmpty
-                                ? NetworkImage(profile.avatarUrl)
-                                : null,
-                            child: profile.avatarUrl.isEmpty
-                                ? Text(
-                                    profile.name.isNotEmpty
-                                        ? profile.name[0].toUpperCase()
-                                        : '?',
-                                    style: const TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  )
-                                : null,
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -237,7 +226,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
                           ),
                           if (profile.userCode.isNotEmpty)
                             Text(
-                              profile.userCode,
+                              UserCodeFormat.display(profile.userCode),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: AppColors.textSubtle),
                             ),
                           if (profile.bio.isNotEmpty) ...[

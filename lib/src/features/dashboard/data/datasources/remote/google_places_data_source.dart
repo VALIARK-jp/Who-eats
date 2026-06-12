@@ -146,10 +146,6 @@ class GooglePlacesDataSource {
 
     final lat = (result['geometry']?['location']?['lat'] as num?)?.toDouble();
     final lng = (result['geometry']?['location']?['lng'] as num?)?.toDouble();
-    int? travelMinutes;
-    if (lat != null && lng != null) {
-      travelMinutes = await _getTravelMinutes(destinationLat: lat, destinationLng: lng);
-    }
 
     final reviews = (result['reviews'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -178,7 +174,6 @@ class GooglePlacesDataSource {
       address: (result['formatted_address'] ?? '').toString(),
       phoneNumber: (result['formatted_phone_number'] ?? '').toString(),
       openNow: result['opening_hours']?['open_now'] as bool?,
-      travelMinutes: travelMinutes,
       latitude: lat,
       longitude: lng,
       websiteUrl: (result['website'] ?? '').toString(),
@@ -236,36 +231,6 @@ class GooglePlacesDataSource {
       'photo_reference': photoReference,
       'key': _apiKey,
     }).toString();
-  }
-
-  Future<int?> _getTravelMinutes({
-    required double destinationLat,
-    required double destinationLng,
-  }) async {
-    _log('Directions start to=($destinationLat,$destinationLng)');
-    final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
-      'origin': '$_defaultLat,$_defaultLng',
-      'destination': '$destinationLat,$destinationLng',
-      'mode': 'walking',
-      'key': _apiKey,
-      'language': 'ja',
-    });
-    final response = await _client.get(uri).timeout(const Duration(seconds: 10));
-    _log('Directions http=${response.statusCode}');
-    final decoded = _decodeMap(response);
-    final status = (decoded['status'] ?? '').toString();
-    _log('Directions status=$status');
-    if (status != 'OK') return null;
-    final routes = (decoded['routes'] as List<dynamic>? ?? []);
-    final route = routes.isNotEmpty ? routes.first : null;
-    if (route is! Map<String, dynamic>) return null;
-    final legs = (route['legs'] as List<dynamic>? ?? []);
-    final leg = legs.isNotEmpty ? legs.first : null;
-    if (leg is! Map<String, dynamic>) return null;
-    final seconds = (leg['duration']?['value'] as num?)?.toInt();
-    if (seconds == null) return null;
-    _log('Directions minutes=${(seconds / 60).ceil()}');
-    return (seconds / 60).ceil();
   }
 
   Map<String, dynamic> _decodeMap(http.Response response) {

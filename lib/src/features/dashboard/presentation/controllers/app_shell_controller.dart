@@ -150,6 +150,11 @@ class AppShellController extends ChangeNotifier {
   Map<String, String> postedPlaceUserIcons = <String, String>{};
   double? deviceLatitude;
   double? deviceLongitude;
+  DeviceLocationAccessStatus mapLocationAccessStatus =
+      DeviceLocationAccessStatus.denied;
+
+  bool get hasMapLocationAccess =>
+      deviceLatitude != null && deviceLongitude != null;
   MapPlaceFocus? pendingMapPlaceFocus;
 
   String? get currentUserId {
@@ -227,6 +232,8 @@ class AppShellController extends ChangeNotifier {
             userName: profileName,
             body: comment.body,
             createdAt: comment.createdAt,
+            userIconUrl: comment.userIconUrl ??
+                profileOverview?.avatarUrl.trim(),
             isMine: comment.isMine,
           );
     final post = feedPostById(postId);
@@ -360,9 +367,11 @@ class AppShellController extends ChangeNotifier {
     postedPlaceGoogleIds = <String>{};
     postedPlaceUserIcons = <String, String>{};
     notifyListeners();
-    final deviceLocFuture = readDeviceLatLng();
+    final deviceLocFuture = resolveDeviceLocationAccess(requestIfNeeded: false);
     await loadFeedScopePreference();
-    final loc = await deviceLocFuture;
+    final access = await deviceLocFuture;
+    mapLocationAccessStatus = access.status;
+    final loc = access.location;
     if (loc != null) {
       deviceLatitude = loc.lat;
       deviceLongitude = loc.lng;
@@ -382,6 +391,27 @@ class AppShellController extends ChangeNotifier {
     unawaited(_loadSecondaryData());
   }
 
+  /// 地図タブ表示に必要な位置情報を確認・取得する。
+  Future<bool> ensureMapLocationAccess({bool requestIfNeeded = true}) async {
+    if (hasMapLocationAccess) {
+      mapLocationAccessStatus = DeviceLocationAccessStatus.granted;
+      return true;
+    }
+    final access = await resolveDeviceLocationAccess(
+      requestIfNeeded: requestIfNeeded,
+    );
+    mapLocationAccessStatus = access.status;
+    final loc = access.location;
+    if (loc != null) {
+      deviceLatitude = loc.lat;
+      deviceLongitude = loc.lng;
+      notifyListeners();
+      return true;
+    }
+    notifyListeners();
+    return false;
+  }
+
   Future<void> markAllNotificationsRead() async {
     if (notifications.isEmpty || unreadNotificationCount == 0) return;
     await _markAllNotificationsReadUseCase();
@@ -398,12 +428,19 @@ class AppShellController extends ChangeNotifier {
   }
 
   /// 地図タブへ切り替え、指定店舗のピンへカメラを移動する。
-  void focusMapOnPlace(String placeGoogleId, {required String placeName}) {
+  /// 位置情報が許可されていない場合は false。
+  Future<bool> focusMapOnPlace(
+    String placeGoogleId, {
+    required String placeName,
+  }) async {
+    final granted = await ensureMapLocationAccess();
+    if (!granted) return false;
     pendingMapPlaceFocus = MapPlaceFocus(
       placeGoogleId: placeGoogleId,
       placeName: placeName,
     );
     changeBottomIndex(1);
+    return true;
   }
 
   void clearPendingMapPlaceFocus() {
@@ -423,15 +460,12 @@ class AppShellController extends ChangeNotifier {
 
   Future<DeviceLatLng?> ensureDeviceLocation() async {
     if (deviceLatitude != null && deviceLongitude != null) {
+      mapLocationAccessStatus = DeviceLocationAccessStatus.granted;
       return DeviceLatLng(lat: deviceLatitude!, lng: deviceLongitude!);
     }
-    final loc = await readDeviceLatLng();
-    if (loc != null) {
-      deviceLatitude = loc.lat;
-      deviceLongitude = loc.lng;
-      notifyListeners();
-    }
-    return loc;
+    final granted = await ensureMapLocationAccess();
+    if (!granted) return null;
+    return DeviceLatLng(lat: deviceLatitude!, lng: deviceLongitude!);
   }
 
   void setPostDraft(PostDraft draft) {
@@ -450,6 +484,15 @@ class AppShellController extends ChangeNotifier {
     return _getPlaceDetailUseCase(placeId);
   }
 
+  Future<void> invalidateMapPins() async {
+    mapPinsLoaded = false;
+    mapPinsLoading = false;
+    mapPins = [];
+    postedPlaceGoogleIds = {};
+    postedPlaceUserIcons = {};
+    notifyListeners();
+  }
+
   Future<void> filterMapPins(String keyword) async {
     _log('filterMapPins keyword=$keyword');
     mapPins = await _searchMapPinsUseCase(keyword);
@@ -463,21 +506,37 @@ class AppShellController extends ChangeNotifier {
     required double lat,
     required double lng,
     required int radiusMeters,
+    required double zoom,
     String? keyword,
+    double? boundsMinLat,
+    double? boundsMaxLat,
+    double? boundsMinLng,
+    double? boundsMaxLng,
   }) async {
     _log(
-      'refreshMapPinsForViewport lat=$lat lng=$lng radius=$radiusMeters keyword=${keyword ?? ''}',
+      'refreshMapPinsForViewport lat=$lat lng=$lng radius=$radiusMeters '
+      'zoom=$zoom keyword=${keyword ?? ''}',
     );
     mapPins = await _searchMapPinsAroundUseCase(
       lat: lat,
       lng: lng,
       radiusMeters: radiusMeters,
       keyword: keyword,
+      boundsMinLat: boundsMinLat,
+      boundsMaxLat: boundsMaxLat,
+      boundsMinLng: boundsMinLng,
+      boundsMaxLng: boundsMaxLng,
+      zoom: zoom,
     );
     mapPinsLoaded = true;
     mapPinsLoadError = null;
     postedPlaceGoogleIds = {
       ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
+    };
+    postedPlaceUserIcons = {
+      for (final pin in mapPins)
+        if (pin.mapPinIconUrl != null && pin.mapPinIconUrl!.isNotEmpty)
+          pin.id: pin.mapPinIconUrl!,
     };
     _log('refreshMapPinsForViewport result=${mapPins.length}');
     notifyListeners();
@@ -496,7 +555,11 @@ class AppShellController extends ChangeNotifier {
       postedPlaceGoogleIds = {
         ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
       };
-      postedPlaceUserIcons = const {};
+      postedPlaceUserIcons = {
+        for (final pin in mapPins)
+          if (pin.mapPinIconUrl != null && pin.mapPinIconUrl!.isNotEmpty)
+            pin.id: pin.mapPinIconUrl!,
+      };
       mapPinsLoaded = true;
       _log('ensureMapPinsLoaded result=${mapPins.length}');
     } catch (e, st) {

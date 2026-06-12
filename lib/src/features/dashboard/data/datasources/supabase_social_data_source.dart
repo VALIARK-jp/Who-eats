@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/push/push_notification_service.dart';
 import '../../../../core/supabase/supabase_storage_urls.dart';
 import '../../../../core/supabase/supabase_tables.dart';
+import '../../../../core/user/user_code_format.dart';
 import '../../domain/entities/app_entities.dart';
 
 /// Friends, profile, feed, notifications, record summary from Supabase.
@@ -48,7 +49,7 @@ class SupabaseSocialDataSource {
         final name = (row['name'] ?? '').toString().trim();
         final iconPath = (row['icon_path'] ?? '').toString();
         final avatarUrl =
-            await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
+            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
         list.add(
           FriendCandidate(
             id: id,
@@ -167,7 +168,7 @@ class SupabaseSocialDataSource {
       final name = (row['name'] ?? '').toString().trim();
       final iconPath = (row['icon_path'] ?? '').toString();
       final avatarUrl =
-          await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
+          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
       list.add(
         FriendCandidate(
           id: id,
@@ -387,7 +388,8 @@ class SupabaseSocialDataSource {
           .from(SupabaseTables.postCompanions)
           .select('post_id, $tUser(name, icon_path)')
           .inFilter('post_id', postIds);
-      final map = <String, List<String>>{};
+      final iconPaths = <String>{};
+      final parsed = <({String postId, String name, String iconPath})>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = (row['post_id'] ?? '').toString();
@@ -396,8 +398,18 @@ class SupabaseSocialDataSource {
             _extractEmbedded(row[SupabaseTables.profiles]) ??
             _extractEmbedded(row['whoeats_users']);
         final name = (user?['name'] ?? '').toString().trim();
-        final token = _avatarToken(name.isNotEmpty ? name : '?');
-        map.putIfAbsent(postId, () => []).add(token);
+        final iconPath = (user?['icon_path'] ?? '').toString().trim();
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+        parsed.add((postId: postId, name: name, iconPath: iconPath));
+      }
+      final signedUrls = await _signIconPaths(iconPaths);
+      final map = <String, List<String>>{};
+      for (final item in parsed) {
+        final url = item.iconPath.isEmpty ? null : signedUrls[item.iconPath];
+        final token = (url != null && url.isNotEmpty)
+            ? url
+            : _avatarToken(item.name.isNotEmpty ? item.name : '?');
+        map.putIfAbsent(item.postId, () => []).add(token);
       }
       return map;
     } catch (_) {
@@ -415,7 +427,7 @@ class SupabaseSocialDataSource {
           '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
       final rows = await _client
           .from(SupabaseTables.postComments)
-          .select('id, post_id, body, created_at, user_id, $tAuthor(name)')
+          .select('id, post_id, body, created_at, user_id, $tAuthor(name, icon_path)')
           .inFilter('post_id', postIds)
           .isFilter('deleted_at', null)
           .order('created_at', ascending: false);
@@ -427,6 +439,7 @@ class SupabaseSocialDataSource {
         final author = _extractCommentAuthor(row);
         final userId = (row['user_id'] ?? '').toString();
         final name = (author?['name'] ?? '').toString().trim();
+        final userIconUrl = await _resolveAuthorIconUrl(author);
         map[postId] = PostComment(
           id: row['id'].toString(),
           userId: userId,
@@ -435,6 +448,7 @@ class SupabaseSocialDataSource {
           createdAt:
               DateTime.tryParse((row['created_at'] ?? '').toString()) ??
               DateTime.now(),
+          userIconUrl: userIconUrl,
           isMine: uid != null && userId == uid,
         );
       }
@@ -485,7 +499,7 @@ class SupabaseSocialDataSource {
           '${SupabaseTables.profiles}!whoeats_post_comments_user_fk';
       final rows = await _client
           .from(SupabaseTables.postComments)
-          .select('id, body, created_at, user_id, $tAuthor(name)')
+          .select('id, body, created_at, user_id, $tAuthor(name, icon_path)')
           .eq('post_id', postId)
           .isFilter('deleted_at', null)
           .order('created_at', ascending: true);
@@ -495,6 +509,7 @@ class SupabaseSocialDataSource {
         final author = _extractCommentAuthor(row);
         final userId = (row['user_id'] ?? '').toString();
         final name = (author?['name'] ?? '').toString().trim();
+        final userIconUrl = await _resolveAuthorIconUrl(author);
         list.add(
           PostComment(
             id: row['id'].toString(),
@@ -504,6 +519,7 @@ class SupabaseSocialDataSource {
             createdAt:
                 DateTime.tryParse((row['created_at'] ?? '').toString()) ??
                 DateTime.now(),
+            userIconUrl: userIconUrl,
             isMine: uid != null && userId == uid,
           ),
         );
@@ -537,14 +553,22 @@ class SupabaseSocialDataSource {
         ),
       );
     }
+    final profileRow = await _client
+        .from(SupabaseTables.profiles)
+        .select('name, icon_path')
+        .eq('id', uid)
+        .maybeSingle();
+    final profileName = (profileRow?['name'] ?? '').toString().trim();
+    final userIconUrl = await _resolveAuthorIconUrl(profileRow);
     return PostComment(
       id: row['id'].toString(),
       userId: uid,
-      userName: '自分',
+      userName: profileName.isNotEmpty ? profileName : '自分',
       body: trimmed,
       createdAt:
           DateTime.tryParse((row['created_at'] ?? '').toString()) ??
           DateTime.now(),
+      userIconUrl: userIconUrl,
       isMine: true,
     );
   }
@@ -688,16 +712,29 @@ class SupabaseSocialDataSource {
           '${SupabaseTables.profiles}!whoeats_post_companions_user_fk';
       final rows = await _client
           .from(SupabaseTables.postCompanions)
-          .select('post_id, $tUser(name)')
+          .select('post_id, $tUser(name, icon_path)')
           .inFilter('post_id', postIds);
-      final map = <String, List<String>>{};
+      final iconPaths = <String>{};
+      final parsed = <({String postId, String name, String iconPath})>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = (row['post_id'] ?? '').toString();
-        final user = _extractEmbedded(row[SupabaseTables.profiles]);
+        final user = _extractEmbedded(row[SupabaseTables.profiles]) ??
+            _extractEmbedded(row['whoeats_users']);
         final name = (user?['name'] ?? '').toString().trim();
+        final iconPath = (user?['icon_path'] ?? '').toString().trim();
         if (postId.isEmpty || name.isEmpty) continue;
-        map.putIfAbsent(postId, () => []).add(name);
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+        parsed.add((postId: postId, name: name, iconPath: iconPath));
+      }
+      final signedUrls = await _signIconPaths(iconPaths);
+      final map = <String, List<String>>{};
+      for (final item in parsed) {
+        final url = item.iconPath.isEmpty ? null : signedUrls[item.iconPath];
+        final token = (url != null && url.isNotEmpty)
+            ? url
+            : _avatarToken(item.name);
+        map.putIfAbsent(item.postId, () => []).add(token);
       }
       return map;
     } catch (_) {
@@ -779,7 +816,7 @@ class SupabaseSocialDataSource {
           .maybeSingle();
       final iconPath = (row['icon_path'] ?? '').toString();
       final avatarUrl =
-          await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
+          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
       final recentPosts = await _fetchProfilePostThumbs(
         userId,
         pinnedOnly: false,
@@ -793,7 +830,7 @@ class SupabaseSocialDataSource {
         name: (row['name'] ?? '').toString().trim().isNotEmpty
             ? (row['name'] ?? '').toString().trim()
             : 'ユーザー',
-        userCode: (row['user_code'] ?? '').toString(),
+        userCode: UserCodeFormat.display((row['user_code'] ?? '').toString()),
         bio: (row['bio'] ?? '').toString(),
         avatarUrl: avatarUrl,
         isFriend: isFriend,
@@ -868,7 +905,7 @@ class SupabaseSocialDataSource {
         final row = raw as Map<String, dynamic>;
         final iconPath = (row['inviter_icon_path'] ?? '').toString();
         final iconUrl =
-            await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
+            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
         list.add(
           PendingMealTag(
             sourcePostId: (row['source_post_id'] ?? '').toString(),
@@ -1018,7 +1055,7 @@ class SupabaseSocialDataSource {
         : (email.isNotEmpty ? email.split('@').first : 'user');
 
     final iconPath = (author?['icon_path'] ?? '').toString();
-    final userIconUrl = await SupabaseStorageUrls.signedPostImage(
+    final userIconUrl = await SupabaseStorageUrls.resolveProfileIconUrl(
       _client,
       iconPath,
     );
@@ -1035,7 +1072,9 @@ class SupabaseSocialDataSource {
 
     final postUserId = (row['user_id'] ?? '').toString();
     final friendAvatars = <String>[];
-    if (friendIds.contains(postUserId)) {
+    if (userIconUrl != null && userIconUrl.isNotEmpty) {
+      friendAvatars.add(userIconUrl);
+    } else if (friendIds.contains(postUserId)) {
       friendAvatars.add(_avatarToken(userName));
     }
     friendAvatars.addAll(companionAvatars);
@@ -1103,7 +1142,7 @@ class SupabaseSocialDataSource {
     try {
       final row = await _client
           .from(SupabaseTables.profiles)
-          .select('name, user_code, bio, icon_path')
+          .select('name, user_code, bio, icon_path, default_visibility')
           .eq('id', uid)
           .maybeSingle();
 
@@ -1127,11 +1166,16 @@ class SupabaseSocialDataSource {
       }
 
       final name = (row['name'] ?? '').toString().trim();
-      final userCode = (row['user_code'] ?? '').toString().trim();
+      final userCode = UserCodeFormat.display(
+        (row['user_code'] ?? '').toString().trim(),
+      );
       final bio = (row['bio'] ?? '').toString().trim();
       final iconPath = (row['icon_path'] ?? '').toString();
+      final defaultVisibility = _normalizeVisibility(
+        (row['default_visibility'] ?? '').toString(),
+      );
       final avatarUrl =
-          await SupabaseStorageUrls.signedPostImage(_client, iconPath) ?? '';
+          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
 
       return ProfileOverview(
         name: name.isNotEmpty ? name : 'ユーザー',
@@ -1143,6 +1187,7 @@ class SupabaseSocialDataSource {
         friends: friends.length,
         pinnedPosts: pinnedPosts,
         recentPosts: recentPosts,
+        defaultVisibility: defaultVisibility,
       );
     } catch (e, st) {
       if (kDebugMode) {
@@ -1150,6 +1195,37 @@ class SupabaseSocialDataSource {
       }
       return empty;
     }
+  }
+
+  Future<String> fetchDefaultVisibility() async {
+    final uid = _uid;
+    if (uid == null) return 'friends';
+    try {
+      final row = await _client
+          .from(SupabaseTables.profiles)
+          .select('default_visibility')
+          .eq('id', uid)
+          .maybeSingle();
+      return _normalizeVisibility(
+        (row?['default_visibility'] ?? '').toString(),
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseSocialDataSource] fetchDefaultVisibility: $e\n$st',
+        );
+      }
+      return 'friends';
+    }
+  }
+
+  String _normalizeVisibility(String value) {
+    return switch (value.trim()) {
+      'public' => 'public',
+      'private' => 'private',
+      'friends' => 'friends',
+      _ => 'friends',
+    };
   }
 
   Future<List<ProfilePostThumb>> fetchProfilePostThumbs({
@@ -1345,6 +1421,28 @@ class SupabaseSocialDataSource {
   Map<String, dynamic>? _extractCommentAuthor(Map<String, dynamic> row) {
     return _extractEmbedded(row[SupabaseTables.profiles]) ??
         _extractEmbedded(row['whoeats_users']);
+  }
+
+  Future<String?> _resolveAuthorIconUrl(Map<String, dynamic>? author) async {
+    final iconPath = (author?['icon_path'] ?? '').toString();
+    return SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath);
+  }
+
+  Future<Map<String, String>> _signIconPaths(Set<String> iconPaths) async {
+    if (iconPaths.isEmpty) return const {};
+    final signed = <String, String>{};
+    await Future.wait(
+      iconPaths.map((path) async {
+        final url = await SupabaseStorageUrls.resolveProfileIconUrl(
+          _client,
+          path,
+        );
+        if (url != null && url.isNotEmpty) {
+          signed[path] = url;
+        }
+      }),
+    );
+    return signed;
   }
 
   String _avatarToken(String name) {

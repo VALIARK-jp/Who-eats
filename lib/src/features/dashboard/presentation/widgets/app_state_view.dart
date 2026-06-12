@@ -18,12 +18,18 @@ class AppStateView extends StatelessWidget {
     this.title,
     this.message,
     this.onRetry,
+    this.retryLabel = '再試行',
+    this.onSecondaryAction,
+    this.secondaryActionLabel,
   });
 
   final AppStateType type;
   final String? title;
   final String? message;
   final VoidCallback? onRetry;
+  final String retryLabel;
+  final VoidCallback? onSecondaryAction;
+  final String? secondaryActionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -100,8 +106,21 @@ class AppStateView extends StatelessWidget {
                   backgroundColor: AppColors.orange,
                   foregroundColor: Colors.black,
                 ),
-                child: const Text('再試行'),
-              )
+                child: Text(retryLabel),
+              ),
+            ],
+            if (onSecondaryAction != null &&
+                secondaryActionLabel != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: onSecondaryAction,
+                style: OutlinedButton.styleFrom(
+                  shape: const StadiumBorder(),
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: AppColors.border),
+                ),
+                child: Text(secondaryActionLabel!),
+              ),
             ],
           ],
         ),

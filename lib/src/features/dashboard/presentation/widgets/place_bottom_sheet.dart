@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../controllers/app_shell_controller.dart';
+import 'friend_avatar.dart';
 import 'glass_panel.dart';
 import 'segmented_tab.dart';
 
@@ -247,11 +248,6 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
                         icon: Icons.auto_awesome,
                         label: '${detail.posts.length}件見られる投稿',
                       ),
-                    if (detail.travelMinutes != null)
-                      _PlaceStatPill(
-                        icon: Icons.directions_walk,
-                        label: '徒歩 ${detail.travelMinutes}分',
-                      ),
                   ],
                 ),
               ],
@@ -377,9 +373,15 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
     ];
   }
 
-  Widget _buildVisitorRow(PlaceVisitor visitor) {
-    final avatarUrl = visitor.avatarUrl?.trim() ?? '';
+  String? _visitorAvatarUrl(PlaceVisitor visitor) {
+    final fromVisitor = FriendAvatar.networkUrl(visitor.avatarUrl);
+    if (fromVisitor != null) return fromVisitor;
+    return FriendAvatar.networkUrl(
+      widget.controller.socialStateForUser(visitor.userId)?.avatarUrl,
+    );
+  }
 
+  Widget _buildVisitorRow(PlaceVisitor visitor) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -390,18 +392,10 @@ class _PlaceBottomSheetState extends State<PlaceBottomSheet> {
       ),
       child: Row(
         children: [
-          CircleAvatar(
+          FriendAvatar(
+            displayName: visitor.userName,
+            avatarUrl: _visitorAvatarUrl(visitor),
             radius: 18,
-            backgroundColor: AppColors.gray,
-            backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-            child: avatarUrl.isEmpty
-                ? Text(
-                    visitor.userName.isNotEmpty
-                        ? visitor.userName.characters.first.toUpperCase()
-                        : '?',
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  )
-                : null,
           ),
           const SizedBox(width: 10),
           Expanded(

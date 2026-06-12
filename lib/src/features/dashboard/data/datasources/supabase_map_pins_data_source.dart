@@ -35,60 +35,139 @@ class SupabaseMapPinsDataSource {
           'p_radius_meters': radiusMeters,
         },
       );
-
-      final currentUserId = _client.auth.currentUser!.id;
-      final aggregates = <String, _PlacePinAggregate>{};
-      final q = (keyword ?? '').trim().toLowerCase();
-
-      for (final raw in (rows as List<dynamic>)) {
-        final row = raw as Map<String, dynamic>;
-        final placeId = (row['google_place_id'] ?? '').toString();
-        if (placeId.isEmpty) continue;
-
-        final placeName = (row['place_name'] ?? '').toString();
-        final plat = (row['latitude'] as num?)?.toDouble();
-        final plng = (row['longitude'] as num?)?.toDouble();
-        if (plat == null || plng == null) continue;
-
-        if (q.isNotEmpty && !placeName.toLowerCase().contains(q)) {
-          continue;
-        }
-
-        final userId = (row['user_id'] ?? '').toString();
-        final userName = (row['user_name'] ?? '').toString().trim();
-        final iconPath = (row['icon_path'] ?? '').toString().trim();
-        final avatarUrl = iconPath.isEmpty
-            ? null
-            : await SupabaseStorageUrls.signedPostImage(_client, iconPath);
-        final isFriend =
-            mutualFriendIds.isNotEmpty && mutualFriendIds.contains(userId);
-        final isMe = userId == currentUserId;
-
-        final agg = aggregates.putIfAbsent(
-          placeId,
-          () => _PlacePinAggregate(
-            googlePlaceId: placeId,
-            placeName: placeName,
-            latitude: plat,
-            longitude: plng,
-          ),
-        );
-        agg.addVisitor(
-          userId: userId,
-          userName: userName.isNotEmpty ? userName : 'user',
-          isFriend: isFriend,
-          avatarUrl: avatarUrl,
-          isMe: isMe,
-        );
-      }
-
-      return aggregates.values.map((a) => a.toMapPin()).toList();
+      return _rowsToMapPins(
+        rows: rows,
+        keyword: keyword,
+        mutualFriendIds: mutualFriendIds,
+      );
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[SupabaseMapPinsDataSource] fetchPostedPinsAround: $e\n$st');
       }
       return const [];
     }
+  }
+
+  /// 画面 bbox 内の訪問投稿ピン（日本全土ズームアウト時など）。
+  Future<List<MapPin>> fetchPostedPinsInBounds({
+    required double minLat,
+    required double maxLat,
+    required double minLng,
+    required double maxLng,
+    String? keyword,
+    Set<String> mutualFriendIds = const {},
+    int limit = 500,
+  }) async {
+    if (_client.auth.currentUser == null) return const [];
+
+    try {
+      final rows = await _client.rpc(
+        'get_restaurant_post_activity_in_bbox',
+        params: {
+          'p_min_lat': minLat,
+          'p_max_lat': maxLat,
+          'p_min_lng': minLng,
+          'p_max_lng': maxLng,
+          'p_limit': limit,
+        },
+      );
+      return _rowsToMapPins(
+        rows: rows,
+        keyword: keyword,
+        mutualFriendIds: mutualFriendIds,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[SupabaseMapPinsDataSource] fetchPostedPinsInBounds: $e\n$st');
+      }
+      return const [];
+    }
+  }
+
+  Future<List<MapPin>> _rowsToMapPins({
+    required dynamic rows,
+    String? keyword,
+    required Set<String> mutualFriendIds,
+  }) async {
+    final currentUserId = _client.auth.currentUser!.id;
+    final aggregates = <String, _PlacePinAggregate>{};
+    final q = (keyword ?? '').trim().toLowerCase();
+    final iconPaths = <String>{};
+    final parsedRows = <_ActivityRow>[];
+
+    for (final raw in (rows as List<dynamic>)) {
+      final row = raw as Map<String, dynamic>;
+      final placeId = (row['google_place_id'] ?? '').toString();
+      if (placeId.isEmpty) continue;
+
+      final placeName = (row['place_name'] ?? '').toString();
+      final plat = (row['latitude'] as num?)?.toDouble();
+      final plng = (row['longitude'] as num?)?.toDouble();
+      if (plat == null || plng == null) continue;
+
+      if (q.isNotEmpty && !placeName.toLowerCase().contains(q)) {
+        continue;
+      }
+
+      final userId = (row['user_id'] ?? '').toString();
+      final userName = (row['user_name'] ?? '').toString().trim();
+      final iconPath = (row['icon_path'] ?? '').toString().trim();
+      if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+
+      parsedRows.add(
+        _ActivityRow(
+          placeId: placeId,
+          placeName: placeName,
+          latitude: plat,
+          longitude: plng,
+          userId: userId,
+          userName: userName,
+          iconPath: iconPath,
+          isFriend: mutualFriendIds.contains(userId),
+          isMe: userId == currentUserId,
+        ),
+      );
+    }
+
+    final signedUrls = await _signIconPaths(iconPaths);
+
+    for (final parsed in parsedRows) {
+      final avatarUrl = parsed.iconPath.isEmpty
+          ? null
+          : signedUrls[parsed.iconPath];
+      final agg = aggregates.putIfAbsent(
+        parsed.placeId,
+        () => _PlacePinAggregate(
+          googlePlaceId: parsed.placeId,
+          placeName: parsed.placeName,
+          latitude: parsed.latitude,
+          longitude: parsed.longitude,
+        ),
+      );
+      agg.addVisitor(
+        userId: parsed.userId,
+        userName: parsed.userName.isNotEmpty ? parsed.userName : 'user',
+        isFriend: parsed.isFriend,
+        avatarUrl: avatarUrl,
+        isMe: parsed.isMe,
+      );
+    }
+
+    return aggregates.values.map((a) => a.toMapPin()).toList();
+  }
+
+  Future<Map<String, String>> _signIconPaths(Set<String> iconPaths) async {
+    if (iconPaths.isEmpty) return const {};
+    final signed = <String, String>{};
+    await Future.wait(
+      iconPaths.map((path) async {
+        final url = await SupabaseStorageUrls.resolveProfileIconUrl(_client, path);
+        if (url != null && url.isNotEmpty) {
+          signed[path] = url;
+        }
+      }),
+    );
+    return signed;
   }
 
   Future<List<PlaceVisitor>> fetchPlaceVisitors({
@@ -102,25 +181,35 @@ class SupabaseMapPinsDataSource {
         params: {'p_google_place_id': placeGoogleId},
       );
       final currentUserId = _client.auth.currentUser!.id;
-      final visitors = <PlaceVisitor>[];
-      final seen = <String>{};
+      final iconPaths = <String>{};
+      final parsedRows = <({String userId, String userName, String iconPath})>[];
+
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final userId = (row['user_id'] ?? '').toString();
-        if (userId.isEmpty || seen.contains(userId)) continue;
-        seen.add(userId);
+        if (userId.isEmpty) continue;
         final userName = (row['user_name'] ?? '').toString().trim();
         final iconPath = (row['icon_path'] ?? '').toString().trim();
-        final avatarUrl = iconPath.isEmpty
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+        parsedRows.add((userId: userId, userName: userName, iconPath: iconPath));
+      }
+
+      final signedUrls = await _signIconPaths(iconPaths);
+      final seen = <String>{};
+      final visitors = <PlaceVisitor>[];
+      for (final parsed in parsedRows) {
+        if (seen.contains(parsed.userId)) continue;
+        seen.add(parsed.userId);
+        final avatarUrl = parsed.iconPath.isEmpty
             ? null
-            : await SupabaseStorageUrls.signedPostImage(_client, iconPath);
+            : signedUrls[parsed.iconPath];
         visitors.add(
           PlaceVisitor(
-            userId: userId,
-            userName: userName.isNotEmpty ? userName : 'user',
-            isFriend: mutualFriendIds.contains(userId),
+            userId: parsed.userId,
+            userName: parsed.userName.isNotEmpty ? parsed.userName : 'user',
+            isFriend: mutualFriendIds.contains(parsed.userId),
             avatarUrl: avatarUrl,
-            isMe: userId == currentUserId,
+            isMe: parsed.userId == currentUserId,
           ),
         );
       }
@@ -265,7 +354,30 @@ class SupabaseMapPinsDataSource {
     }
     return null;
   }
+}
 
+class _ActivityRow {
+  const _ActivityRow({
+    required this.placeId,
+    required this.placeName,
+    required this.latitude,
+    required this.longitude,
+    required this.userId,
+    required this.userName,
+    required this.iconPath,
+    required this.isFriend,
+    required this.isMe,
+  });
+
+  final String placeId;
+  final String placeName;
+  final double latitude;
+  final double longitude;
+  final String userId;
+  final String userName;
+  final String iconPath;
+  final bool isFriend;
+  final bool isMe;
 }
 
 class _PlacePinAggregate {
@@ -303,6 +415,22 @@ class _PlacePinAggregate {
     if (isFriend) _hasFriendPost = true;
   }
 
+  String? _mapPinIconUrl() {
+    for (final visitor in _visitors) {
+      if (visitor.isFriend) {
+        final url = visitor.avatarUrl?.trim();
+        if (url != null && url.isNotEmpty) return url;
+      }
+    }
+    for (final visitor in _visitors) {
+      if (visitor.isMe) {
+        final url = visitor.avatarUrl?.trim();
+        if (url != null && url.isNotEmpty) return url;
+      }
+    }
+    return null;
+  }
+
   MapPin toMapPin() {
     final comment = _visitors.length > 1
         ? '${_visitors.length}人が訪問'
@@ -318,6 +446,7 @@ class _PlacePinAggregate {
       isFriendVisited: _hasFriendPost,
       hasPostedActivity: _visitors.isNotEmpty,
       visitors: List<PlaceVisitor>.unmodifiable(_visitors),
+      mapPinIconUrl: _mapPinIconUrl(),
       latitude: latitude,
       longitude: longitude,
     );

@@ -1,3 +1,4 @@
+import '../../presentation/map/map_display_config.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/repositories/dashboard_repository.dart';
 import 'package:flutter/foundation.dart';
@@ -37,11 +38,13 @@ class DashboardRepositoryImpl implements DashboardRepository {
   @override
   Future<PostDraft> createPostDraft() async {
     if (_useSupabase) {
-      return const PostDraft(
+      final defaultVisibility = await _social.fetchDefaultVisibility();
+      return PostDraft(
         photoUrl: '',
         placeName: '',
         note: '',
         withWho: '',
+        visibility: defaultVisibility,
       );
     }
     return _dataSource.createPostDraft();
@@ -200,27 +203,37 @@ class DashboardRepositoryImpl implements DashboardRepository {
       radiusMeters: _initialMapRadiusMeters,
       mutualFriendIds: friendIds,
     );
+    List<MapPin> googlePins = const [];
+
+    if (_googlePlacesDataSource != null) {
+      try {
+        googlePins = (await _googlePlacesDataSource.searchNearbyPlacesAround(
+          lat: lat,
+          lng: lng,
+          radiusMeters: _initialMapRadiusMeters,
+          keyword: 'restaurant',
+        )).map((pin) => pin.toEntity()).toList();
+      } catch (e) {
+        _log('getMapPins google failed: $e');
+      }
+    }
+
+    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
+      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
+      _log(
+        'getMapPins source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
+      );
+      return merged;
+    }
+
     if (dbPins.isNotEmpty) {
       _log('getMapPins source=supabase count=${dbPins.length}');
       return dbPins;
     }
 
-    if (_googlePlacesDataSource != null) {
-      try {
-        final googlePins = await _googlePlacesDataSource
-            .searchNearbyPlacesAround(
-              lat: lat,
-              lng: lng,
-              radiusMeters: _initialMapRadiusMeters,
-              keyword: 'restaurant',
-            );
-        if (googlePins.isNotEmpty) {
-          _log('getMapPins source=google count=${googlePins.length}');
-          return googlePins.map((pin) => pin.toEntity()).toList();
-        }
-      } catch (e) {
-        _log('getMapPins google failed: $e');
-      }
+    if (googlePins.isNotEmpty) {
+      _log('getMapPins source=google count=${googlePins.length}');
+      return googlePins;
     }
 
     if (_mapApiDataSource != null) {
@@ -251,22 +264,36 @@ class DashboardRepositoryImpl implements DashboardRepository {
       keyword: keyword,
       mutualFriendIds: friendIds,
     );
+    List<MapPin> googlePins = const [];
+
+    if (_googlePlacesDataSource != null) {
+      try {
+        googlePins = (await _googlePlacesDataSource.searchNearbyPlaces(
+          keyword: keyword,
+        )).map((pin) => pin.toEntity()).toList();
+      } catch (e) {
+        _log('searchMapPins google failed: $e');
+      }
+    }
+
+    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
+      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
+      _log(
+        'searchMapPins source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
+      );
+      return merged;
+    }
+
     if (dbPins.isNotEmpty) {
       _log('searchMapPins source=supabase count=${dbPins.length}');
       return dbPins;
     }
 
-    if (_googlePlacesDataSource != null) {
-      try {
-        final googlePins = await _googlePlacesDataSource.searchNearbyPlaces(
-          keyword: keyword,
-        );
-        _log('searchMapPins source=google count=${googlePins.length}');
-        return googlePins.map((pin) => pin.toEntity()).toList();
-      } catch (e) {
-        _log('searchMapPins google failed: $e');
-      }
+    if (googlePins.isNotEmpty) {
+      _log('searchMapPins source=google count=${googlePins.length}');
+      return googlePins;
     }
+
     _log('searchMapPins source=empty');
     return const [];
   }
@@ -277,42 +304,97 @@ class DashboardRepositoryImpl implements DashboardRepository {
     required double lng,
     required int radiusMeters,
     String? keyword,
+    double? boundsMinLat,
+    double? boundsMaxLat,
+    double? boundsMinLng,
+    double? boundsMaxLng,
+    double zoom = 14,
   }) async {
     _log(
-      'searchMapPinsAround lat=$lat lng=$lng radius=$radiusMeters keyword=${keyword ?? ''}',
+      'searchMapPinsAround lat=$lat lng=$lng radius=$radiusMeters zoom=$zoom '
+      'keyword=${keyword ?? ''}',
     );
     if (!_useSupabase) {
       return _dataSource.searchMapPins(keyword ?? 'restaurant');
     }
     final friendIds = await _social.fetchMutualFriendIds();
-    final dbPins = await _supabaseMapPins.fetchPostedPinsAround(
-      lat: lat,
-      lng: lng,
-      radiusMeters: radiusMeters,
-      keyword: keyword,
-      mutualFriendIds: friendIds,
-    );
-    if (dbPins.isNotEmpty) {
-      _log('searchMapPinsAround source=supabase count=${dbPins.length}');
-      return dbPins;
+    final hasBounds =
+        boundsMinLat != null &&
+        boundsMaxLat != null &&
+        boundsMinLng != null &&
+        boundsMaxLng != null;
+    final useBoundsFetch =
+        hasBounds && zoom < MapDisplayConfig.individualPinMinZoom;
+
+    final List<MapPin> dbPins;
+    if (useBoundsFetch) {
+      dbPins = await _supabaseMapPins.fetchPostedPinsInBounds(
+        minLat: boundsMinLat,
+        maxLat: boundsMaxLat,
+        minLng: boundsMinLng,
+        maxLng: boundsMaxLng,
+        keyword: keyword,
+        mutualFriendIds: friendIds,
+        limit: _bboxLimitForZoom(zoom),
+      );
+      _log(
+        'searchMapPinsAround source=supabase-bbox count=${dbPins.length} '
+        'limit=${_bboxLimitForZoom(zoom)}',
+      );
+    } else {
+      dbPins = await _supabaseMapPins.fetchPostedPinsAround(
+        lat: lat,
+        lng: lng,
+        radiusMeters: radiusMeters,
+        keyword: keyword,
+        mutualFriendIds: friendIds,
+      );
     }
 
-    if (_googlePlacesDataSource != null) {
+    List<MapPin> googlePins = const [];
+
+    // 広域ズームでは Google 店舗ピンを省略し、オレンジ（投稿）ピン取得を優先。
+    if (_googlePlacesDataSource != null &&
+        zoom >= MapDisplayConfig.individualPinMinZoom - 1) {
       try {
-        final googlePins = await _googlePlacesDataSource
-            .searchNearbyPlacesAround(
-              lat: lat,
-              lng: lng,
-              radiusMeters: radiusMeters,
-              keyword: keyword,
-            );
-        _log('searchMapPinsAround source=google count=${googlePins.length}');
-        return googlePins.map((pin) => pin.toEntity()).toList();
+        googlePins = (await _googlePlacesDataSource.searchNearbyPlacesAround(
+          lat: lat,
+          lng: lng,
+          radiusMeters: radiusMeters,
+          keyword: keyword,
+        )).map((pin) => pin.toEntity()).toList();
       } catch (e) {
         _log('searchMapPinsAround google failed: $e');
       }
     }
+
+    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
+      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
+      _log(
+        'searchMapPinsAround source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
+      );
+      return merged;
+    }
+
+    if (dbPins.isNotEmpty) {
+      if (!useBoundsFetch) {
+        _log('searchMapPinsAround source=supabase count=${dbPins.length}');
+      }
+      return dbPins;
+    }
+
+    if (googlePins.isNotEmpty) {
+      _log('searchMapPinsAround source=google count=${googlePins.length}');
+      return googlePins;
+    }
+
     return searchMapPins(keyword ?? 'restaurant');
+  }
+
+  int _bboxLimitForZoom(double zoom) {
+    if (zoom < 8) return 800;
+    if (zoom < MapDisplayConfig.mediumClusterMinZoom) return 650;
+    return 500;
   }
 
   @override
@@ -341,7 +423,9 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final isMockPlaceId = placeId.startsWith('m');
     _log('getPlaceDetail placeId=$placeId isMock=$isMockPlaceId');
 
-    final friendIds = _useSupabase ? await _social.fetchMutualFriendIds() : <String>{};
+    final friendIds = _useSupabase
+        ? await _social.fetchMutualFriendIds()
+        : <String>{};
     final dbPosts = _useSupabase
         ? await _supabaseMapPins.fetchVisiblePlacePosts(placeGoogleId: placeId)
         : const <PlacePostPreview>[];
@@ -439,6 +523,52 @@ class DashboardRepositoryImpl implements DashboardRepository {
     throw Exception('Place detail not found for placeId: $placeId');
   }
 
+  List<MapPin> _mergeMapPins({
+    required List<MapPin> postedPins,
+    required List<MapPin> generalPins,
+  }) {
+    final generalById = <String, MapPin>{
+      for (final pin in generalPins) pin.id: pin,
+    };
+    final merged = <MapPin>[];
+
+    for (final postedPin in postedPins) {
+      final generalPin = generalById.remove(postedPin.id);
+      merged.add(
+        generalPin == null
+            ? postedPin
+            : _mergeMapPin(postedPin: postedPin, generalPin: generalPin),
+      );
+    }
+
+    merged.addAll(generalById.values);
+    return merged;
+  }
+
+  MapPin _mergeMapPin({required MapPin postedPin, required MapPin generalPin}) {
+    return postedPin.copyWith(
+      placeName: generalPin.placeName.isNotEmpty
+          ? generalPin.placeName
+          : postedPin.placeName,
+      rating: generalPin.rating > 0 ? generalPin.rating : postedPin.rating,
+      friendComment: generalPin.friendComment.isNotEmpty
+          ? generalPin.friendComment
+          : postedPin.friendComment,
+      imageUrl: generalPin.imageUrl.isNotEmpty
+          ? generalPin.imageUrl
+          : postedPin.imageUrl,
+      isFriendVisited: postedPin.isFriendVisited || generalPin.isFriendVisited,
+      hasPostedActivity:
+          postedPin.hasPostedActivity || generalPin.hasPostedActivity,
+      visitors: postedPin.visitors.isNotEmpty
+          ? postedPin.visitors
+          : generalPin.visitors,
+      mapPinIconUrl: postedPin.mapPinIconUrl ?? generalPin.mapPinIconUrl,
+      latitude: generalPin.latitude ?? postedPin.latitude,
+      longitude: generalPin.longitude ?? postedPin.longitude,
+    );
+  }
+
   @override
   Future<List<PlaceSuggestion>> autocompletePlaces(
     String query, {
@@ -526,5 +656,4 @@ class DashboardRepositoryImpl implements DashboardRepository {
   void _log(String message) {
     if (kDebugMode) debugPrint('[DashboardRepositoryImpl] $message');
   }
-
 }

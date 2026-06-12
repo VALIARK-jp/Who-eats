@@ -4,6 +4,7 @@ import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
 import 'friend_avatar_stack.dart';
 import 'post_comment_preview.dart';
+import 'friend_avatar.dart';
 
 /// Home (投稿) 用の投稿カード。
 class FoodPostCard extends StatelessWidget {
@@ -150,28 +151,16 @@ class _TopRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = currentUserId ?? '';
     final isOwn = uid.isNotEmpty && post.userId == uid;
-    final hasNetwork = post.userIconUrl != null &&
-        post.userIconUrl!.isNotEmpty &&
-        (post.userIconUrl!.startsWith('http://') ||
-            post.userIconUrl!.startsWith('https://'));
-
-    final initial = post.userName.isNotEmpty ? post.userName[0].toUpperCase() : '?';
 
     return Row(
       children: [
         InkWell(
           onTap: onOpenProfile == null ? null : () => onOpenProfile!(post.userId),
           customBorder: const CircleBorder(),
-          child: CircleAvatar(
+          child: FriendAvatar(
+            displayName: post.userName,
+            avatarUrl: FriendAvatar.networkUrl(post.userIconUrl),
             radius: 18,
-            backgroundColor: AppColors.blackElevated,
-            backgroundImage: hasNetwork ? NetworkImage(post.userIconUrl!) : null,
-            child: hasNetwork
-                ? null
-                : Text(
-                    initial,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
           ),
         ),
         const SizedBox(width: 10),

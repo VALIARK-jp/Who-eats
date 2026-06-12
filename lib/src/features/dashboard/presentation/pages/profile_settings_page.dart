@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/legal/legal_document_page.dart';
+import '../../../../core/user/user_code_format.dart';
 import '../../../../core/supabase/account_deletion_service.dart';
 import '../../../../core/supabase/profile_icon_service.dart';
 import '../../../../core/supabase/supabase_tables.dart';
@@ -93,15 +94,15 @@ class ProfileSettingsPage extends StatelessWidget {
       await ProfileOnboardingStore.clearForUser(uid);
       if (!context.mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('アカウントを削除しました')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('アカウントを削除しました')));
     } catch (e) {
       if (!context.mounted) return;
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('アカウント削除に失敗しました: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('アカウント削除に失敗しました: $e')));
     }
   }
 
@@ -131,9 +132,9 @@ class ProfileSettingsPage extends StatelessWidget {
       }
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ログアウトに失敗しました: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('ログアウトに失敗しました: $e')));
     }
   }
 
@@ -152,9 +153,7 @@ class ProfileSettingsPage extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('設定'),
-      ),
+      appBar: AppBar(title: const Text('設定')),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
         children: [
@@ -271,14 +270,15 @@ class ProfileSettingsPage extends StatelessWidget {
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
+            leading: const Icon(
+              Icons.delete_forever_outlined,
+              color: Colors.red,
+            ),
             title: const Text(
               'アカウントを削除',
               style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
             ),
-            subtitle: const Text(
-              'プロフィール・投稿などすべてのデータが完全に削除されます',
-            ),
+            subtitle: const Text('プロフィール・投稿などすべてのデータが完全に削除されます'),
             onTap: () => _confirmAndDeleteAccount(context),
           ),
         ],
@@ -320,9 +320,9 @@ class _FeedScopeSettingsSectionState extends State<_FeedScopeSettingsSection> {
     setState(() => _selected = scope);
     await widget.controller.setDefaultFeedTimelineScope(scope);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('ホームの初期表示を「${scope.label}」にしました')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('ホームの初期表示を「${scope.label}」にしました')));
   }
 
   @override
@@ -339,9 +339,9 @@ class _FeedScopeSettingsSectionState extends State<_FeedScopeSettingsSection> {
       children: [
         Text(
           'ホームの初期表示',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
@@ -386,6 +386,7 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
   final _nameController = TextEditingController();
   final _userCodeController = TextEditingController();
   final _bioController = TextEditingController();
+  String _defaultVisibility = 'friends';
   bool _isSaving = false;
 
   @override
@@ -394,8 +395,9 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     final profile = widget.controller.profileOverview;
     if (profile != null) {
       _nameController.text = profile.name;
-      _userCodeController.text = profile.userCode;
+      _userCodeController.text = UserCodeFormat.bodyFromStored(profile.userCode);
       _bioController.text = profile.bio;
+      _defaultVisibility = _normalizeVisibility(profile.defaultVisibility);
     }
   }
 
@@ -416,16 +418,17 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     if (file == null) return;
     try {
       await ProfileIconService().uploadAndSaveProfileIcon(File(file.path));
-      await widget.controller.initialize();
+      await widget.controller.refreshProfileOverview();
+      await widget.controller.invalidateMapPins();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('プロフィールアイコンを更新しました')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('プロフィールアイコンを更新しました')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('アイコン更新に失敗しました: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('アイコン更新に失敗しました: $e')));
     }
   }
 
@@ -435,23 +438,46 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
 
     setState(() => _isSaving = true);
     try {
-      await Supabase.instance.client.from(SupabaseTables.profiles).update({
-        'name': _nameController.text.trim(),
-        'user_code': _userCodeController.text.trim(),
-        'bio': _bioController.text.trim(),
-      }).eq('id', uid);
+      final codeBody = _userCodeController.text.trim();
+      if (codeBody.isNotEmpty &&
+          !UserCodeFormat.bodyPattern.hasMatch(
+            codeBody.startsWith('@') ? codeBody.substring(1) : codeBody,
+          )) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ユーザーコードは英数字と _ のみ使えます')),
+        );
+        setState(() => _isSaving = false);
+        return;
+      }
+      final userCode = codeBody.isEmpty
+          ? ''
+          : UserCodeFormat.fromBody(
+              codeBody.startsWith('@') ? codeBody.substring(1) : codeBody,
+            );
 
-      await widget.controller.initialize();
+      await Supabase.instance.client
+          .from(SupabaseTables.profiles)
+          .update({
+            'name': _nameController.text.trim(),
+            if (userCode.isNotEmpty) 'user_code': userCode,
+            'bio': _bioController.text.trim(),
+            'default_visibility': _defaultVisibility,
+          })
+          .eq('id', uid);
+
+      await widget.controller.refreshProfileOverview();
+      await widget.controller.invalidateMapPins();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('プロフィールを更新しました')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('プロフィールを更新しました')));
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('プロフィールの更新に失敗しました: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('プロフィールの更新に失敗しました: $e')));
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -459,12 +485,19 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
     }
   }
 
+  String _normalizeVisibility(String value) {
+    return switch (value.trim()) {
+      'public' => 'public',
+      'private' => 'private',
+      'friends' => 'friends',
+      _ => 'friends',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('プロフィールを編集'),
-      ),
+      appBar: AppBar(title: const Text('プロフィールを編集')),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
@@ -485,8 +518,11 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
           const SizedBox(height: 16),
           TextField(
             controller: _userCodeController,
+            maxLength: UserCodeFormat.maxBodyLength,
             decoration: const InputDecoration(
-              labelText: 'ユーザーID (例: @ryota)',
+              labelText: 'ユーザーID',
+              prefixText: '@',
+              helperText: '英数字と _ のみ（15文字以内）',
               border: OutlineInputBorder(),
             ),
           ),
@@ -499,6 +535,32 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
             ),
             maxLines: 3,
           ),
+          const SizedBox(height: 16),
+          const Text(
+            '投稿のデフォルト公開範囲',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'public', label: Text('全体公開')),
+              ButtonSegment(value: 'friends', label: Text('友達のみ')),
+              ButtonSegment(value: 'private', label: Text('自分のみ')),
+            ],
+            selected: {_defaultVisibility},
+            onSelectionChanged: _isSaving
+                ? null
+                : (s) => setState(() {
+                    _defaultVisibility = _normalizeVisibility(s.first);
+                  }),
+          ),
+          const SizedBox(height: 8),
+          Text(switch (_defaultVisibility) {
+            'public' => '新しい投稿は全体公開で作成されます。',
+            'friends' => '新しい投稿は友達のみ公開で作成されます。',
+            'private' => '新しい投稿は自分のみ公開で作成されます。',
+            _ => '',
+          }, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _isSaving ? null : _saveProfile,

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../user/user_code_format.dart';
 import 'supabase_tables.dart';
 
 /// 共有 Supabase の [SupabaseTables.profiles] に、現在の auth ユーザー行を用意する。
@@ -63,9 +64,12 @@ Future<void> syncCurrentUserProfile({
   }
 }
 
-/// `users_user_code_format_check`: ^@[A-Za-z0-9_]+$（暫定 @w + UUID hex）
+/// `users_user_code_format_check`: ^@[A-Za-z0-9_]+$（最大 [UserCodeFormat.maxLength] 文字）
 String defaultUserCodeFromAuthId(String authUserId) {
   final hex = authUserId.replaceAll('-', '');
-  final tail = hex.length >= 29 ? hex.substring(0, 29) : hex.padRight(29, '0');
-  return '@w$tail';
+  final bodyBudget = UserCodeFormat.maxLength - 2; // `@w`
+  final tail = hex.length >= bodyBudget
+      ? hex.substring(0, bodyBudget)
+      : hex.padRight(bodyBudget, '0');
+  return UserCodeFormat.display('@w$tail');
 }

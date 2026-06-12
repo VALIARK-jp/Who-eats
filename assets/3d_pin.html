@@ -43,11 +43,16 @@
             requestAnimationFrame(animate);
         };
 
+        window.__iconTextureReady = true;
         /**
          * Flutter側から画像を渡すための関数
          */
         window.updateIcon = function(urlOrBase64) {
-            if (!urlOrBase64) return;
+            if (!urlOrBase64) {
+                window.__iconTextureReady = true;
+                return;
+            }
+            window.__iconTextureReady = false;
             textureLoader.load(urlOrBase64, (texture) => {
                 texture.center.set(0.5, 0.5);
                 const image = texture.image;
@@ -63,8 +68,10 @@
                 iconMesh.material.map = texture;
                 iconMesh.material.needsUpdate = true;
                 iconMesh.visible = true;
+                window.__iconTextureReady = true;
             }, undefined, (err) => {
                 console.log("updateIcon load failed:", urlOrBase64, err);
+                window.__iconTextureReady = true;
             });
         };
 

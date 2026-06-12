@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
+import 'friend_avatar.dart';
 
 /// 投稿直下に常時表示するコメントプレビュー（2件以上は1件＋続きあり表示）。
 class PostCommentPreview extends StatelessWidget {
@@ -33,6 +34,12 @@ class PostCommentPreview extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            FriendAvatar(
+              displayName: comment.userName,
+              avatarUrl: FriendAvatar.networkUrl(comment.userIconUrl),
+              radius: 14,
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: RichText(
                 maxLines: _isSingle ? null : 3,

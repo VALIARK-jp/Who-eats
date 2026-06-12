@@ -9,6 +9,11 @@ abstract interface class DashboardRepository {
     required double lng,
     required int radiusMeters,
     String? keyword,
+    double? boundsMinLat,
+    double? boundsMaxLat,
+    double? boundsMinLng,
+    double? boundsMaxLng,
+    double zoom = 14,
   });
   Future<MapPin?> resolvePlacePinFromCoordinate(double lat, double lng);
   Future<PlaceDetail> getPlaceDetail(String placeId);

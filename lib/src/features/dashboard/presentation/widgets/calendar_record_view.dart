@@ -234,16 +234,22 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    for (final name in _dayEntries
+                    for (final token in _dayEntries
                         .expand((e) => e.companionNames)
                         .toSet()
                         .take(6))
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: FriendAvatar(
-                          displayName: name.isNotEmpty ? name[0] : '?',
-                          radius: 16,
-                          showStatusDot: true,
+                        child: Builder(
+                          builder: (context) {
+                            final resolved = FriendAvatar.fromToken(token);
+                            return FriendAvatar(
+                              displayName: resolved.displayName,
+                              avatarUrl: resolved.avatarUrl,
+                              radius: 16,
+                              showStatusDot: true,
+                            );
+                          },
                         ),
                       ),
                   ],

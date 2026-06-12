@@ -32,15 +32,11 @@ class ProfileIconService {
       fileOptions: FileOptions(contentType: contentType, upsert: true),
     );
 
-    final signed = await _client.storage
-        .from(_bucket)
-        .createSignedUrl(path, 60 * 60 * 24 * 365);
-
     await _client
         .from(SupabaseTables.profiles)
-        .update({'icon_path': signed})
+        .update({'icon_path': path})
         .eq('id', uid);
-    return signed;
+    return path;
   }
 
   String _guessExt(String p) {

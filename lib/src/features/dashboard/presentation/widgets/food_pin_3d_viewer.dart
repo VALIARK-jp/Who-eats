@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import 'food_pin_dev_placeholder.dart';
+import 'map_pin_icon_preloader.dart';
 
 /// iOS/Android: WebView + `assets/3d_pin.html` で Three.js 3D ピンを表示。
 ///
@@ -46,11 +47,16 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   final Completer<void> _pageReadyCompleter = Completer<void>();
   String? _loadError;
   int? _lastPushedFps;
+  bool _readyToShow = false;
+  String? _resolvedIconUrl;
 
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      _readyToShow = true;
+      return;
+    }
     widget.animationFpsListenable?.addListener(_onAnimationFpsChanged);
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -71,6 +77,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
             if (mounted) {
               setState(() {
                 _loadError = error.description;
+                _readyToShow = true;
               });
             }
           },
@@ -96,7 +103,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     }
     if (oldWidget.initialIconAsset != widget.initialIconAsset ||
         oldWidget.initialIconUrl != widget.initialIconUrl) {
-      unawaited(_injectInitialIconIfNeeded());
+      unawaited(_reloadIcon());
     }
   }
 
@@ -104,6 +111,16 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   void dispose() {
     widget.animationFpsListenable?.removeListener(_onAnimationFpsChanged);
     super.dispose();
+  }
+
+  Future<void> _reloadIcon() async {
+    if (!mounted) return;
+    setState(() => _readyToShow = false);
+    await _prepareIconUrl();
+    await _injectInitialIconIfNeeded();
+    await _pushTargetFpsToWebView();
+    if (!mounted) return;
+    setState(() => _readyToShow = true);
   }
 
   void _onAnimationFpsChanged() {
@@ -131,14 +148,26 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     }
   }
 
+  Future<void> _prepareIconUrl() async {
+    final raw = widget.initialIconUrl?.trim();
+    if (raw == null || raw.isEmpty) {
+      _resolvedIconUrl = null;
+      return;
+    }
+    _resolvedIconUrl = await MapPinIconPreloader.resolveDataUrl(raw);
+  }
+
   Future<void> _loadAsset() async {
     final controller = _controller;
     if (controller == null) return;
     try {
+      await _prepareIconUrl();
       await controller.loadFlutterAsset(widget.assetPath);
       await _waitForPageReady();
       await _injectInitialIconIfNeeded();
       await _pushTargetFpsToWebView();
+      if (!mounted) return;
+      setState(() => _readyToShow = true);
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[FoodPin3DViewer] loadFlutterAsset failed: $e\n$st');
@@ -146,6 +175,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
       if (mounted) {
         setState(() {
           _loadError = e.toString();
+          _readyToShow = true;
         });
       }
     }
@@ -159,16 +189,33 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     );
   }
 
+  Future<void> _waitForIconTextureReady() async {
+    final controller = _controller;
+    if (controller == null) return;
+    for (var attempt = 0; attempt < 120; attempt++) {
+      if (!mounted) return;
+      try {
+        final ready = await controller.runJavaScriptReturningResult(
+          'window.__iconTextureReady === true',
+        );
+        if (ready == true) return;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
   Future<void> _injectInitialIconIfNeeded() async {
     final controller = _controller;
     if (controller == null) return;
-    final iconUrl = widget.initialIconUrl;
+
+    final iconUrl = _resolvedIconUrl;
     if (iconUrl != null && iconUrl.isNotEmpty) {
       try {
         await _waitForPageReady();
         await controller.runJavaScript(
           'window.updateIcon && window.updateIcon(${jsonEncode(iconUrl)});',
         );
+        await _waitForIconTextureReady();
         return;
       } catch (e, st) {
         if (kDebugMode) {
@@ -200,6 +247,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
           window.__whoEatsIconChunks = [];
         })();
       ''');
+      await _waitForIconTextureReady();
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[FoodPin3DViewer] inject icon failed: $e\n$st');
@@ -221,7 +269,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
 
     final controller = _controller;
     if (controller == null) {
-      return const SizedBox.shrink();
+      return SizedBox(width: widget.width, height: widget.height ?? 300);
     }
 
     return SizedBox(
@@ -230,7 +278,10 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          WebViewWidget(controller: controller),
+          Opacity(
+            opacity: _readyToShow ? 1 : 0,
+            child: WebViewWidget(controller: controller),
+          ),
           if (_loadError != null)
             ColoredBox(
               color: AppColors.blackElevated,
