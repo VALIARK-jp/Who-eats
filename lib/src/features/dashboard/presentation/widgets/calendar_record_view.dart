@@ -32,30 +32,7 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
   int get _daysInMonth =>
       DateTime(_currentMonth.year, _currentMonth.month + 1, 0).day;
 
-  int get _firstWeekdayOffset =>
-      DateTime(_currentMonth.year, _currentMonth.month, 1).weekday % 7;
-
-  static const List<String> _weekdayLabels = [
-    '日',
-    '月',
-    '火',
-    '水',
-    '木',
-    '金',
-    '土',
-  ];
-
   String get _monthTitle => '${_currentMonth.year}年${_currentMonth.month}月';
-
-  String get _selectedWeekday {
-    final day = int.tryParse(_selectedDay) ?? 1;
-    final weekday = DateTime(
-      _currentMonth.year,
-      _currentMonth.month,
-      day,
-    ).weekday;
-    return _weekdayLabels[weekday % 7];
-  }
 
   bool get _isCurrentMonth {
     final now = DateTime.now();
@@ -76,7 +53,9 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
         return ai.compareTo(bi);
       });
     _activeDays = monthlyShots.toSet();
-    _selectedDay = '${now.day.clamp(1, _daysInMonth)}';
+    _selectedDay = monthlyShots.isNotEmpty
+        ? monthlyShots.first
+        : '${now.day.clamp(1, _daysInMonth)}';
     _loadSelectedDay();
   }
 
@@ -148,28 +127,10 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _weekdayLabels
-                    .map(
-                      (label) => Expanded(
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 6),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: days.length + _firstWeekdayOffset,
+                itemCount: days.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 7,
                   mainAxisSpacing: 6,
@@ -177,11 +138,8 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
                   childAspectRatio: 1,
                 ),
                 itemBuilder: (_, i) {
-                  if (i < _firstWeekdayOffset) {
-                    return const SizedBox();
-                  }
-                  final d = days[i - _firstWeekdayOffset];
-                  final isActive = _currentActiveDays.contains(d);
+                  final d = days[i];
+                  final isActive = _activeDays.contains(d);
                   final isSelected = d == _selectedDay;
                   return GestureDetector(
                     onTap: () {
@@ -230,7 +188,7 @@ class _CalendarRecordViewState extends State<CalendarRecordView> {
               Row(
                 children: [
                   Text(
-                    '$_selectedDay日 ($_selectedWeekday)',
+                    '$_selectedDay日',
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 18,
