@@ -172,7 +172,11 @@ class AuthService {
         throw Exception('LINE認証がキャンセルされました');
       }
       if (error.code == 'AUTHENTICATION_AGENT_ERROR') {
-        throw Exception('LINE認証エラーが発生しました。もう一度お試しください');
+        throw Exception(
+          'LINE認証エラーが発生しました。'
+          'LINE Developers Console に Android パッケージ com.valiark.whoeats '
+          'とアプリ署名（SHA-1）が登録されているか確認してください。',
+        );
       }
       throw Exception('LINE認証に失敗しました: ${error.message ?? error.code}');
     } on AuthException catch (error) {

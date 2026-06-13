@@ -16,6 +16,10 @@ abstract final class _DartDefines {
     'WHOEATS_GOOGLE_MAPS_WEB_API_KEY',
     defaultValue: '',
   );
+  static const androidMapsApiKey = String.fromEnvironment(
+    'WHOEATS_ANDROID_MAPS_API_KEY',
+    defaultValue: '',
+  );
   static const postedPinPlaceId = String.fromEnvironment(
     'WHOEATS_POSTED_PIN_PLACE_ID',
     defaultValue: '',
@@ -123,6 +127,12 @@ class AppConfig {
         _env('WHOEATS_GOOGLE_MAPS_WEB_API_KEY'),
       );
 
+  /// Android ネイティブ Maps SDK 用（Gradle が manifest に注入）。
+  static String get androidMapsApiKey => _pick(
+        _DartDefines.androidMapsApiKey,
+        _env('WHOEATS_ANDROID_MAPS_API_KEY'),
+      );
+
   static String get postedPinPlaceId =>
       _pick(_DartDefines.postedPinPlaceId, _env('WHOEATS_POSTED_PIN_PLACE_ID'));
 
@@ -213,6 +223,7 @@ class AppConfig {
   static bool get hasMapApi =>
       mapPinsApiUrl.isNotEmpty && placeDetailApiTemplate.isNotEmpty;
   static bool get hasGooglePlacesApi => googleMapsWebApiKey.isNotEmpty;
+  static bool get hasAndroidMapsApiKey => androidMapsApiKey.isNotEmpty;
   static bool get hasSupabase =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 

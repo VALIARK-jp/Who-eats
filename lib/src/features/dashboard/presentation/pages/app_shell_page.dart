@@ -2063,6 +2063,18 @@ class _MapTabState extends State<_MapTab> {
       );
     }
 
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        !AppConfig.hasAndroidMapsApiKey) {
+      return const AppStateView(
+        type: AppStateType.error,
+        title: '地図を表示できません',
+        message:
+            'WHOEATS_ANDROID_MAPS_API_KEY が .env に設定されていません。\n'
+            'Android 用 Maps SDK キーを設定してアプリを再ビルドしてください。',
+      );
+    }
+
     if (widget.controller.mapPinsLoading ||
         (!widget.controller.mapPinsLoaded &&
             widget.controller.mapPinsLoadError == null)) {

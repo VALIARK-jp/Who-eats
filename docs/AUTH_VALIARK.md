@@ -50,4 +50,15 @@ io.valiark.whoeats://callback
 4. 初回プロフィール（名前・@コード・アイコン・一言）→ タブのゲート解除
 5. ゲストでホームは利用可、友達・投稿・記録・プロフィールはオーバーレイ
 
+### Android 追加（LINE / Maps）
+
+- **LINE Login チャンネル `2010102462`** に Android パッケージ `com.valiark.whoeats` と **debug / release の SHA-1** を登録（Panda Talk の `com.pandatalk.panda_talk` だけでは Who eats Android は失敗する）
+- **`.env`** の `WHOEATS_ANDROID_MAPS_API_KEY` を設定（Gradle が `android/app/build.gradle.kts` 経由で manifest に注入。プロジェクトルートの `.env` を読む）
+- GCP で Maps SDK for Android を有効化し、キー制限に `com.valiark.whoeats` + SHA-1 を登録
+
+```bash
+# debug SHA-1（LINE Console / GCP 登録用）
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+```
+
 詳細運用は Panda Talk の [docs/05_auth.md](https://github.com/valiark/panda_talk/blob/main/docs/05_auth.md) と [valiark_client_secrets_playbook.md](https://github.com/valiark/panda_talk/blob/main/docs/valiark_client_secrets_playbook.md) を参照。

@@ -77,6 +77,19 @@ Future<void> main() async {
       }
 
       debugPrint('★ Supabaseのキーは設定されている？ : ${AppConfig.hasSupabase}');
+      debugPrint(
+        '★ Android Maps API key configured: ${AppConfig.hasAndroidMapsApiKey}',
+      );
+      debugPrint('★ authRedirectUrl: ${AppConfig.authRedirectUrl}');
+
+      if (!kIsWeb) {
+        try {
+          await LineSDK.instance.setup(valiarkLineChannelId);
+          debugPrint('[main] LineSDK setup ok (channel=$valiarkLineChannelId)');
+        } catch (e, st) {
+          debugPrint('LineSDK setup failed: $e\n$st');
+        }
+      }
 
       if (AppConfig.hasSupabase) {
         try {
@@ -92,13 +105,11 @@ Future<void> main() async {
         } catch (e, st) {
           debugPrint('Supabase init skipped or failed: $e\n$st');
         }
-        if (!kIsWeb) {
-          try {
-            await LineSDK.instance.setup(valiarkLineChannelId);
-          } catch (e, st) {
-            debugPrint('LineSDK setup failed: $e\n$st');
-          }
-        }
+      } else if (!kIsWeb) {
+        debugPrint(
+          '[main] Supabase not configured — auth (email/LINE) will not work. '
+          'Set WHOEATS_SUPABASE_URL and WHOEATS_SUPABASE_ANON_KEY in .env',
+        );
       }
       if (supportsPush) {
         unawaited(PushNotificationService.instance.initialize());

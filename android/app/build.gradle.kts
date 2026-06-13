@@ -23,11 +23,27 @@ fun loadDotEnv(rootDir: File): Map<String, String> {
         }
 }
 
-val dotEnv = loadDotEnv(rootDir)
+// Flutter プロジェクトルートの .env（android/app ではなく Who_eats/.env）
+val flutterProjectRoot = rootProject.rootDir.parentFile
+val dotEnv = loadDotEnv(flutterProjectRoot)
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
 val androidMapsApiKey =
     dotEnv["WHOEATS_ANDROID_MAPS_API_KEY"]
+        ?: localProperties.getProperty("WHOEATS_ANDROID_MAPS_API_KEY")
         ?: (project.findProperty("MAPS_API_KEY") as String?)
         ?: "YOUR_ANDROID_MAPS_API_KEY"
+
+if (androidMapsApiKey == "YOUR_ANDROID_MAPS_API_KEY") {
+    logger.warn(
+        "WHOEATS_ANDROID_MAPS_API_KEY is missing in ${flutterProjectRoot}/.env " +
+            "(or android/local.properties). Google Map tiles will be blank on Android.",
+    )
+}
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {

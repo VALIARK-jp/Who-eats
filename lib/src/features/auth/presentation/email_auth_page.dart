@@ -401,10 +401,39 @@ class _EmailAuthPageState extends State<EmailAuthPage>
   }
 }
 
-class _EmailSentPage extends StatelessWidget {
+class _EmailSentPage extends StatefulWidget {
   const _EmailSentPage({required this.email});
 
   final String email;
+
+  @override
+  State<_EmailSentPage> createState() => _EmailSentPageState();
+}
+
+class _EmailSentPageState extends State<_EmailSentPage> {
+  StreamSubscription<AuthState>? _authSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.signedIn && mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (Supabase.instance.client.auth.currentSession != null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -415,10 +444,11 @@ class _EmailSentPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('$email 宛に確認メールを送りました。'),
+            Text('${widget.email} 宛に確認メールを送りました。'),
             const SizedBox(height: 12),
             const Text(
-              'メール内のリンクをタップすると Who eats に戻り、プロフィール設定へ進みます。',
+              'メール内のリンクをタップすると Who eats に戻り、プロフィール設定へ進みます。\n'
+              '同じ端末のメールアプリから開いてください。',
             ),
             const Spacer(),
             FilledButton(

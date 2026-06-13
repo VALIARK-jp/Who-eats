@@ -32,7 +32,10 @@ class ValiarkDeeplinkHandler {
   }
 
   static Future<void> _consumeAuthUri(Uri uri) async {
-    if (!isAuthCallbackUri(uri)) return;
+    if (!isAuthCallbackUri(uri)) {
+      debugPrint('[ValiarkDeeplink] ignore uri (not auth callback): $uri');
+      return;
+    }
 
     final key = uri.toString();
     if (!_sessionUrlHandled.add(key)) {
@@ -40,6 +43,7 @@ class ValiarkDeeplinkHandler {
       return;
     }
 
+    debugPrint('[ValiarkDeeplink] consuming auth uri: $uri');
     try {
       await Supabase.instance.client.auth.getSessionFromUrl(uri);
       debugPrint('[ValiarkDeeplink] getSessionFromUrl ok');
@@ -56,11 +60,13 @@ class ValiarkDeeplinkHandler {
     final appLinks = AppLinks();
 
     appLinks.getInitialLink().then((Uri? uri) async {
+      debugPrint('[ValiarkDeeplink] getInitialLink: $uri');
       if (!isAuthCallbackUri(uri)) return;
       await _consumeAuthUri(uri!);
     });
 
     appLinks.uriLinkStream.listen((Uri? uri) async {
+      debugPrint('[ValiarkDeeplink] uriLinkStream: $uri');
       if (!isAuthCallbackUri(uri)) return;
       await _consumeAuthUri(uri!);
     });
