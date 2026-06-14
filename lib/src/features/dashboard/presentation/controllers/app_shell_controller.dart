@@ -505,10 +505,14 @@ class AppShellController extends ChangeNotifier {
     );
     mapPinsLoaded = true;
     mapPinsLoadError = null;
+    final previousPostedIds = postedPlaceGoogleIds;
     postedPlaceGoogleIds = {
-      ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
+      for (final pin in mapPins)
+        if (pin.hasPostedActivity || previousPostedIds.contains(pin.id))
+          pin.id,
     };
     postedPlaceUserIcons = {
+      ...postedPlaceUserIcons,
       for (final pin in mapPins)
         if (pin.mapPinIconUrl != null && pin.mapPinIconUrl!.isNotEmpty)
           pin.id: pin.mapPinIconUrl!,

@@ -20,7 +20,7 @@ fi
 usage() {
   echo "Usage: $0 db|functions|all" >&2
   echo "  db        - supabase link + db push to valiark-prod" >&2
-  echo "  functions - deploy send-push Edge Function" >&2
+  echo "  functions - deploy send-push and send-post-reminders Edge Functions" >&2
   echo "  all       - db then functions" >&2
   exit 1
 }
@@ -72,7 +72,9 @@ run_functions() {
   echo "==> Deploying Edge Functions to prod ref: $PROD_REF"
   supabase link --project-ref "$PROD_REF"
   supabase functions deploy send-push
+  supabase functions deploy send-post-reminders --no-verify-jwt
   echo "==> Done. If send-push is enabled, set FCM secrets as documented in docs/push_notification_prod_setup.md."
+  echo "==> Schedule send-post-reminders hourly (see docs/push_notification_prod_setup.md)."
 }
 
 case "$cmd" in

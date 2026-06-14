@@ -17,9 +17,10 @@ class AuthShellPage extends StatefulWidget {
 }
 
 class _AuthShellPageState extends State<AuthShellPage> {
-  bool? _prefsLoaded;
-  bool _profileSetupDone = true;
+  bool _prefsLoaded = false;
+  bool _profileSetupDone = false;
   bool _passwordRecoveryPending = false;
+  int _loadGeneration = 0;
   StreamSubscription<AuthState>? _authSub;
 
   @override
@@ -49,31 +50,39 @@ class _AuthShellPageState extends State<AuthShellPage> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
-      if (mounted) {
-        setState(() {
-          _profileSetupDone = true;
-          _prefsLoaded = true;
-        });
-      }
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _profileSetupDone = true;
+        _prefsLoaded = true;
+      });
       return;
     }
+
+    // ログイン済みは DB で name / user_code を確認するまで AppShell に入れない。
+    if (mounted) {
+      setState(() {
+        _profileSetupDone = false;
+        _prefsLoaded = false;
+      });
+    }
+
     final done = await ProfileOnboardingStore.resolveSetupComplete(
       userId: user.id,
       email: user.email,
     );
-    if (mounted) {
-      setState(() {
-        _profileSetupDone = done;
-        _prefsLoaded = true;
-      });
-    }
+    if (!mounted || generation != _loadGeneration) return;
+    setState(() {
+      _profileSetupDone = done;
+      _prefsLoaded = true;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_prefsLoaded != true) {
+    if (!_prefsLoaded) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -90,9 +99,7 @@ class _AuthShellPageState extends State<AuthShellPage> {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null && !_profileSetupDone) {
       return ProfileSetupPage(
-        onComplete: () {
-          if (mounted) setState(() => _profileSetupDone = true);
-        },
+        onComplete: _load,
       );
     }
 

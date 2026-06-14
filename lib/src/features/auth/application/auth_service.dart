@@ -86,8 +86,8 @@ class AuthService {
           await signOut();
           throw Exception('メールアドレスが確認されていません。受信トレイを確認してください。');
         }
-        // panda_profiles sync runs from PandaTalkApp ref.listen (avoid awaiting
-        // localhost Worker here — real devices hang).
+        // auth.users にはいるが whoeats_users 行が無い（他 Valiark アプリ既存・Who eats 初回）ケース向け。
+        await _ensureWhoEatsProfileRowBestEffort();
       }
       return response;
     } on http.ClientException catch (e) {
@@ -166,6 +166,7 @@ class AuthService {
         }());
       }
 
+      await _ensureWhoEatsProfileRowBestEffort();
       return nativeResponse;
     } on PlatformException catch (error) {
       if (error.code == 'CANCEL') {
@@ -243,6 +244,7 @@ class AuthService {
         }
       }
 
+      await _ensureWhoEatsProfileRowBestEffort();
       return nativeResponse;
     } on SignInWithAppleAuthorizationException catch (error) {
       if (error.code == AuthorizationErrorCode.canceled) {
@@ -389,6 +391,20 @@ class AuthService {
   /// [whoeats_users] 行の最低限を用意（詳細は [ProfileSetupPage]）。
   Future<void> ensureUserProfileRow() async {
     await syncCurrentUserProfile();
+  }
+
+  /// ログイン成功直後に呼ぶ。RPC 未適用などで失敗しても認証自体は成功させる。
+  Future<void> _ensureWhoEatsProfileRowBestEffort() async {
+    try {
+      await syncCurrentUserProfile();
+    } catch (e, st) {
+      assert(() {
+        debugPrint(
+          '[AuthService] ensure whoeats_users row skipped: $e\n$st',
+        );
+        return true;
+      }());
+    }
   }
 
   Future<NativeAuthResponse> _verifyNativeOtp(http.Response response) async {

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import 'food_pin_dev_placeholder.dart';
@@ -13,7 +14,8 @@ import 'map_pin_icon_preloader.dart';
 
 /// iOS/Android: WebView + `assets/3d_pin.html` で Three.js 3D ピンを表示。
 ///
-/// Web（`flutter run -d chrome`）では [FoodPinDevPlaceholder] の簡易ピンに差し替える。
+/// Web（`flutter run -d chrome`）および Android で WebView が使えない場合は
+/// [FoodPinDevPlaceholder] にフォールバックする。
 class FoodPin3DViewer extends StatefulWidget {
   const FoodPin3DViewer({
     super.key,
@@ -23,6 +25,7 @@ class FoodPin3DViewer extends StatefulWidget {
     this.initialIconAsset,
     this.initialIconUrl,
     this.webviewBackground = Colors.transparent,
+    this.suppressFlutterFallback = false,
     this.animationFpsListenable,
   });
 
@@ -32,6 +35,10 @@ class FoodPin3DViewer extends StatefulWidget {
   final String? initialIconAsset;
   final String? initialIconUrl;
   final Color webviewBackground;
+
+  /// true のとき [FoodPinDevPlaceholder] を出さない（地図オーバーレイ向け）。
+  /// 3D 読み込み中/失敗時はマーカーのオレンジ丸だけ残す。
+  final bool suppressFlutterFallback;
 
   /// マップ操作時などに FPS を下げる。未指定なら HTML 既定（30fps）。Web では未使用。
   final ValueListenable<int>? animationFpsListenable;
@@ -48,17 +55,32 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   String? _loadError;
   int? _lastPushedFps;
   bool _readyToShow = false;
+  bool _useFlutterFallback = false;
   String? _resolvedIconUrl;
+
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
     super.initState();
     if (kIsWeb) {
+      if (widget.suppressFlutterFallback) return;
       _readyToShow = true;
+      _useFlutterFallback = true;
       return;
     }
     widget.animationFpsListenable?.addListener(_onAnimationFpsChanged);
-    _controller = WebViewController()
+    _controller = _createWebViewController();
+    unawaited(_loadAsset());
+  }
+
+  WebViewController _createWebViewController() {
+    final params = _isAndroid
+        ? AndroidWebViewControllerCreationParams()
+        : const PlatformWebViewControllerCreationParams();
+
+    final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(widget.webviewBackground)
       ..setNavigationDelegate(
@@ -69,17 +91,15 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
             }
           },
           onWebResourceError: (WebResourceError error) {
+            if (error.isForMainFrame == false) return;
             if (kDebugMode) {
               debugPrint(
                 '[FoodPin3DViewer] ${error.errorType} ${error.description}',
               );
             }
-            if (mounted) {
-              setState(() {
-                _loadError = error.description;
-                _readyToShow = true;
-              });
-            }
+            _activateFlutterFallback(
+              reason: error.description,
+            );
           },
         ),
       )
@@ -88,13 +108,46 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
           debugPrint('[FoodPin3DViewer console] ${message.message}');
         }
       });
-    unawaited(_loadAsset());
+
+    if (controller.platform is AndroidWebViewController) {
+      final androidController = controller.platform as AndroidWebViewController;
+      if (kDebugMode) {
+        AndroidWebViewController.enableDebugging(true);
+      }
+      unawaited(androidController.setBackgroundColor(Colors.transparent));
+    }
+
+    return controller;
+  }
+
+  void _activateFlutterFallback({required String reason}) {
+    if (!mounted || _useFlutterFallback) return;
+    if (widget.suppressFlutterFallback) {
+      if (kDebugMode) {
+        debugPrint(
+          '[FoodPin3DViewer] map overlay: skip 2D fallback ($reason)',
+        );
+      }
+      setState(() {
+        _loadError = reason;
+        _readyToShow = false;
+      });
+      return;
+    }
+    if (kDebugMode) {
+      debugPrint('[FoodPin3DViewer] fallback to Flutter pin: $reason');
+    }
+    setState(() {
+      _useFlutterFallback = true;
+      _loadError = reason;
+      _readyToShow = true;
+    });
   }
 
   @override
   void didUpdateWidget(covariant FoodPin3DViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (kIsWeb) return;
+    if (kIsWeb || _useFlutterFallback) return;
     if (oldWidget.animationFpsListenable != widget.animationFpsListenable) {
       oldWidget.animationFpsListenable?.removeListener(_onAnimationFpsChanged);
       widget.animationFpsListenable?.addListener(_onAnimationFpsChanged);
@@ -114,13 +167,14 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
   }
 
   Future<void> _reloadIcon() async {
-    if (!mounted) return;
-    setState(() => _readyToShow = false);
+    if (!mounted || _useFlutterFallback) return;
     await _prepareIconUrl();
     await _injectInitialIconIfNeeded();
     await _pushTargetFpsToWebView();
     if (!mounted) return;
-    setState(() => _readyToShow = true);
+    if (!_readyToShow) {
+      setState(() => _readyToShow = true);
+    }
   }
 
   void _onAnimationFpsChanged() {
@@ -129,14 +183,14 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
 
   Future<void> _pushTargetFpsToWebView() async {
     final controller = _controller;
-    if (controller == null) return;
+    if (controller == null || _useFlutterFallback) return;
     final listenable = widget.animationFpsListenable;
     if (listenable == null) return;
     final fps = listenable.value;
     if (_lastPushedFps == fps) return;
     try {
       await _waitForPageReady();
-      if (!mounted) return;
+      if (!mounted || _useFlutterFallback) return;
       await controller.runJavaScript(
         'window.setTargetFps && window.setTargetFps($fps);',
       );
@@ -164,15 +218,26 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
       await _prepareIconUrl();
       await controller.loadFlutterAsset(widget.assetPath);
       await _waitForPageReady();
-      await _injectInitialIconIfNeeded();
+      if (!mounted || _useFlutterFallback) return;
+
+      if (_isAndroid && !await _isWebPinRendererReady()) {
+        _activateFlutterFallback(
+          reason: 'Three.js renderer did not initialize on Android',
+        );
+        return;
+      }
+
       await _pushTargetFpsToWebView();
-      if (!mounted) return;
+      if (!mounted || _useFlutterFallback) return;
       setState(() => _readyToShow = true);
+      await _injectInitialIconIfNeeded();
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[FoodPin3DViewer] loadFlutterAsset failed: $e\n$st');
       }
-      if (mounted) {
+      if (_isAndroid) {
+        _activateFlutterFallback(reason: e.toString());
+      } else if (mounted) {
         setState(() {
           _loadError = e.toString();
           _readyToShow = true;
@@ -181,19 +246,36 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     }
   }
 
+  Future<bool> _isWebPinRendererReady() async {
+    final controller = _controller;
+    if (controller == null) return false;
+    try {
+      final ready = await controller.runJavaScriptReturningResult(
+        'typeof THREE !== "undefined"',
+      );
+      return ready == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _waitForPageReady() async {
     if (_pageReadyCompleter.isCompleted) return;
     await _pageReadyCompleter.future.timeout(
       const Duration(seconds: 5),
-      onTimeout: () {},
+      onTimeout: () {
+        if (_isAndroid) {
+          _activateFlutterFallback(reason: 'WebView page load timed out');
+        }
+      },
     );
   }
 
   Future<void> _waitForIconTextureReady() async {
     final controller = _controller;
-    if (controller == null) return;
+    if (controller == null || _useFlutterFallback) return;
     for (var attempt = 0; attempt < 120; attempt++) {
-      if (!mounted) return;
+      if (!mounted || _useFlutterFallback) return;
       try {
         final ready = await controller.runJavaScriptReturningResult(
           'window.__iconTextureReady === true',
@@ -206,7 +288,7 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
 
   Future<void> _injectInitialIconIfNeeded() async {
     final controller = _controller;
-    if (controller == null) return;
+    if (controller == null || _useFlutterFallback) return;
 
     final iconUrl = _resolvedIconUrl;
     if (iconUrl != null && iconUrl.isNotEmpty) {
@@ -255,20 +337,40 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
     }
   }
 
+  Widget _buildWebView(WebViewController controller) {
+    if (_isAndroid) {
+      return WebViewWidget.fromPlatformCreationParams(
+        params: AndroidWebViewWidgetCreationParams(
+          controller: controller.platform,
+          displayWithHybridComposition: true,
+        ),
+      );
+    }
+    return WebViewWidget(controller: controller);
+  }
+
+  Widget _buildFallbackPin() {
+    return FoodPinDevPlaceholder(
+      width: widget.width,
+      height: widget.height,
+      isPostedPin: widget._isPostedPin,
+      initialIconAsset: widget.initialIconAsset,
+      initialIconUrl: widget.initialIconUrl,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return FoodPinDevPlaceholder(
-        width: widget.width,
-        height: widget.height,
-        isPostedPin: widget._isPostedPin,
-        initialIconAsset: widget.initialIconAsset,
-        initialIconUrl: widget.initialIconUrl,
-      );
+    if (_useFlutterFallback && !widget.suppressFlutterFallback) {
+      return _buildFallbackPin();
     }
 
     final controller = _controller;
     if (controller == null) {
+      return SizedBox(width: widget.width, height: widget.height ?? 300);
+    }
+
+    if (widget.suppressFlutterFallback && !_readyToShow) {
       return SizedBox(width: widget.width, height: widget.height ?? 300);
     }
 
@@ -280,9 +382,9 @@ class _FoodPin3DViewerState extends State<FoodPin3DViewer> {
         children: [
           Opacity(
             opacity: _readyToShow ? 1 : 0,
-            child: WebViewWidget(controller: controller),
+            child: _buildWebView(controller),
           ),
-          if (_loadError != null)
+          if (_loadError != null && !widget.suppressFlutterFallback)
             ColoredBox(
               color: AppColors.blackElevated,
               child: Center(

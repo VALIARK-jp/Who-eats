@@ -6,6 +6,7 @@ type PushEventType =
   | 'comment'
   | 'friend_request'
   | 'friend_accepted'
+  | 'post_reminder'
   | 'test';
 
 interface PushRequestBody {
@@ -14,6 +15,8 @@ interface PushRequestBody {
   post_id?: string;
   comment_id?: string;
   friend_id?: string;
+  title?: string;
+  body?: string;
 }
 
 function json(status: number, body: Record<string, unknown>) {
@@ -100,7 +103,15 @@ function tokenPrefix(token: string) {
   return token.length <= 12 ? token : `${token.slice(0, 12)}...`;
 }
 
-function buildNotification(eventType: PushEventType, actorName: string) {
+function buildNotification(
+  eventType: PushEventType,
+  actorName: string,
+  overrides?: { title?: string; body?: string },
+) {
+  if (overrides?.title && overrides?.body) {
+    return { title: overrides.title, body: overrides.body };
+  }
+
   switch (eventType) {
     case 'like':
       return {
@@ -121,6 +132,12 @@ function buildNotification(eventType: PushEventType, actorName: string) {
       return {
         title: '友達になりました',
         body: `${actorName} さんと友達になりました`,
+      };
+    case 'post_reminder':
+      return {
+        title: overrides?.title ?? '食事の記録を投稿しませんか？',
+        body: overrides?.body ??
+          '最後の投稿から24時間が経ちました。今日の食事を記録してみましょう。',
       };
     case 'test':
       return {
@@ -202,7 +219,10 @@ Deno.serve(async (req) => {
   }
 
   const accessToken = await getGoogleAccessToken(serviceAccountJson);
-  const notification = buildNotification(eventType, actorName);
+  const notification = buildNotification(eventType, actorName, {
+    title: (body.title ?? '').trim() || undefined,
+    body: (body.body ?? '').trim() || undefined,
+  });
   const dataPayload = {
     event_type: eventType,
     post_id: (body.post_id ?? '').toString(),

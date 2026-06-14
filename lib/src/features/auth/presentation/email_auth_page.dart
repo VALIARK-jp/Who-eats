@@ -1,11 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../dashboard/presentation/controllers/app_shell_controller.dart';
 import '../application/auth_service.dart';
 import '../widgets/auth_attribution_notice_block.dart';
 import '../widgets/terms_consent_footer.dart';
@@ -282,10 +280,6 @@ class _EmailAuthPageState extends State<EmailAuthPage>
 
   Future<void> _afterAuthSuccess() async {
     if (!mounted) return;
-    try {
-      await context.read<AppShellController>().initialize();
-    } catch (_) {}
-    if (!mounted) return;
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -365,7 +359,9 @@ class _EmailAuthPageState extends State<EmailAuthPage>
       builder: (ctx) => AlertDialog(
         title: const Text('すでにアカウントがあります'),
         content: const Text(
-          'このメールアドレスは登録済みです。「ログイン」から同じメールとパスワードで続けてください。',
+          'このメールアドレスは Valiark の別アプリで登録済みです。'
+          '「ログイン」から同じメールとパスワードで続け、'
+          'Who eats 用のプロフィールを設定してください。',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('閉じる')),

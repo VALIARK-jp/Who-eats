@@ -38,23 +38,32 @@ class ProfileOnboardingStore {
   }
 
   /// DB の name / user_code を正とする。端末キャッシュや auth metadata だけでは完了扱いにしない。
+  ///
+  /// auth.users にのみ存在し whoeats_users 行が無い（他 Valiark アプリ既存・Who eats 初回）場合も
+  /// false を返し、プロフィール入力を要求する。
   static Future<bool> resolveSetupComplete({
     required String userId,
     String? email,
   }) async {
     try {
-      await syncCurrentUserProfile();
+      try {
+        await syncCurrentUserProfile();
+      } catch (_) {
+        // ensure RPC 失敗時も whoeats_users の有無は SELECT で判断する。
+      }
+
       final row = await Supabase.instance.client
           .from(SupabaseTables.profiles)
           .select('name, user_code')
           .eq('id', userId)
           .maybeSingle();
 
-      if (row != null &&
+      final complete = row != null &&
           !needsProfileSetup(
             name: row['name'] as String?,
             userCode: row['user_code'] as String?,
-          )) {
+          );
+      if (complete) {
         await setCompleted(userId);
         return true;
       }

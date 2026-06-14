@@ -38,6 +38,7 @@ dependencies:
   http: ^1.6.0
   google_maps_flutter: ^2.14.2
   webview_flutter: ^4.13.0
+  webview_flutter_android: ^4.12.0
   flutter_dotenv: ^6.0.1
   supabase_flutter: ^2.12.4
   image_picker: ^1.1.2

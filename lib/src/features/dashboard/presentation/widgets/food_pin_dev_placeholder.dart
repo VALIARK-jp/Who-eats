@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 
-/// Flutter Web（`flutter run -d chrome`）向けの簡易マップピン。
+/// Flutter Web 向け、または Android で WebView 3D が使えないときの簡易マップピン。
 ///
-/// 本番の 3D（WebView + Three.js）は iOS/Android のみ。[FoodPin3DViewer] から利用。
+/// 本番の 3D（WebView + Three.js）は iOS/Android で試行し、Android は失敗時ここへフォールバック。
 class FoodPinDevPlaceholder extends StatelessWidget {
   const FoodPinDevPlaceholder({
     super.key,
