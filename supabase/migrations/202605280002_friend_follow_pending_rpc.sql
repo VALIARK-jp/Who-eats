@@ -20,8 +20,8 @@ as $$
     u.icon_path
   from public.whoeats_follows f
   join public.whoeats_users u on u.id = f.follower_id
-  where f.following_id = auth.uid()
-    and auth.uid() is not null
+  where auth.uid() is not null
+    and f.following_id = auth.uid()
     and u.deleted_at is null
     and not public.is_friends(auth.uid(), u.id)
     and not public.is_blocked(auth.uid(), u.id)
@@ -51,8 +51,8 @@ as $$
     u.icon_path
   from public.whoeats_follows f
   join public.whoeats_users u on u.id = f.following_id
-  where f.follower_id = auth.uid()
-    and auth.uid() is not null
+  where auth.uid() is not null
+    and f.follower_id = auth.uid()
     and u.deleted_at is null
     and not public.is_friends(auth.uid(), u.id)
     and not public.is_blocked(auth.uid(), u.id)
