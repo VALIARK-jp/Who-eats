@@ -576,7 +576,11 @@ class AppShellController extends ChangeNotifier {
     friends = await _getFriendsUseCase();
     incomingFriendRequests = await _getIncomingFriendRequestsUseCase();
     outgoingPendingFollows = await _getOutgoingPendingFollowsUseCase();
-    friendRecommendations = await _getFriendRecommendationsUseCase();
+    final recommendations = await _getFriendRecommendationsUseCase();
+    friendRecommendations = recommendations
+        .where((candidate) =>
+            !incomingFriendRequests.any((incoming) => incoming.id == candidate.id))
+        .toList();
     notifyListeners();
   }
 

@@ -329,7 +329,10 @@ class _AppShellPageState extends State<AppShellPage> {
     );
   }
 
-  void _openFriendListPage(List<FriendCandidate> friends) {
+  void _openFriendListPage(
+    List<FriendCandidate> friends,
+    List<FriendCandidate> incoming,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
@@ -337,6 +340,9 @@ class _AppShellPageState extends State<AppShellPage> {
           body: SafeArea(
             child: _FriendListPage(
               friends: friends,
+              incoming: incoming,
+              onFollow: widget.controller.followUser,
+              onUnfollow: widget.controller.unfollowUser,
               onOpenProfile: _openUserProfile,
             ),
           ),
@@ -418,7 +424,10 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPostDetail: _openPostDetail,
             onOpenProfile: _openUserProfile,
-            onOpenFriendList: () => _openFriendListPage(controller.friends),
+            onOpenFriendList: () => _openFriendListPage(
+              controller.friends,
+              controller.incomingFriendRequests,
+            ),
           ),
         ];
 
@@ -3577,14 +3586,24 @@ class FriendSearchPage extends StatelessWidget {
 }
 
 class _FriendListPage extends StatelessWidget {
-  const _FriendListPage({required this.friends, required this.onOpenProfile});
+  const _FriendListPage({
+    required this.friends,
+    required this.incoming,
+    required this.onFollow,
+    required this.onUnfollow,
+    required this.onOpenProfile,
+  });
 
   final List<FriendCandidate> friends;
+  final List<FriendCandidate> incoming;
+  final Future<bool> Function(String userId) onFollow;
+  final Future<void> Function(String userId) onUnfollow;
   final ValueChanged<String> onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -3606,20 +3625,48 @@ class _FriendListPage extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: friends.isEmpty
-              ? const Center(
-                  child: AppStateView(
-                    type: AppStateType.empty,
-                    title: '友達がいません',
-                    message: 'プロフィールから友達申請を送ってみましょう。',
-                  ),
-                )
-              : FriendGrid(
-                  candidates: friends,
-                  onFriendTap: (c) => onOpenProfile(c.id),
-                ),
-        ),
+        if (incoming.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+              'あなたへの申請',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...incoming.map(
+            (c) => _FriendCandidateRow(
+              candidate: c,
+              onFriendTap: (item) => onOpenProfile(item.id),
+              onFollow: onFollow,
+              onUnfollow: onUnfollow,
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (friends.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+              '友達',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FriendGrid(
+            candidates: friends,
+            onFriendTap: (c) => onOpenProfile(c.id),
+          ),
+        ],
+        if (friends.isEmpty && incoming.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: AppStateView(
+              type: AppStateType.empty,
+              title: '友達がいません',
+              message: 'プロフィールから友達申請を送ってみましょう。',
+            ),
+          ),
       ],
     );
   }
