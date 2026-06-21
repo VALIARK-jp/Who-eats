@@ -204,9 +204,9 @@ class _AppShellPageState extends State<AppShellPage> {
       placeName: post.placeName,
     );
     if (!mounted || ok) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')));
   }
 
   Future<void> _onBottomTabSelected(
@@ -217,9 +217,9 @@ class _AppShellPageState extends State<AppShellPage> {
       final granted = await controller.ensureMapLocationAccess();
       if (!mounted) return;
       if (!granted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')));
         return;
       }
     }
@@ -1588,7 +1588,8 @@ class _BerealFeedCard extends StatelessWidget {
                 customBorder: const CircleBorder(),
                 child: FriendAvatar(
                   displayName: post.userName,
-                  avatarUrl: FriendAvatar.networkUrl(post.userIconUrl) ??
+                  avatarUrl:
+                      FriendAvatar.networkUrl(post.userIconUrl) ??
                       FriendAvatar.networkUrl(
                         controller.socialStateForUser(post.userId)?.avatarUrl,
                       ),
@@ -1850,10 +1851,7 @@ class _PickPlaceConfirmSheet extends StatelessWidget {
 }
 
 class _MapLocationAccessGate extends StatelessWidget {
-  const _MapLocationAccessGate({
-    required this.status,
-    required this.onRequest,
-  });
+  const _MapLocationAccessGate({required this.status, required this.onRequest});
 
   final DeviceLocationAccessStatus status;
   final VoidCallback onRequest;
@@ -1874,8 +1872,7 @@ class _MapLocationAccessGate extends StatelessWidget {
         '端末の設定で位置情報サービスをオンにしてください。',
       DeviceLocationAccessStatus.deniedForever =>
         '設定アプリから Who eats の位置情報を「App使用中のみ許可」に変更してください。',
-      DeviceLocationAccessStatus.denied =>
-        '近くのお店を地図に表示するために、位置情報の利用を許可してください。',
+      DeviceLocationAccessStatus.denied => '近くのお店を地図に表示するために、位置情報の利用を許可してください。',
       _ => 'しばらくしてからもう一度お試しください。',
     };
 
@@ -1886,7 +1883,9 @@ class _MapLocationAccessGate extends StatelessWidget {
       retryLabel: '位置情報を許可',
       onRetry: onRequest,
       secondaryActionLabel: showSettings ? '設定を開く' : null,
-      onSecondaryAction: showSettings ? () => openDeviceLocationSettings() : null,
+      onSecondaryAction: showSettings
+          ? () => openDeviceLocationSettings()
+          : null,
     );
   }
 }
@@ -2880,8 +2879,10 @@ class _MapTabState extends State<_MapTab> {
     final fromVisitor = visitor.avatarUrl?.trim();
     if (fromVisitor != null && fromVisitor.isNotEmpty) return fromVisitor;
 
-    final fromSocial =
-        widget.controller.socialStateForUser(visitor.userId)?.avatarUrl.trim();
+    final fromSocial = widget.controller
+        .socialStateForUser(visitor.userId)
+        ?.avatarUrl
+        .trim();
     if (fromSocial != null && fromSocial.isNotEmpty) return fromSocial;
 
     return null;
@@ -5761,7 +5762,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final placeFuture = (_post.placeGoogleId ?? '').isNotEmpty
         ? controller.getPlaceDetail(_post.placeGoogleId!)
         : Future<PlaceDetail?>.value(null);
-    final iconUrl = FriendAvatar.networkUrl(_post.userIconUrl) ??
+    final iconUrl =
+        FriendAvatar.networkUrl(_post.userIconUrl) ??
         FriendAvatar.networkUrl(
           controller.socialStateForUser(_post.userId)?.avatarUrl,
         );
@@ -5990,23 +5992,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      if ((place?.address ?? '').isNotEmpty)
-                        Text(
-                          place!.address!,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w700,
+                      if (!_post.isHomePost) ...[
+                        const SizedBox(height: 14),
+                        if ((place?.address ?? '').isNotEmpty)
+                          Text(
+                            place!.address!,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+                        const SizedBox(height: 12),
+                        _PostPlaceActionPanel(
+                          place: place,
+                          fallbackPlaceName: _post.placeName,
+                          onOpenWebsite: () => _openWebsite(context, place),
+                          onOpenGoogleMaps: () =>
+                              _openGoogleMaps(context, place),
                         ),
-                      const SizedBox(height: 12),
-                      _PostPlaceActionPanel(
-                        place: place,
-                        fallbackPlaceName: _post.placeName,
-                        onOpenWebsite: () => _openWebsite(context, place),
-                        onOpenGoogleMaps: () => _openGoogleMaps(context, place),
-                      ),
-                      const SizedBox(height: 14),
+                        const SizedBox(height: 14),
+                      ],
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
