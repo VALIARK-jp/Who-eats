@@ -460,7 +460,7 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
               codeBody.startsWith('@') ? codeBody.substring(1) : codeBody,
             );
 
-      await Supabase.instance.client
+      final row = await Supabase.instance.client
           .from(SupabaseTables.profiles)
           .update({
             'name': name,
@@ -468,7 +468,13 @@ class _ProfileEditPageState extends State<_ProfileEditPage> {
             'bio': _bioController.text.trim(),
             'default_visibility': _defaultVisibility,
           })
-          .eq('id', uid);
+          .eq('id', uid)
+          .select('name, user_code')
+          .maybeSingle();
+
+      if (row == null) {
+        throw Exception('プロフィールを保存できませんでした');
+      }
 
       await widget.controller.refreshProfileOverview();
       await widget.controller.invalidateMapPins();

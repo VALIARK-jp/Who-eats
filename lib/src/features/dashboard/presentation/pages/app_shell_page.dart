@@ -1944,7 +1944,9 @@ class _MapTabState extends State<_MapTab> {
   bool _fetchingViewportPins = false;
   bool _pendingViewportRefresh = false;
   Map<String, Offset> _visible3dPinOffsets = {};
-  int _overlayProjectionRevision = 0;
+  int _projectionRequestSeq = 0;
+  bool _isMapCameraMoving = false;
+  Timer? _projectionDebounce;
   bool _searchExpanded = false;
 
   /// マップ静止時は 30fps、パン/ズーム中は 15〜20fps 相当に下げる（HTML 側 `setTargetFps`）。
@@ -1983,6 +1985,7 @@ class _MapTabState extends State<_MapTab> {
     }
     unawaited(_tryFocusPendingPlace());
     unawaited(_tryCenterOnDeviceLocation());
+    _schedule3dOverlayProjection(preloadIcons: true);
   }
 
   void _onGoogleMapsLoadFailureChanged() {
@@ -2018,6 +2021,19 @@ class _MapTabState extends State<_MapTab> {
   }
 
   @override
+  void didUpdateWidget(covariant _MapTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isMapCameraMoving) return;
+    if (_displayTier != MapDisplayConfig.tierIndividualPins) return;
+    if (oldWidget.mapPins == widget.mapPins &&
+        oldWidget.controller.postedPlaceGoogleIds ==
+            widget.controller.postedPlaceGoogleIds) {
+      return;
+    }
+    _schedule3dOverlayProjection(preloadIcons: true);
+  }
+
+  @override
   void dispose() {
     widget.controller.removeListener(_onShellControllerUpdate);
     googleMapsLoadFailedNotifier.removeListener(
@@ -2026,6 +2042,7 @@ class _MapTabState extends State<_MapTab> {
     _pin3dAnimationFps.dispose();
     _searchDebounce?.cancel();
     _viewportRefreshDebounce?.cancel();
+    _projectionDebounce?.cancel();
     _searchController.dispose();
     widget.onSearchExpansionChanged(false);
     super.dispose();
@@ -2119,6 +2136,10 @@ class _MapTabState extends State<_MapTab> {
               _mapController = controller;
               unawaited(_tryCenterOnDeviceLocation());
               unawaited(_tryFocusPendingPlace());
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                _schedule3dOverlayProjection(preloadIcons: true);
+              });
             },
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
@@ -2135,21 +2156,30 @@ class _MapTabState extends State<_MapTab> {
                 setState(() {
                   _displayTier = nextTier;
                   if (nextTier != MapDisplayConfig.tierIndividualPins) {
-                    _overlayProjectionRevision++;
+                    _projectionRequestSeq++;
                     _visible3dPinOffsets = {};
                   }
                 });
               }
-              if (nextTier == MapDisplayConfig.tierIndividualPins) {
-                unawaited(_update3dOverlayPositionsForVisiblePins());
+              // 移動中の getScreenCoordinate は不正確なので 3D を隠し、
+              // オレンジのマイクロドットだけ表示する。
+              if (!_isMapCameraMoving) {
+                _isMapCameraMoving = true;
+                if (_visible3dPinOffsets.isNotEmpty) {
+                  setState(() => _visible3dPinOffsets = {});
+                }
               }
             },
             onCameraIdle: () async {
+              _isMapCameraMoving = false;
               if (_pin3dAnimationFps.value != _pin3dFpsMapIdle) {
                 _pin3dAnimationFps.value = _pin3dFpsMapIdle;
               }
+              // カメラ停止直後は投影がずれることがあるので少し待つ。
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+              if (!mounted || _isMapCameraMoving) return;
               if (_displayTier == MapDisplayConfig.tierIndividualPins) {
-                await _update3dOverlayPositionsForVisiblePins();
+                _schedule3dOverlayProjection(preloadIcons: true);
               }
               _scheduleViewportRefresh();
             },
@@ -2657,7 +2687,7 @@ class _MapTabState extends State<_MapTab> {
         boundsMinLng: boundsMinLng,
         boundsMaxLng: boundsMaxLng,
       );
-      await _update3dOverlayPositionsForVisiblePins();
+      _schedule3dOverlayProjection(preloadIcons: true);
     } finally {
       _fetchingViewportPins = false;
       if (_pendingViewportRefresh) {
@@ -2675,7 +2705,51 @@ class _MapTabState extends State<_MapTab> {
     });
   }
 
-  Future<void> _update3dOverlayPositionsForVisiblePins() async {
+  void _schedule3dOverlayProjection({required bool preloadIcons}) {
+    _projectionDebounce?.cancel();
+    _projectionDebounce = Timer(const Duration(milliseconds: 80), () {
+      if (!mounted) return;
+      unawaited(
+        _update3dOverlayPositionsForVisiblePins(preloadIcons: preloadIcons),
+      );
+    });
+  }
+
+  Offset? _mapPointToOverlayOffset(
+    ScreenCoordinate point,
+    Size viewSize,
+    double devicePixelRatio,
+  ) {
+    var x = point.x.toDouble();
+    var y = point.y.toDouble();
+    // iOS の GMSMapView は論理 pt だが、端末によっては物理 px が返ることがある。
+    if (x > viewSize.width + 4 || y > viewSize.height + 4) {
+      x /= devicePixelRatio;
+      y /= devicePixelRatio;
+    }
+    const margin = 220.0;
+    if (x < -margin ||
+        y < -margin ||
+        x > viewSize.width + margin ||
+        y > viewSize.height + margin) {
+      return null;
+    }
+    return Offset(x, y);
+  }
+
+  bool _shouldApplyProjectionUpdate(int requestId) {
+    return mounted &&
+        !_isMapCameraMoving &&
+        _displayTier == MapDisplayConfig.tierIndividualPins &&
+        MapDisplayConfig.tierForZoom(_lastZoom) ==
+            MapDisplayConfig.tierIndividualPins &&
+        requestId == _projectionRequestSeq;
+  }
+
+  Future<void> _update3dOverlayPositionsForVisiblePins({
+    bool preloadIcons = true,
+  }) async {
+    if (_isMapCameraMoving) return;
     if (_displayTier != MapDisplayConfig.tierIndividualPins) {
       if (!mounted || _visible3dPinOffsets.isEmpty) return;
       setState(() => _visible3dPinOffsets = {});
@@ -2696,50 +2770,62 @@ class _MapTabState extends State<_MapTab> {
       return;
     }
 
-    final revision = ++_overlayProjectionRevision;
+    final viewSize = MediaQuery.sizeOf(context);
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
     final nextOffsets = <String, Offset>{};
     final postedIds = widget.controller.postedPlaceGoogleIds;
     try {
       for (int i = 0; i < pins.length; i++) {
         final pin = pins[i];
+        if (!_isPostedPin(pin, postedIds)) continue;
+
         final latLng = _latLngFor(pin, i);
         final point = await controller.getScreenCoordinate(latLng);
-        nextOffsets[pin.id] = Offset(point.x.toDouble(), point.y.toDouble());
-      }
-
-      if (_displayTier == MapDisplayConfig.tierIndividualPins) {
-        final iconUrls = <String>[];
-        for (final pin in pins) {
-          if (!nextOffsets.containsKey(pin.id)) continue;
-          if (!_isPostedPin(pin, postedIds)) continue;
-          final iconUrl = _resolveMapPinIconUrl(pin);
-          if (iconUrl != null) iconUrls.add(iconUrl);
+        final offset = _mapPointToOverlayOffset(
+          point,
+          viewSize,
+          devicePixelRatio,
+        );
+        if (offset != null) {
+          nextOffsets[pin.id] = offset;
         }
-        await MapPinIconPreloader.preloadAll(iconUrls);
       }
 
-      if (!mounted) return;
-      if (_displayTier != MapDisplayConfig.tierIndividualPins ||
-          MapDisplayConfig.tierForZoom(_lastZoom) !=
-              MapDisplayConfig.tierIndividualPins) {
-        if (_visible3dPinOffsets.isNotEmpty) {
-          setState(() => _visible3dPinOffsets = {});
+      if (nextOffsets.isEmpty) {
+        if (kDebugMode) {
+          debugPrint(
+            '[MapTab] 3D overlay projection produced no on-screen posted pins '
+            '(pins=${pins.length}, postedIds=${postedIds.length})',
+          );
         }
         return;
       }
+
+      final requestId = ++_projectionRequestSeq;
+      if (!_shouldApplyProjectionUpdate(requestId)) return;
+
       setState(() {
-        if (revision != _overlayProjectionRevision) return;
+        if (!_shouldApplyProjectionUpdate(requestId)) return;
         _visible3dPinOffsets = nextOffsets;
       });
+
+      if (!preloadIcons) return;
+
+      final iconUrls = <String>[];
+      for (final pin in pins) {
+        if (!nextOffsets.containsKey(pin.id)) continue;
+        final iconUrl = _resolveMapPinIconUrl(pin);
+        if (iconUrl != null) iconUrls.add(iconUrl);
+      }
+      if (iconUrls.isEmpty) return;
+
+      await MapPinIconPreloader.preloadAll(iconUrls);
+      if (!_shouldApplyProjectionUpdate(requestId)) return;
+      setState(() {});
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[MapTab] getScreenCoordinate failed: $e\n$st');
       }
-      if (!mounted) return;
-      setState(() {
-        if (revision != _overlayProjectionRevision) return;
-        _visible3dPinOffsets = {};
-      });
     }
   }
 
@@ -2836,15 +2922,13 @@ class _MapTabState extends State<_MapTab> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(18),
                     child: FoodPin3DViewer(
-                      key: ValueKey(
-                        'map-3d-${pin.id}-posted:$isPostedPin-'
-                        'icon:${iconUrl ?? ''}',
-                      ),
+                      key: ValueKey('map-3d-${pin.id}-posted:$isPostedPin'),
                       width: 150,
                       height: 150,
                       assetPath: pinAssetPath,
                       initialIconUrl: iconUrl,
                       webviewBackground: Colors.transparent,
+                      suppressFlutterFallback: true,
                       animationFpsListenable: _pin3dAnimationFps,
                     ),
                   ),
@@ -2869,24 +2953,17 @@ class _MapTabState extends State<_MapTab> {
 
   Set<Marker> _buildMapMarkers(BuildContext context, List<MapPin> pins) {
     if (_displayTier == MapDisplayConfig.tierIndividualPins) {
+      final postedIds = widget.controller.postedPlaceGoogleIds;
       return {
         for (int i = 0; i < pins.length; i++)
           Marker(
             markerId: MarkerId(pins[i].id),
             position: _latLngFor(pins[i], i),
-            icon: _isPostedPin(pins[i], widget.controller.postedPlaceGoogleIds)
-                ? (_visitedMarkerIcon ??
-                      BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueOrange,
-                      ))
-                : (_unvisitedMarkerIcon ??
-                      BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueAzure,
-                      )),
-            zIndexInt:
-                _isPostedPin(pins[i], widget.controller.postedPlaceGoogleIds)
-                ? 1
-                : 0,
+            icon: _markerIconForIndividualPin(
+              pin: pins[i],
+              postedIds: postedIds,
+            ),
+            zIndexInt: _isPostedPin(pins[i], postedIds) ? 1 : 0,
             onTap: () async => _openMapBottomSheet(context, pins[i]),
           ),
       };
@@ -2981,6 +3058,19 @@ class _MapTabState extends State<_MapTab> {
     if (value <= 20) return 20;
     if (value <= 60) return 60;
     return 99;
+  }
+
+  BitmapDescriptor _markerIconForIndividualPin({
+    required MapPin pin,
+    required Set<String> postedIds,
+  }) {
+    final isPosted = _isPostedPin(pin, postedIds);
+    if (isPosted) {
+      return _visitedMarkerIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+    }
+    return _unvisitedMarkerIcon ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
   }
 
   Future<void> _prepareMarkerIcons() async {

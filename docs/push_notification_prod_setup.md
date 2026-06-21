@@ -56,3 +56,46 @@ supabase secrets set \
 2. 端末トークンが `whoeats_device_push_tokens` に登録されることを確認する
 3. Supabase の `send-push` を叩いて通知が届くことを確認する
 4. iOS は実機で APNs 経由の到達を確認する
+
+## 5. 24時間投稿リマインド（`send-post-reminders`）
+
+最終投稿から24時間経過したユーザーへ、友達・公開ユーザーの最新投稿者名を含む push を送る。
+
+- Edge Function: `send-post-reminders`
+- DB: `202606180001_post_reminder_push.sql`（`last_posted_at` / RPC）
+- 認証: `CRON_SECRET` または service role key（`x-cron-secret` ヘッダー可）
+
+### secrets
+
+`send-push` と同じ FCM secrets に加え、任意で cron 用 secret を設定する。
+
+```bash
+supabase secrets set CRON_SECRET='<random-secret>'
+```
+
+### デプロイ
+
+```bash
+./scripts/valiark-prod-supabase-setup.sh functions
+```
+
+`send-post-reminders` は JWT 検証なし（`--no-verify-jwt`）。`CRON_SECRET` または service role で保護する。
+
+### 定期実行（1時間ごと推奨）
+
+Supabase Dashboard → Edge Functions → `send-post-reminders` → Schedules で cron を設定する。
+
+- Schedule: `0 * * * *`（毎時0分）
+- HTTP method: POST
+- Headers: `x-cron-secret: <CRON_SECRET>`
+
+手動テスト:
+
+```bash
+curl -X POST "https://<project>.supabase.co/functions/v1/send-post-reminders" \
+  -H "x-cron-secret: <CRON_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 10}'
+```
+
+dev / prod 両方で migration を push したうえで、Functions と Schedule をそれぞれ設定する。

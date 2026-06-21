@@ -131,7 +131,7 @@ class PushNotificationService {
   static const String _channelId = 'whoeats_notifications';
   static const String _channelName = 'Who eats notifications';
   static const String _channelDescription =
-      'Like/comment/friend request push notifications';
+      'Like/comment/friend request/post reminder push notifications';
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();

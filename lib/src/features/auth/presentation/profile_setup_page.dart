@@ -19,7 +19,7 @@ import '../application/profile_onboarding_store.dart';
 class ProfileSetupPage extends StatefulWidget {
   const ProfileSetupPage({super.key, required this.onComplete});
 
-  final VoidCallback onComplete;
+  final Future<void> Function() onComplete;
 
   @override
   State<ProfileSetupPage> createState() => _ProfileSetupPageState();
@@ -154,31 +154,30 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         iconPath = await ProfileIconService().uploadAndSaveProfileIcon(
           _pickedIcon!,
         );
-      } else if (_remoteIconUrl != null && _remoteIconUrl!.isNotEmpty) {
-        iconPath = _remoteIconUrl;
       }
 
-      final payload = <String, dynamic>{
-        'name': name,
-        'user_code': userCode,
-        'bio': bio.isEmpty ? null : bio,
-      };
-      if (iconPath != null && iconPath.isNotEmpty) {
-        payload['icon_path'] = iconPath;
+      await saveWhoEatsProfileFields(
+        userId: user.id,
+        email: user.email ?? '',
+        name: name,
+        userCode: userCode,
+        bio: bio,
+        iconPath: iconPath,
+      );
+
+      final verified = await ProfileOnboardingStore.resolveSetupComplete(
+        userId: user.id,
+        email: user.email,
+      );
+      if (!verified) {
+        throw Exception('プロフィールを保存できませんでした');
       }
-
-      await Supabase.instance.client
-          .from(SupabaseTables.profiles)
-          .update(payload)
-          .eq('id', user.id);
-
-      await ProfileOnboardingStore.setCompleted(user.id);
 
       if (mounted) {
         try {
-          await context.read<AppShellController>().initialize();
+          await context.read<AppShellController>().refreshProfileOverview();
         } catch (_) {}
-        widget.onComplete();
+        await widget.onComplete();
       }
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -191,16 +190,29 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       }
       setState(() {
         _submitting = false;
-        _error = '保存に失敗しました。もう一度お試しください';
+        _error = _profileSaveErrorMessage(e);
       });
     } catch (e) {
       if (mounted) {
         setState(() {
           _submitting = false;
-          _error = '保存に失敗しました。もう一度お試しください';
+          _error = _profileSaveErrorMessage(e);
         });
       }
     }
+  }
+
+  String _profileSaveErrorMessage(Object e) {
+    if (e is PostgrestException) {
+      final msg = e.message.trim();
+      if (msg.contains('invalid user_code')) {
+        return 'ユーザーコードの形式が正しくありません';
+      }
+      if (msg.isNotEmpty) return msg;
+    }
+    final text = e.toString().replaceFirst('Exception: ', '');
+    if (text.contains('プロフィールを保存できませんでした')) return text;
+    return '保存に失敗しました。通信環境を確認してもう一度お試しください';
   }
 
   @override
@@ -219,7 +231,8 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'ユーザーネームとユーザーコードは必須です。アイコンと自己紹介は任意です。',
+              'Who eats 用のユーザーネームとユーザーコードを設定してください。'
+              '他の Valiark アプリのアカウントでログインした場合も、初回のみ必要です。',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: AppColors.textSubtle,
                 height: 1.45,
