@@ -330,6 +330,7 @@ class _AppShellPageState extends State<AppShellPage> {
   }
 
   void _openFriendListPage(
+    AppShellController controller,
     List<FriendCandidate> friends,
     List<FriendCandidate> incoming,
   ) {
@@ -341,8 +342,8 @@ class _AppShellPageState extends State<AppShellPage> {
             child: _FriendListPage(
               friends: friends,
               incoming: incoming,
-              onFollow: widget.controller.followUser,
-              onUnfollow: widget.controller.unfollowUser,
+              onFollow: controller.followUser,
+              onUnfollow: controller.unfollowUser,
               onOpenProfile: _openUserProfile,
             ),
           ),
@@ -425,6 +426,7 @@ class _AppShellPageState extends State<AppShellPage> {
             onOpenPostDetail: _openPostDetail,
             onOpenProfile: _openUserProfile,
             onOpenFriendList: () => _openFriendListPage(
+              controller,
               controller.friends,
               controller.incomingFriendRequests,
             ),
@@ -817,22 +819,61 @@ class _FeedTab extends StatelessWidget {
     final myPosts = uid == null
         ? const <FeedPost>[]
         : sortedFeed.where((post) => post.userId == uid).toList();
-    final shouldPromptFirstPost = uid != null && myPosts.isEmpty;
-    if (shouldPromptFirstPost) {
+    Widget timelineTabs() => SegmentedTab<FeedTimelineScope>(
+      items: const [
+        SegmentedTabItem(value: FeedTimelineScope.friends, label: '友達'),
+        SegmentedTabItem(value: FeedTimelineScope.near, label: '友達の友達'),
+        SegmentedTabItem(value: FeedTimelineScope.all, label: '全体'),
+      ],
+      selected: controller.feedTimelineScope,
+      onChanged: controller.setFeedTimelineScope,
+    );
+
+    Widget emptyTimelineState({
+      required String title,
+      required String message,
+    }) {
       return Container(
         color: AppColors.black,
-        child: const AppStateView(
-          type: AppStateType.empty,
-          title: 'まずは最初の投稿をしてみよう',
-          message: '自分の投稿が1件できると、投稿フィードが見られるようになります。',
+        child: RefreshIndicator(
+          color: AppColors.orange,
+          backgroundColor: AppColors.blackElevated,
+          onRefresh: controller.refreshFeed,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
+            children: [
+              timelineTabs(),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.42,
+                child: AppStateView(
+                  type: AppStateType.empty,
+                  title: title,
+                  message: message,
+                ),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+
+    final isPublicTimeline =
+        controller.feedTimelineScope == FeedTimelineScope.all;
+    final shouldPromptFirstPost =
+        uid != null && myPosts.isEmpty && !isPublicTimeline;
+    if (shouldPromptFirstPost) {
+      return emptyTimelineState(
+        title: 'まずは最初の投稿をしてみよう',
+        message: '自分の投稿が1件できると、投稿フィードが見られるようになります。',
       );
     }
     final todayMyPosts = _getTodayPosts(myPosts);
     final hasTodayMyPosts = todayMyPosts.isNotEmpty;
-    final featuredPost = hasTodayMyPosts
-        ? todayMyPosts.first
-        : (sortedFeed.isNotEmpty ? sortedFeed.first : null);
+    final featuredPost = hasTodayMyPosts ? todayMyPosts.first : null;
     final swipeableMyPosts = todayMyPosts;
     final remainingPosts = featuredPost == null
         ? sortedFeed
@@ -840,19 +881,16 @@ class _FeedTab extends StatelessWidget {
     final remainingOtherPosts = uid == null
         ? remainingPosts
         : remainingPosts.where((post) => post.userId != uid).toList();
-    final canViewOtherPosts = uid == null || _canViewOtherPosts(myPosts);
+    final canViewOtherPosts =
+        uid == null || isPublicTimeline || _canViewOtherPosts(myPosts);
     final visibleOtherPosts = canViewOtherPosts
         ? remainingOtherPosts
         : const <FeedPost>[];
 
     if (feed.isEmpty) {
-      return Container(
-        color: AppColors.black,
-        child: const AppStateView(
-          type: AppStateType.empty,
-          title: '投稿がまだありません',
-          message: '撮影して、みんなの「おすすめ」を広げよう。',
-        ),
+      return emptyTimelineState(
+        title: '投稿がまだありません',
+        message: '撮影して、みんなの「おすすめ」を広げよう。',
       );
     }
     return Container(
@@ -867,15 +905,7 @@ class _FeedTab extends StatelessWidget {
           ),
           padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
           children: [
-            SegmentedTab<FeedTimelineScope>(
-              items: const [
-                SegmentedTabItem(value: FeedTimelineScope.friends, label: '友達'),
-                SegmentedTabItem(value: FeedTimelineScope.near, label: '友達の友達'),
-                SegmentedTabItem(value: FeedTimelineScope.all, label: '全体'),
-              ],
-              selected: controller.feedTimelineScope,
-              onChanged: controller.setFeedTimelineScope,
-            ),
+            timelineTabs(),
             const SizedBox(height: 20),
             if (hasTodayMyPosts) ...[
               _BerealFeaturedPanel(
