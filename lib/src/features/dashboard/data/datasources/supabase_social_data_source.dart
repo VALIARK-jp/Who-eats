@@ -1367,7 +1367,7 @@ class SupabaseSocialDataSource {
     try {
       final rows = await _client
           .from(SupabaseTables.notifications)
-          .select('id,title,body,created_at,is_read')
+          .select('id,title,body,event_type,actor_user_id,created_at,is_read')
           .eq('recipient_user_id', _uid!)
           .order('created_at', ascending: false)
           .limit(50);
@@ -1379,6 +1379,12 @@ class SupabaseSocialDataSource {
             id: (row['id'] ?? '').toString(),
             title: (row['title'] ?? '').toString(),
             body: (row['body'] ?? '').toString(),
+            eventType: (row['event_type'] ?? '').toString().isEmpty
+                ? null
+                : (row['event_type'] ?? '').toString(),
+            actorUserId: (row['actor_user_id'] ?? '').toString().isEmpty
+                ? null
+                : (row['actor_user_id'] ?? '').toString(),
             createdAt: row['created_at'] == null
                 ? null
                 : DateTime.tryParse(row['created_at'].toString()),

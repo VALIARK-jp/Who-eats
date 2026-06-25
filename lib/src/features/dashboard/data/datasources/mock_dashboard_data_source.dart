@@ -202,16 +202,22 @@ class MockDashboardDataSource {
       id: 'n1',
       title: 'コメントが届きました',
       body: 'haruka さんがあなたの投稿にコメントしました',
+      eventType: 'comment',
+      actorUserId: 'haruka-id',
     ),
     AppNotification(
       id: 'n2',
       title: 'いいねが届きました',
       body: 'yuma_21 さんがあなたの投稿にいいねしました',
+      eventType: 'like',
+      actorUserId: 'yuma-id',
     ),
     AppNotification(
       id: 'n3',
       title: '友達申請が届きました',
       body: 'saya_27 さんから友達申請が届きました',
+      eventType: 'friend_request',
+      actorUserId: 'saya-id',
     ),
   ];
 

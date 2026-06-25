@@ -341,8 +341,8 @@ class _AppShellPageState extends State<AppShellPage> {
             child: _FriendListPage(
               friends: friends,
               incoming: incoming,
-              onFollow: widget.controller.followUser,
-              onUnfollow: widget.controller.unfollowUser,
+              onFollow: (id) => context.read<AppShellController>().followUser(id),
+              onUnfollow: (id) => context.read<AppShellController>().unfollowUser(id),
               onOpenProfile: _openUserProfile,
             ),
           ),
@@ -678,6 +678,7 @@ class _HomePageState extends State<_HomePage> {
                               _showNotificationSheet(
                                 context,
                                 controller.notifications,
+                                widget.onOpenProfile,
                               );
                             },
                             style: IconButton.styleFrom(
@@ -6360,11 +6361,12 @@ class _PhotoGrid extends StatelessWidget {
 void _showNotificationSheet(
   BuildContext context,
   List<AppNotification> notifications,
+  ValueChanged<String>? onOpenProfile,
 ) {
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.blackElevated,
-    builder: (_) => ListView(
+    builder: (sheetContext) => ListView(
       children: [
         const ListTile(
           title: Text('通知', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -6389,11 +6391,57 @@ void _showNotificationSheet(
                   fontWeight: n.isRead ? FontWeight.w500 : FontWeight.w700,
                 ),
               ),
-              subtitle: Text(
-                '${n.body}${n.createdAt != null ? ' ・ ${_formatNotificationTime(n.createdAt!)}' : ''}',
+              subtitle: _buildNotificationSubtitle(
+                sheetContext,
+                n,
+                onOpenProfile,
               ),
             ),
           ),
+      ],
+    ),
+  );
+}
+
+Widget _buildNotificationSubtitle(
+  BuildContext context,
+  AppNotification notification,
+  ValueChanged<String>? onOpenProfile,
+) {
+  final timestamp = notification.createdAt != null
+      ? ' ・ ${_formatNotificationTime(notification.createdAt!)}'
+      : '';
+
+  if (notification.actorUserId == null || onOpenProfile == null) {
+    return Text('${notification.body}$timestamp');
+  }
+
+  final bodyMatch = RegExp(r'^(.+? さん)(.*)').firstMatch(notification.body);
+  if (bodyMatch == null) {
+    return Text('${notification.body}$timestamp');
+  }
+
+  final actorText = bodyMatch.group(1)!;
+  final restText = bodyMatch.group(2)!;
+  return Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(
+          text: actorText,
+          style: const TextStyle(
+            color: Colors.blueAccent,
+            decoration: TextDecoration.underline,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () {
+              Navigator.of(context).pop();
+              onOpenProfile(notification.actorUserId!);
+            },
+        ),
+        TextSpan(
+          text: '$restText$timestamp',
+          style: const TextStyle(color: Colors.white),
+        ),
       ],
     ),
   );
