@@ -204,9 +204,9 @@ class _AppShellPageState extends State<AppShellPage> {
       placeName: post.placeName,
     );
     if (!mounted || ok) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')));
   }
 
   Future<void> _onBottomTabSelected(
@@ -217,9 +217,9 @@ class _AppShellPageState extends State<AppShellPage> {
       final granted = await controller.ensureMapLocationAccess();
       if (!mounted) return;
       if (!granted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('地図を表示するには位置情報の許可が必要です')));
         return;
       }
     }
@@ -329,7 +329,11 @@ class _AppShellPageState extends State<AppShellPage> {
     );
   }
 
-  void _openFriendListPage(List<FriendCandidate> friends) {
+  void _openFriendListPage(
+    AppShellController controller,
+    List<FriendCandidate> friends,
+    List<FriendCandidate> incoming,
+  ) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => Scaffold(
@@ -337,6 +341,9 @@ class _AppShellPageState extends State<AppShellPage> {
           body: SafeArea(
             child: _FriendListPage(
               friends: friends,
+              incoming: incoming,
+              onFollow: controller.followUser,
+              onUnfollow: controller.unfollowUser,
               onOpenProfile: _openUserProfile,
             ),
           ),
@@ -418,7 +425,11 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPostDetail: _openPostDetail,
             onOpenProfile: _openUserProfile,
-            onOpenFriendList: () => _openFriendListPage(controller.friends),
+            onOpenFriendList: () => _openFriendListPage(
+              controller,
+              controller.friends,
+              controller.incomingFriendRequests,
+            ),
           ),
         ];
 
@@ -808,22 +819,61 @@ class _FeedTab extends StatelessWidget {
     final myPosts = uid == null
         ? const <FeedPost>[]
         : sortedFeed.where((post) => post.userId == uid).toList();
-    final shouldPromptFirstPost = uid != null && myPosts.isEmpty;
-    if (shouldPromptFirstPost) {
+    Widget timelineTabs() => SegmentedTab<FeedTimelineScope>(
+      items: const [
+        SegmentedTabItem(value: FeedTimelineScope.friends, label: '友達'),
+        SegmentedTabItem(value: FeedTimelineScope.near, label: '友達の友達'),
+        SegmentedTabItem(value: FeedTimelineScope.all, label: '全体'),
+      ],
+      selected: controller.feedTimelineScope,
+      onChanged: controller.setFeedTimelineScope,
+    );
+
+    Widget emptyTimelineState({
+      required String title,
+      required String message,
+    }) {
       return Container(
         color: AppColors.black,
-        child: const AppStateView(
-          type: AppStateType.empty,
-          title: 'まずは最初の投稿をしてみよう',
-          message: '自分の投稿が1件できると、投稿フィードが見られるようになります。',
+        child: RefreshIndicator(
+          color: AppColors.orange,
+          backgroundColor: AppColors.blackElevated,
+          onRefresh: controller.refreshFeed,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
+            children: [
+              timelineTabs(),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.42,
+                child: AppStateView(
+                  type: AppStateType.empty,
+                  title: title,
+                  message: message,
+                ),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+
+    final isPublicTimeline =
+        controller.feedTimelineScope == FeedTimelineScope.all;
+    final shouldPromptFirstPost =
+        uid != null && myPosts.isEmpty && !isPublicTimeline;
+    if (shouldPromptFirstPost) {
+      return emptyTimelineState(
+        title: 'まずは最初の投稿をしてみよう',
+        message: '自分の投稿が1件できると、投稿フィードが見られるようになります。',
       );
     }
     final todayMyPosts = _getTodayPosts(myPosts);
     final hasTodayMyPosts = todayMyPosts.isNotEmpty;
-    final featuredPost = hasTodayMyPosts
-        ? todayMyPosts.first
-        : (sortedFeed.isNotEmpty ? sortedFeed.first : null);
+    final featuredPost = hasTodayMyPosts ? todayMyPosts.first : null;
     final swipeableMyPosts = todayMyPosts;
     final remainingPosts = featuredPost == null
         ? sortedFeed
@@ -831,19 +881,16 @@ class _FeedTab extends StatelessWidget {
     final remainingOtherPosts = uid == null
         ? remainingPosts
         : remainingPosts.where((post) => post.userId != uid).toList();
-    final canViewOtherPosts = uid == null || _canViewOtherPosts(myPosts);
+    final canViewOtherPosts =
+        uid == null || isPublicTimeline || _canViewOtherPosts(myPosts);
     final visibleOtherPosts = canViewOtherPosts
         ? remainingOtherPosts
         : const <FeedPost>[];
 
     if (feed.isEmpty) {
-      return Container(
-        color: AppColors.black,
-        child: const AppStateView(
-          type: AppStateType.empty,
-          title: '投稿がまだありません',
-          message: '撮影して、みんなの「おすすめ」を広げよう。',
-        ),
+      return emptyTimelineState(
+        title: '投稿がまだありません',
+        message: '撮影して、みんなの「おすすめ」を広げよう。',
       );
     }
     return Container(
@@ -858,15 +905,7 @@ class _FeedTab extends StatelessWidget {
           ),
           padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
           children: [
-            SegmentedTab<FeedTimelineScope>(
-              items: const [
-                SegmentedTabItem(value: FeedTimelineScope.friends, label: '友達'),
-                SegmentedTabItem(value: FeedTimelineScope.near, label: '友達の友達'),
-                SegmentedTabItem(value: FeedTimelineScope.all, label: '全体'),
-              ],
-              selected: controller.feedTimelineScope,
-              onChanged: controller.setFeedTimelineScope,
-            ),
+            timelineTabs(),
             const SizedBox(height: 20),
             if (hasTodayMyPosts) ...[
               _BerealFeaturedPanel(
@@ -1588,7 +1627,8 @@ class _BerealFeedCard extends StatelessWidget {
                 customBorder: const CircleBorder(),
                 child: FriendAvatar(
                   displayName: post.userName,
-                  avatarUrl: FriendAvatar.networkUrl(post.userIconUrl) ??
+                  avatarUrl:
+                      FriendAvatar.networkUrl(post.userIconUrl) ??
                       FriendAvatar.networkUrl(
                         controller.socialStateForUser(post.userId)?.avatarUrl,
                       ),
@@ -1850,10 +1890,7 @@ class _PickPlaceConfirmSheet extends StatelessWidget {
 }
 
 class _MapLocationAccessGate extends StatelessWidget {
-  const _MapLocationAccessGate({
-    required this.status,
-    required this.onRequest,
-  });
+  const _MapLocationAccessGate({required this.status, required this.onRequest});
 
   final DeviceLocationAccessStatus status;
   final VoidCallback onRequest;
@@ -1874,8 +1911,7 @@ class _MapLocationAccessGate extends StatelessWidget {
         '端末の設定で位置情報サービスをオンにしてください。',
       DeviceLocationAccessStatus.deniedForever =>
         '設定アプリから Who eats の位置情報を「App使用中のみ許可」に変更してください。',
-      DeviceLocationAccessStatus.denied =>
-        '近くのお店を地図に表示するために、位置情報の利用を許可してください。',
+      DeviceLocationAccessStatus.denied => '近くのお店を地図に表示するために、位置情報の利用を許可してください。',
       _ => 'しばらくしてからもう一度お試しください。',
     };
 
@@ -1886,7 +1922,9 @@ class _MapLocationAccessGate extends StatelessWidget {
       retryLabel: '位置情報を許可',
       onRetry: onRequest,
       secondaryActionLabel: showSettings ? '設定を開く' : null,
-      onSecondaryAction: showSettings ? () => openDeviceLocationSettings() : null,
+      onSecondaryAction: showSettings
+          ? () => openDeviceLocationSettings()
+          : null,
     );
   }
 }
@@ -2880,8 +2918,10 @@ class _MapTabState extends State<_MapTab> {
     final fromVisitor = visitor.avatarUrl?.trim();
     if (fromVisitor != null && fromVisitor.isNotEmpty) return fromVisitor;
 
-    final fromSocial =
-        widget.controller.socialStateForUser(visitor.userId)?.avatarUrl.trim();
+    final fromSocial = widget.controller
+        .socialStateForUser(visitor.userId)
+        ?.avatarUrl
+        .trim();
     if (fromSocial != null && fromSocial.isNotEmpty) return fromSocial;
 
     return null;
@@ -3576,14 +3616,24 @@ class FriendSearchPage extends StatelessWidget {
 }
 
 class _FriendListPage extends StatelessWidget {
-  const _FriendListPage({required this.friends, required this.onOpenProfile});
+  const _FriendListPage({
+    required this.friends,
+    required this.incoming,
+    required this.onFollow,
+    required this.onUnfollow,
+    required this.onOpenProfile,
+  });
 
   final List<FriendCandidate> friends;
+  final List<FriendCandidate> incoming;
+  final Future<bool> Function(String userId) onFollow;
+  final Future<void> Function(String userId) onUnfollow;
   final ValueChanged<String> onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -3605,20 +3655,48 @@ class _FriendListPage extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
-          child: friends.isEmpty
-              ? const Center(
-                  child: AppStateView(
-                    type: AppStateType.empty,
-                    title: '友達がいません',
-                    message: 'プロフィールから友達申請を送ってみましょう。',
-                  ),
-                )
-              : FriendGrid(
-                  candidates: friends,
-                  onFriendTap: (c) => onOpenProfile(c.id),
-                ),
-        ),
+        if (incoming.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+              'あなたへの申請',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...incoming.map(
+            (c) => _FriendCandidateRow(
+              candidate: c,
+              onFriendTap: (item) => onOpenProfile(item.id),
+              onFollow: onFollow,
+              onUnfollow: onUnfollow,
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (friends.isNotEmpty) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+              '友達',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 10),
+          FriendGrid(
+            candidates: friends,
+            onFriendTap: (c) => onOpenProfile(c.id),
+          ),
+        ],
+        if (friends.isEmpty && incoming.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: AppStateView(
+              type: AppStateType.empty,
+              title: '友達がいません',
+              message: 'プロフィールから友達申請を送ってみましょう。',
+            ),
+          ),
       ],
     );
   }
@@ -5761,7 +5839,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final placeFuture = (_post.placeGoogleId ?? '').isNotEmpty
         ? controller.getPlaceDetail(_post.placeGoogleId!)
         : Future<PlaceDetail?>.value(null);
-    final iconUrl = FriendAvatar.networkUrl(_post.userIconUrl) ??
+    final iconUrl =
+        FriendAvatar.networkUrl(_post.userIconUrl) ??
         FriendAvatar.networkUrl(
           controller.socialStateForUser(_post.userId)?.avatarUrl,
         );
@@ -5990,23 +6069,26 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      if ((place?.address ?? '').isNotEmpty)
-                        Text(
-                          place!.address!,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w700,
+                      if (!_post.isHomePost) ...[
+                        const SizedBox(height: 14),
+                        if ((place?.address ?? '').isNotEmpty)
+                          Text(
+                            place!.address!,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+                        const SizedBox(height: 12),
+                        _PostPlaceActionPanel(
+                          place: place,
+                          fallbackPlaceName: _post.placeName,
+                          onOpenWebsite: () => _openWebsite(context, place),
+                          onOpenGoogleMaps: () =>
+                              _openGoogleMaps(context, place),
                         ),
-                      const SizedBox(height: 12),
-                      _PostPlaceActionPanel(
-                        place: place,
-                        fallbackPlaceName: _post.placeName,
-                        onOpenWebsite: () => _openWebsite(context, place),
-                        onOpenGoogleMaps: () => _openGoogleMaps(context, place),
-                      ),
-                      const SizedBox(height: 14),
+                        const SizedBox(height: 14),
+                      ],
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
