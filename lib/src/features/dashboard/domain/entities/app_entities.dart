@@ -396,6 +396,8 @@ class AppNotification {
     required this.id,
     required this.title,
     required this.body,
+    this.eventType,
+    this.actorUserId,
     this.createdAt,
     this.isRead = false,
   });
@@ -403,6 +405,8 @@ class AppNotification {
   final String id;
   final String title;
   final String body;
+  final String? eventType;
+  final String? actorUserId;
   final DateTime? createdAt;
   final bool isRead;
 
@@ -410,6 +414,8 @@ class AppNotification {
     String? id,
     String? title,
     String? body,
+    String? eventType,
+    String? actorUserId,
     DateTime? createdAt,
     bool? isRead,
   }) {
@@ -417,6 +423,8 @@ class AppNotification {
       id: id ?? this.id,
       title: title ?? this.title,
       body: body ?? this.body,
+      eventType: eventType ?? this.eventType,
+      actorUserId: actorUserId ?? this.actorUserId,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
     );
