@@ -39,5 +39,5 @@ else
 fi
 
 "$ROOT/scripts/ios_google_service_info.sh" prod
-sanitize_env_file "$BACKUP_ENV" .env
-flutter run "$@"
+sanitize_env_file "$ENV_PROD" .env
+flutter run --dart-define-from-file="$ENV_PROD" "$@"
