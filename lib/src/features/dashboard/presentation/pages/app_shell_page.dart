@@ -12,17 +12,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/location/device_location.dart';
+import '../../../../core/map/prefecture_bounds.dart';
 import '../../../../core/user/user_code_format.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/web/google_maps_loader.dart';
 import '../../../auth/presentation/login_page.dart';
 import '../../../auth/presentation/signup_page.dart';
 import '../../../../core/supabase/post_submit_service.dart';
+import '../../../../core/format/yen_format.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/post_visibility.dart';
 import '../controllers/app_shell_controller.dart';
 import '../map/map_display_config.dart';
+import '../map/map_choropleth_helper.dart';
 import '../widgets/floating_bottom_nav.dart';
 import '../widgets/signed_in_gate_overlay.dart';
 import '../widgets/friend_avatar_stack.dart';
@@ -178,6 +181,22 @@ class _AppShellPageState extends State<AppShellPage> {
     setState(() => _activeUserProfileId = userId);
   }
 
+  void _pushUserProfileRoute(
+    BuildContext navigatorContext,
+    AppShellController controller,
+    String userId,
+  ) {
+    Navigator.of(navigatorContext).push(
+      MaterialPageRoute<void>(
+        builder: (profileContext) => UserProfilePage(
+          userId: userId,
+          controller: controller,
+          onClose: () => Navigator.of(profileContext).pop(),
+        ),
+      ),
+    );
+  }
+
   void _closeUserProfile() {
     if (_activeUserProfileId == null) return;
     setState(() => _activeUserProfileId = null);
@@ -310,7 +329,7 @@ class _AppShellPageState extends State<AppShellPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => Scaffold(
+        builder: (friendsContext) => Scaffold(
           backgroundColor: AppColors.black,
           body: Consumer<AppShellController>(
             builder: (_, ctrl, child) => _FriendsPage(
@@ -321,7 +340,8 @@ class _AppShellPageState extends State<AppShellPage> {
               recommendations: ctrl.friendRecommendations,
               onFollow: ctrl.followUser,
               onUnfollow: ctrl.unfollowUser,
-              onOpenProfile: _openUserProfile,
+              onOpenProfile: (userId) =>
+                  _pushUserProfileRoute(friendsContext, ctrl, userId),
             ),
           ),
         ),
@@ -336,7 +356,7 @@ class _AppShellPageState extends State<AppShellPage> {
   ) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => Scaffold(
+        builder: (friendsContext) => Scaffold(
           backgroundColor: AppColors.black,
           body: SafeArea(
             child: _FriendListPage(
@@ -344,7 +364,8 @@ class _AppShellPageState extends State<AppShellPage> {
               incoming: incoming,
               onFollow: controller.followUser,
               onUnfollow: controller.unfollowUser,
-              onOpenProfile: _openUserProfile,
+              onOpenProfile: (userId) =>
+                  _pushUserProfileRoute(friendsContext, controller, userId),
             ),
           ),
         ),
@@ -1034,6 +1055,17 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
   bool _savingCaption = false;
   int _olderPostIndex = 0;
 
+  FeedPost get _visiblePost {
+    if (widget.myPosts.isEmpty) return widget.post;
+    final index = _olderPostIndex.clamp(0, widget.myPosts.length - 1);
+    return widget.myPosts[index];
+  }
+
+  FeedPost get _resolvedPost =>
+      widget.controller.feedPostById(_visiblePost.id) ?? _visiblePost;
+
+  String get _captionText => _resolvedPost.caption.trim();
+
   @override
   void initState() {
     super.initState();
@@ -1044,8 +1076,11 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
   @override
   void didUpdateWidget(covariant _BerealFeaturedPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_captionEditorOpen && oldWidget.post.caption != widget.post.caption) {
-      _captionController.text = widget.post.caption;
+    if (!_captionEditorOpen) {
+      final caption = _resolvedPost.caption;
+      if (_captionController.text != caption) {
+        _captionController.text = caption;
+      }
     }
     if (oldWidget.myPosts.length != widget.myPosts.length ||
         (widget.myPosts.isNotEmpty &&
@@ -1071,7 +1106,7 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
       _captionFocusNode.requestFocus();
       return;
     }
-    _captionController.text = widget.post.caption;
+    _captionController.text = _resolvedPost.caption;
     setState(() => _captionEditorOpen = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _captionFocusNode.requestFocus();
@@ -1089,7 +1124,7 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
     final caption = _captionController.text.trim();
     setState(() => _savingCaption = true);
     try {
-      await widget.controller.updatePostCaption(widget.post, caption);
+      await widget.controller.updatePostCaption(_resolvedPost, caption);
       _closeCaptionEditor();
     } catch (e) {
       if (!mounted) return;
@@ -1099,10 +1134,14 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
     }
   }
 
-  Widget _postImage({required double aspectRatio}) {
+  Widget _postImage({
+    required FeedPost post,
+    required double aspectRatio,
+    bool showRatingOverlay = false,
+  }) {
     final hasNetwork =
-        widget.post.imageUrl.startsWith('http://') ||
-        widget.post.imageUrl.startsWith('https://');
+        post.imageUrl.startsWith('http://') ||
+        post.imageUrl.startsWith('https://');
     return InkWell(
       onTap: widget.onTap,
       borderRadius: BorderRadius.circular(20),
@@ -1110,22 +1149,33 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
         borderRadius: BorderRadius.circular(20),
         child: AspectRatio(
           aspectRatio: aspectRatio,
-          child: hasNetwork
-              ? Image.network(
-                  widget.post.imageUrl,
-                  cacheWidth: 1200,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: AppColors.cardElevated,
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.image_outlined),
-                  ),
-                )
-              : Container(
-                  color: AppColors.cardElevated,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.image_outlined),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              hasNetwork
+                  ? Image.network(
+                      post.imageUrl,
+                      cacheWidth: 1200,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        color: AppColors.cardElevated,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.image_outlined),
+                      ),
+                    )
+                  : Container(
+                      color: AppColors.cardElevated,
+                      alignment: Alignment.center,
+                      child: const Icon(Icons.image_outlined),
+                    ),
+              if (showRatingOverlay && post.rating != null)
+                Positioned(
+                  left: 12,
+                  bottom: 12,
+                  child: _FiveStarRating(value: post.rating),
                 ),
+            ],
+          ),
         ),
       ),
     );
@@ -1133,90 +1183,111 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final timeLabel = widget.post.createdAt == null
+    final timeLabel = _visiblePost.createdAt == null
         ? 'たった今'
-        : _BerealFeedCard.formatTime(widget.post.createdAt!);
+        : _BerealFeedCard.formatTime(_visiblePost.createdAt!);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.myPosts.length == 1)
-          Center(
-            child: SizedBox(
-              width: MediaQuery.sizeOf(context).width * 0.62,
-              child: _postImage(aspectRatio: 0.86),
-            ),
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        Center(
+          child: SizedBox(
+            width: MediaQuery.sizeOf(context).width * 0.62,
+            child: widget.myPosts.length == 1
+                ? ListenableBuilder(
+                    listenable: widget.controller,
+                    builder: (context, _) {
+                      final post = _resolvedPost;
+                      return _postImage(
+                        post: post,
+                        aspectRatio: 0.86,
+                        showRatingOverlay: true,
+                      );
+                    },
+                  )
+                : AspectRatio(
+                    aspectRatio: 0.86,
+                    child: PageView.builder(
+                      controller: _olderPostsController,
+                      itemCount: widget.myPosts.length,
+                      onPageChanged: (index) {
+                        setState(() {
+                          _olderPostIndex = index;
+                          if (!_captionEditorOpen) {
+                            final post =
+                                widget.controller.feedPostById(
+                                  widget.myPosts[index].id,
+                                ) ??
+                                widget.myPosts[index];
+                            _captionController.text = post.caption;
+                          }
+                        });
+                      },
+                      itemBuilder: (context, index) {
+                        final post =
+                            widget.controller.feedPostById(
+                              widget.myPosts[index].id,
+                            ) ??
+                            widget.myPosts[index];
+                        return _PastPostPreview(
+                          post: post,
+                          onTap: () => widget.onTapPastPost(post),
+                        );
+                      },
+                    ),
+                  ),
+          ),
+        ),
+        if (widget.myPosts.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AspectRatio(
-                aspectRatio: 0.86,
-                child: PageView.builder(
-                  controller: _olderPostsController,
-                  itemCount: widget.myPosts.length,
-                  onPageChanged: (index) {
-                    setState(() => _olderPostIndex = index);
-                  },
-                  itemBuilder: (context, index) {
-                    final post = widget.myPosts[index];
-                    return _PastPostPreview(
-                      post: post,
-                      onTap: () => widget.onTapPastPost(post),
-                    );
-                  },
+              const Icon(
+                Icons.swipe_rounded,
+                size: 14,
+                color: Colors.white38,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '写真を横にスワイプして確認 (${_olderPostIndex + 1}/${widget.myPosts.length})',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              if (widget.myPosts.length > 1) ...[
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.swipe_rounded,
-                      size: 14,
-                      color: Colors.white38,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '写真を横にスワイプして確認 (${_olderPostIndex + 1}/${widget.myPosts.length})',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
-        const SizedBox(height: 18),
-        TextButton(
-          onPressed: _openCaptionEditor,
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(0, 0),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            alignment: Alignment.centerLeft,
-          ),
-          child: Text(
-            widget.post.caption.trim().isEmpty
-                ? '一言を追加...'
-                : widget.post.caption,
-            style: TextStyle(
-              fontSize: widget.post.caption.trim().isEmpty ? 16 : 18,
-              fontWeight: FontWeight.w800,
-              color: widget.post.caption.trim().isEmpty
-                  ? AppColors.orangeHighlight
-                  : Colors.white,
-              decoration: widget.post.caption.trim().isEmpty
-                  ? TextDecoration.underline
-                  : TextDecoration.none,
-              decorationColor: AppColors.orangeHighlight,
-            ),
-          ),
+        ],
+        const SizedBox(height: 10),
+        ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) {
+            final caption = _captionText;
+            final isEmpty = caption.isEmpty;
+            return TextButton(
+              onPressed: _openCaptionEditor,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                alignment: Alignment.centerLeft,
+              ),
+              child: Text(
+                isEmpty ? '一言を追加...' : caption,
+                style: TextStyle(
+                  fontSize: isEmpty ? 16 : 18,
+                  fontWeight: FontWeight.w800,
+                  color: isEmpty ? AppColors.orangeHighlight : Colors.white,
+                  decoration: isEmpty
+                      ? TextDecoration.underline
+                      : TextDecoration.none,
+                  decorationColor: AppColors.orangeHighlight,
+                ),
+              ),
+            );
+          },
         ),
         AnimatedSize(
           duration: const Duration(milliseconds: 180),
@@ -1291,7 +1362,7 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
           children: [
             Expanded(
               child: Text(
-                '${widget.post.placeName} · $timeLabel',
+                '${_visiblePost.placeName} · $timeLabel',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1301,19 +1372,32 @@ class _BerealFeaturedPanelState extends State<_BerealFeaturedPanel> {
                 ),
               ),
             ),
-            if (!widget.post.isHomePost &&
-                (widget.post.placeGoogleId ?? '').isNotEmpty)
+            if (!_visiblePost.isHomePost &&
+                (_visiblePost.placeGoogleId ?? '').isNotEmpty)
               _MapShortcutButton(onTap: widget.onOpenPlace),
           ],
         ),
         const SizedBox(height: 6),
-        _PostMetaLine(
-          post: widget.post,
-          onLike: widget.currentUserId == null
-              ? null
-              : () => widget.controller.togglePostLikeForPost(widget.post),
+        ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) {
+            return _PostMetaLine(
+              post: _resolvedPost,
+              onLike: widget.currentUserId == null
+                  ? null
+                  : () => widget.controller.togglePostLikeForPost(_resolvedPost),
+            );
+          },
         ),
-        _LatestCommentLine(post: widget.post, onTap: widget.onTap),
+        ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) {
+            return _LatestCommentLine(
+              post: _resolvedPost,
+              onTap: widget.onTap,
+            );
+          },
+        ),
       ],
     );
   }
@@ -1360,15 +1444,17 @@ class _FiveStarRating extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rating = (value ?? 0).clamp(0, 5);
+    final rating = value;
+    if (rating == null || rating < 1) return const SizedBox.shrink();
+    final clamped = rating.clamp(1, 5);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 1; i <= 5; i++)
           Icon(
-            i <= rating ? Icons.star_rounded : Icons.star_border_rounded,
+            i <= clamped ? Icons.star_rounded : Icons.star_border_rounded,
             size: 17,
-            color: i <= rating
+            color: i <= clamped
                 ? AppColors.orangeHighlight
                 : Colors.white.withValues(alpha: 0.36),
           ),
@@ -1552,25 +1638,36 @@ class _PastPostPreview extends StatelessWidget {
             Positioned(
               left: 12,
               bottom: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.black.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
+              right: 12,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: Text(
+                      '自分の過去投稿 · $label',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
-                child: Text(
-                  '自分の過去投稿 · $label',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                  if (post.rating != null) ...[
+                    const SizedBox(height: 6),
+                    _FiveStarRating(value: post.rating),
+                  ],
+                ],
               ),
             ),
           ],
@@ -1987,6 +2084,9 @@ class _MapTabState extends State<_MapTab> {
   bool _isMapCameraMoving = false;
   Timer? _projectionDebounce;
   bool _searchExpanded = false;
+  final MapChoroplethHelper _choropleth = MapChoroplethHelper();
+  Set<Polygon> _choroplethPolygons = {};
+  int _choroplethRefreshSeq = 0;
 
   /// マップ静止時は 30fps、パン/ズーム中は 15〜20fps 相当に下げる（HTML 側 `setTargetFps`）。
   static const int _pin3dFpsMapIdle = 30;
@@ -1997,6 +2097,8 @@ class _MapTabState extends State<_MapTab> {
 
   bool _didCenterOnDeviceLocation = false;
 
+  bool _didBackfillMunicipalities = false;
+
   @override
   void initState() {
     super.initState();
@@ -2004,8 +2106,16 @@ class _MapTabState extends State<_MapTab> {
     googleMapsLoadFailedNotifier.addListener(_onGoogleMapsLoadFailureChanged);
     _prepareMarkerIcons();
     if (widget.controller.hasMapLocationAccess) {
-      unawaited(widget.controller.ensureMapPinsLoaded());
+      unawaited(_bootstrapMapData());
     }
+  }
+
+  Future<void> _bootstrapMapData() async {
+    await widget.controller.backfillMyPlaceMunicipalitiesIfNeeded();
+    if (!mounted) return;
+    await widget.controller.ensureMapPinsLoaded();
+    if (!mounted) return;
+    _scheduleChoroplethRefresh();
   }
 
   Future<void> _requestMapLocationAccess() async {
@@ -2014,7 +2124,7 @@ class _MapTabState extends State<_MapTab> {
     setState(() {});
     if (!granted) return;
     _didCenterOnDeviceLocation = false;
-    unawaited(widget.controller.ensureMapPinsLoaded());
+    unawaited(_bootstrapMapData());
     unawaited(_tryCenterOnDeviceLocation());
   }
 
@@ -2025,6 +2135,9 @@ class _MapTabState extends State<_MapTab> {
     unawaited(_tryFocusPendingPlace());
     unawaited(_tryCenterOnDeviceLocation());
     _schedule3dOverlayProjection(preloadIcons: true);
+    if (widget.controller.mapPinsLoaded) {
+      _scheduleChoroplethRefresh();
+    }
   }
 
   void _onGoogleMapsLoadFailureChanged() {
@@ -2178,6 +2291,7 @@ class _MapTabState extends State<_MapTab> {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
                 _schedule3dOverlayProjection(preloadIcons: true);
+                _scheduleChoroplethRefresh();
               });
             },
             myLocationEnabled: true,
@@ -2221,8 +2335,10 @@ class _MapTabState extends State<_MapTab> {
                 _schedule3dOverlayProjection(preloadIcons: true);
               }
               _scheduleViewportRefresh();
+              _scheduleChoroplethRefresh();
             },
             markers: _buildMapMarkers(context, pins),
+            polygons: _choroplethPolygons,
           ),
         ),
         if (showEmptyPinsNotice)
@@ -2742,6 +2858,60 @@ class _MapTabState extends State<_MapTab> {
       if (!mounted) return;
       unawaited(_refreshViewportPins());
     });
+  }
+
+  void _scheduleChoroplethRefresh() {
+    unawaited(_refreshChoropleth());
+  }
+
+  Future<void> _refreshChoropleth() async {
+    final seq = ++_choroplethRefreshSeq;
+    final prefCodes = await _prefectureCodesForChoropleth();
+    if (prefCodes.isEmpty) {
+      _choropleth.clear();
+      if (!mounted || seq != _choroplethRefreshSeq) return;
+      setState(() => _choroplethPolygons = {});
+      return;
+    }
+
+    await _choropleth.refresh(
+      prefectureCodes: prefCodes,
+      loadMetrics: widget.controller.loadCityChoroplethMetrics,
+    );
+    if (!mounted || seq != _choroplethRefreshSeq) return;
+    _choropleth.mergeMetricsFromMapPins(widget.mapPins);
+    setState(() {
+      _choroplethPolygons = _choropleth.buildPolygons();
+    });
+  }
+
+  Future<List<String>> _prefectureCodesForChoropleth() async {
+    final map = _mapController;
+    if (map != null) {
+      try {
+        final bounds = await map.getVisibleRegion();
+        final sw = bounds.southwest;
+        final ne = bounds.northeast;
+        final codes = PrefectureBounds.prefectureCodesInBounds(
+          minLat: sw.latitude < ne.latitude ? sw.latitude : ne.latitude,
+          maxLat: sw.latitude > ne.latitude ? sw.latitude : ne.latitude,
+          minLng: sw.longitude < ne.longitude ? sw.longitude : ne.longitude,
+          maxLng: sw.longitude > ne.longitude ? sw.longitude : ne.longitude,
+        );
+        if (codes.isNotEmpty) return codes;
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[MapTab] choropleth bounds failed: $e\n$st');
+        }
+      }
+    }
+
+    final centerCode = PrefectureBounds.prefectureCodeFor(
+      _lastCameraTarget.latitude,
+      _lastCameraTarget.longitude,
+    );
+    if (centerCode != null) return [centerCode];
+    return const [];
   }
 
   void _schedule3dOverlayProjection({required bool preloadIcons}) {
@@ -4156,10 +4326,12 @@ class _RecordPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: CalendarRecordView(
-        summary: summary,
-        loadDayEntries: controller.loadPostsForDay,
-        onOpenPost: _openEntry,
+      child: SizedBox.expand(
+        child: CalendarRecordView(
+          summary: summary,
+          loadDayEntries: controller.loadPostsForDay,
+          onOpenPost: _openEntry,
+        ),
       ),
     );
   }
@@ -4790,6 +4962,7 @@ class PostCreationPage extends StatefulWidget {
 class _PostCreationPageState extends State<PostCreationPage> {
   late final TextEditingController _captionController;
   late final TextEditingController _placeController;
+  late final TextEditingController _priceController;
   late String _postType;
   late String _visibility;
   String? _localImagePath;
@@ -4810,6 +4983,9 @@ class _PostCreationPageState extends State<PostCreationPage> {
     super.initState();
     _captionController = TextEditingController(text: widget.draft.note);
     _placeController = TextEditingController(text: widget.draft.placeName);
+    _priceController = TextEditingController(
+      text: widget.draft.priceYen == null ? '' : '${widget.draft.priceYen}',
+    );
     _localImagePath = widget.draft.localImagePath;
     _photoUrl = widget.draft.photoUrl;
     _selectedPlaceGoogleId = widget.draft.placeGoogleId;
@@ -4818,7 +4994,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
     _selectedPlaceName = widget.draft.placeName;
     _postType = widget.draft.postType;
     _visibility = PostVisibility.normalize(widget.draft.visibility);
-    _rating = widget.draft.rating;
+    _rating = widget.draft.rating ?? 3;
     _companionIds.addAll(widget.draft.companionUserIds);
   }
 
@@ -4827,6 +5003,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
     _placeSearchDebounce?.cancel();
     _captionController.dispose();
     _placeController.dispose();
+    _priceController.dispose();
     super.dispose();
   }
 
@@ -4849,6 +5026,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
       note: _currentCaption(),
       withWho: widget.draft.withWho,
       rating: _rating,
+      priceYen: parseYenInput(_priceController.text),
       companionUserIds: _companionIds.toList(),
       mealGroupId: widget.draft.mealGroupId,
       postType: _postType,
@@ -5103,6 +5281,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
               ? null
               : _captionController.text.trim(),
           rating: _rating,
+          priceYen: parseYenInput(_priceController.text),
           mealGroupId: widget.draft.mealGroupId,
           companionUserIds: _companionIds.toList(),
         );
@@ -5141,132 +5320,180 @@ class _PostCreationPageState extends State<PostCreationPage> {
     final actionAreaHeight = 92.0 + bottomInset;
     final suggestions = widget.controller.placeSuggestions;
     final isRestaurant = _postType == 'restaurant';
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF151517), Color(0xFF09090A)],
+    final orangeBorder = AppColors.orange.withValues(alpha: 0.42);
+    final labelStyle = TextStyle(
+      fontSize: 12,
+      color: AppColors.orangeAccent.withValues(alpha: 0.92),
+      fontWeight: FontWeight.w700,
+    );
+    final segmentedStyle = ButtonStyle(
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return AppColors.orange;
+        return AppColors.blackElevated.withValues(alpha: 0.85);
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) return Colors.black;
+        return AppColors.orangeHighlight;
+      }),
+      side: WidgetStateProperty.all(BorderSide(color: orangeBorder)),
+    );
+    return Theme(
+      data: Theme.of(context).copyWith(
+        sliderTheme: SliderTheme.of(context).copyWith(
+          activeTrackColor: AppColors.orange,
+          inactiveTrackColor: AppColors.orange.withValues(alpha: 0.22),
+          thumbColor: AppColors.orangeAccent,
+          overlayColor: AppColors.orange.withValues(alpha: 0.16),
+        ),
+        chipTheme: ChipTheme.of(context).copyWith(
+          selectedColor: AppColors.orange.withValues(alpha: 0.28),
+          checkmarkColor: AppColors.orangeHighlight,
+          side: BorderSide(color: orangeBorder),
+          labelStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.orangeHighlight,
+            side: BorderSide(color: orangeBorder),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.orange,
+            foregroundColor: Colors.black,
+            disabledBackgroundColor: AppColors.orange.withValues(alpha: 0.35),
+          ),
         ),
       ),
-      child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF151517), Color(0xFF09090A)],
+          ),
         ),
-        child: SizedBox(
-          height:
-              widget.sheetHeight ?? MediaQuery.of(context).size.height * 0.72,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: ListView(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, actionAreaHeight),
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: widget.onClose,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          '投稿を作成',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SizedBox(
+            height:
+                widget.sheetHeight ?? MediaQuery.of(context).size.height * 0.72,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ListView(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, actionAreaHeight),
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              Icons.close,
+                              color: AppColors.orangeAccent.withValues(
+                                alpha: 0.9,
+                              ),
+                            ),
+                            onPressed: widget.onClose,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '種類',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'restaurant', label: Text('外食')),
-                        ButtonSegment(value: 'home', label: Text('自炊')),
-                      ],
-                      selected: {_postType},
-                      onSelectionChanged: (s) {
-                        setState(() => _postType = s.first);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '公開範囲',
-                      style: TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 6),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(
-                          value: PostVisibility.friends,
-                          label: Text('友達'),
-                        ),
-                        ButtonSegment(
-                          value: PostVisibility.near,
-                          label: Text('友達の友達'),
-                        ),
-                        ButtonSegment(
-                          value: PostVisibility.public_,
-                          label: Text('公開'),
-                        ),
-                      ],
-                      selected: {PostVisibility.normalize(_visibility)},
-                      onSelectionChanged: (s) {
-                        setState(
-                          () => _visibility = PostVisibility.normalize(s.first),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      PostVisibility.postEditorDescription(_visibility),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.7),
+                          const SizedBox(width: 4),
+                          const Text(
+                            '投稿を作成',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: SizedBox(
-                        height: 200,
+                      const SizedBox(height: 12),
+                      Text('種類', style: labelStyle),
+                      const SizedBox(height: 6),
+                      SegmentedButton<String>(
+                        style: segmentedStyle,
+                        segments: const [
+                          ButtonSegment(value: 'restaurant', label: Text('外食')),
+                          ButtonSegment(value: 'home', label: Text('自炊')),
+                        ],
+                        selected: {_postType},
+                        onSelectionChanged: (s) {
+                          setState(() => _postType = s.first);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text('公開範囲', style: labelStyle),
+                      const SizedBox(height: 6),
+                      SegmentedButton<String>(
+                        style: segmentedStyle,
+                        segments: const [
+                          ButtonSegment(
+                            value: PostVisibility.friends,
+                            label: Text('友達'),
+                          ),
+                          ButtonSegment(
+                            value: PostVisibility.near,
+                            label: Text('友達の友達'),
+                          ),
+                          ButtonSegment(
+                            value: PostVisibility.public_,
+                            label: Text('公開'),
+                          ),
+                        ],
+                        selected: {PostVisibility.normalize(_visibility)},
+                        onSelectionChanged: (s) {
+                          setState(
+                            () => _visibility = PostVisibility.normalize(s.first),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        PostVisibility.postEditorDescription(_visibility),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.orangeAccent.withValues(alpha: 0.75),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: SizedBox(
+                          height: 200,
+                          width: double.infinity,
+                          child: _localImagePath != null
+                              ? Image.file(
+                                  File(_localImagePath!),
+                                  fit: BoxFit.cover,
+                                )
+                              : (_photoUrl?.isNotEmpty == true
+                                    ? Image.network(_photoUrl!, fit: BoxFit.cover)
+                                    : Container(
+                                        color: AppColors.gray.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Icon(
+                                          Icons.photo_outlined,
+                                          size: 42,
+                                          color: AppColors.orangeAccent.withValues(
+                                            alpha: 0.85,
+                                          ),
+                                        ),
+                                      )),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
                         width: double.infinity,
-                        child: _localImagePath != null
-                            ? Image.file(
-                                File(_localImagePath!),
-                                fit: BoxFit.cover,
-                              )
-                            : (_photoUrl?.isNotEmpty == true
-                                  ? Image.network(_photoUrl!, fit: BoxFit.cover)
-                                  : Container(
-                                      color: AppColors.gray.withValues(
-                                        alpha: 0.35,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: const Icon(
-                                        Icons.photo_outlined,
-                                        size: 42,
-                                        color: Colors.white70,
-                                      ),
-                                    )),
+                        child: OutlinedButton.icon(
+                          onPressed: () => _replaceImage(ImageSource.camera),
+                          icon: const Icon(Icons.photo_camera_outlined),
+                          label: const Text('再撮影'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _replaceImage(ImageSource.camera),
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        label: const Text('再撮影'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (isRestaurant) ...[
+                      const SizedBox(height: 12),
+                      if (isRestaurant) ...[
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -5334,9 +5561,12 @@ class _PostCreationPageState extends State<PostCreationPage> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         '入力か地図選択で店名と位置情報を入れられます。',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.orangeAccent.withValues(alpha: 0.75),
+                        ),
                       ),
                       if (_selectedPlaceGoogleId == null &&
                           _placeController.text.trim().isNotEmpty &&
@@ -5346,7 +5576,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                           decoration: BoxDecoration(
                             color: AppColors.blackElevated,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.white12),
+                            border: Border.all(color: orangeBorder),
                           ),
                           constraints: const BoxConstraints(maxHeight: 180),
                           child: ListView.separated(
@@ -5386,12 +5616,20 @@ class _PostCreationPageState extends State<PostCreationPage> {
                         hintText: '一言を入力...',
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _priceController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '金額（任意）',
+                        hintText: '例: 1280',
+                        prefixText: '¥ ',
+                        helperText: '未入力でも投稿できます',
+                      ),
+                    ),
                     if (AppConfig.hasSupabase) ...[
                       const SizedBox(height: 12),
-                      const Text(
-                        '評価（1〜5）',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
+                      Text('評価（1〜5）', style: labelStyle),
                       Slider(
                         value: (_rating ?? 3).toDouble(),
                         min: 1,
@@ -5401,10 +5639,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                         onChanged: (v) => setState(() => _rating = v.round()),
                       ),
                       if (widget.controller.friends.isNotEmpty) ...[
-                        const Text(
-                          '一緒に食べた友達',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
+                        Text('一緒に食べた友達', style: labelStyle),
                         const SizedBox(height: 6),
                         Wrap(
                           spacing: 8,
@@ -5429,48 +5664,182 @@ class _PostCreationPageState extends State<PostCreationPage> {
                     ],
                   ],
                 ),
-              ),
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 0,
-                child: SafeArea(
-                  top: false,
-                  minimum: const EdgeInsets.only(bottom: 12),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF09090A).withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: SizedBox(
-                        height: 48,
-                        child: FilledButton(
-                          onPressed:
-                              (_submitting ||
-                                  (isRestaurant &&
-                                      _selectedPlaceGoogleId == null))
-                              ? null
-                              : () => _onSubmitPressed(context),
-                          child: _submitting
-                              ? const SizedBox(
-                                  height: 22,
-                                  width: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('投稿する'),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    minimum: const EdgeInsets.only(bottom: 12),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF09090A).withValues(alpha: 0.96),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: orangeBorder),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: SizedBox(
+                          height: 48,
+                          child: FilledButton(
+                            onPressed:
+                                (_submitting ||
+                                    (isRestaurant &&
+                                        _selectedPlaceGoogleId == null))
+                                ? null
+                                : () => _onSubmitPressed(context),
+                            child: _submitting
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.black,
+                                    ),
+                                  )
+                                : const Text('投稿する'),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PostEditResult {
+  const _PostEditResult({
+    required this.caption,
+    required this.rating,
+    required this.priceYen,
+  });
+
+  final String caption;
+  final int rating;
+  final int? priceYen;
+}
+
+class _PostEditBottomSheet extends StatefulWidget {
+  const _PostEditBottomSheet({required this.post});
+
+  final FeedPost post;
+
+  @override
+  State<_PostEditBottomSheet> createState() => _PostEditBottomSheetState();
+}
+
+class _PostEditBottomSheetState extends State<_PostEditBottomSheet> {
+  late final TextEditingController _captionController;
+  late final TextEditingController _priceController;
+  late int _rating;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _captionController = TextEditingController(text: widget.post.caption);
+    _priceController = TextEditingController(
+      text: widget.post.priceYen == null ? '' : '${widget.post.priceYen}',
+    );
+    _rating = widget.post.rating ?? 3;
+  }
+
+  @override
+  void dispose() {
+    _captionController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    Navigator.of(context).pop(
+      _PostEditResult(
+        caption: _captionController.text.trim(),
+        rating: _rating,
+        priceYen: parseYenInput(_priceController.text),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '投稿を編集',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+              ),
+              IconButton(
+                onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _captionController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: '一言',
+              hintText: '一言を入力...',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '金額（任意）',
+              hintText: '例: 1280',
+              prefixText: '¥ ',
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '評価（1〜5）',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
+          ),
+          Slider(
+            value: _rating.toDouble(),
+            min: 1,
+            max: 5,
+            divisions: 4,
+            label: '$_rating',
+            onChanged: _saving ? null : (v) => setState(() => _rating = v.round()),
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('保存する'),
+          ),
+        ],
       ),
     );
   }
@@ -5750,6 +6119,42 @@ class _PostDetailPageState extends State<PostDetailPage> {
     }
   }
 
+  Future<void> _openPostEditor() async {
+    if (_actionBusy || !_isOwnPost) return;
+    final result = await showModalBottomSheet<_PostEditResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.blackElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _PostEditBottomSheet(post: _post),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _actionBusy = true);
+    try {
+      final updated = await controller.updatePostDetails(
+        _post,
+        caption: result.caption,
+        rating: result.rating,
+        priceYen: result.priceYen,
+      );
+      if (!mounted) return;
+      setState(() => _post = updated);
+      widget.onPostUpdated?.call(updated);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('投稿を更新しました')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('更新に失敗しました: $e')));
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   Future<void> _confirmDeletePost() async {
     if (!_isOwnPost || _actionBusy) return;
     final ok = await showDialog<bool>(
@@ -5919,6 +6324,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ),
                       if (_isOwnPost)
                         IconButton(
+                          tooltip: '投稿を編集',
+                          onPressed: _actionBusy ? null : _openPostEditor,
+                          icon: const Icon(
+                            Icons.edit_outlined,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      if (_isOwnPost)
+                        IconButton(
                           tooltip: '投稿を削除',
                           onPressed: _actionBusy ? null : _confirmDeletePost,
                           icon: const Icon(
@@ -5993,102 +6407,62 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               left: 14,
                               right: 14,
                               bottom: 14,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    place?.placeName ?? _post.placeName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 20,
-                                      color: Colors.white,
+                                  if (_post.isHomePost)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.orange.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        '自炊',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 11,
+                                        ),
+                                      ),
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      if (_post.rating != null) ...[
-                                        const Icon(
-                                          Icons.star,
-                                          size: 16,
-                                          color: AppColors.orangeAccent,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '${_post.rating}',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ] else if ((place?.rating ?? 0) > 0) ...[
-                                        const Icon(
-                                          Icons.star,
-                                          size: 16,
-                                          color: AppColors.orangeAccent,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          place!.rating.toStringAsFixed(1),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
-                                      if (_post.isHomePost) ...[
-                                        const SizedBox(width: 10),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.orange.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              999,
-                                            ),
-                                          ),
-                                          child: const Text(
-                                            '自炊',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
+                                  if (_post.priceYen != null) ...[
+                                    if (_post.isHomePost) const SizedBox(width: 10),
+                                    Text(
+                                      formatYen(_post.priceYen),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
+                      if (_post.rating != null) ...[
+                        const SizedBox(height: 8),
+                        _FiveStarRating(value: _post.rating),
+                      ],
                       if (!_post.isHomePost) ...[
-                        const SizedBox(height: 14),
-                        if ((place?.address ?? '').isNotEmpty)
-                          Text(
-                            place!.address!,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        _PostPlaceActionPanel(
-                          place: place,
-                          fallbackPlaceName: _post.placeName,
+                        const SizedBox(height: 10),
+                        _PostPlaceLinksRow(
+                          placeName: place?.placeName ?? _post.placeName,
+                          hasWebsite:
+                              ((place?.websiteUrl ?? '').trim().isNotEmpty) ||
+                              ((place?.googleMapsUrl ?? '').trim().isNotEmpty),
                           onOpenWebsite: () => _openWebsite(context, place),
                           onOpenGoogleMaps: () =>
                               _openGoogleMaps(context, place),
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
                       ],
                       Container(
                         width: double.infinity,
@@ -6221,123 +6595,102 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 }
 
-class _PostPlaceActionPanel extends StatelessWidget {
-  const _PostPlaceActionPanel({
-    required this.place,
-    required this.fallbackPlaceName,
+class _PostPlaceLinksRow extends StatelessWidget {
+  const _PostPlaceLinksRow({
+    required this.placeName,
+    required this.hasWebsite,
     required this.onOpenWebsite,
     required this.onOpenGoogleMaps,
   });
 
-  final PlaceDetail? place;
-  final String fallbackPlaceName;
+  final String placeName;
+  final bool hasWebsite;
   final VoidCallback onOpenWebsite;
   final VoidCallback onOpenGoogleMaps;
 
   @override
   Widget build(BuildContext context) {
-    final websiteHost = _hostLabel(place?.websiteUrl);
-    final openLabel = place?.openNow == null
-        ? null
-        : place!.openNow!
-        ? '営業中'
-        : '営業時間外';
-    final placeName = (place?.placeName ?? fallbackPlaceName).trim();
+    final name = placeName.trim();
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.blackElevated.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.storefront_outlined,
-                size: 18,
-                color: AppColors.orange,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  placeName.isEmpty ? '店舗情報' : placeName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-              if (openLabel != null)
-                Text(
-                  openLabel,
-                  style: TextStyle(
-                    color: place!.openNow!
-                        ? AppColors.orangeHighlight
-                        : Colors.white70,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 12,
-                  ),
-                ),
-            ],
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const Icon(
+          Icons.storefront_outlined,
+          size: 16,
+          color: AppColors.orange,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            name.isEmpty ? '店舗情報' : name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+            ),
           ),
-          if ((place?.address ?? '').isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              place!.address!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.72),
-                fontWeight: FontWeight.w700,
-              ),
+        ),
+        if (hasWebsite) ...[
+          const SizedBox(width: 6),
+          _CompactPlaceButton(
+            icon: Icons.language,
+            label: 'サイト',
+            onTap: onOpenWebsite,
+          ),
+        ],
+        const SizedBox(width: 6),
+        _CompactPlaceButton(
+          icon: Icons.map_outlined,
+          label: '地図',
+          onTap: onOpenGoogleMaps,
+        ),
+      ],
+    );
+  }
+}
+
+class _CompactPlaceButton extends StatelessWidget {
+  const _CompactPlaceButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.orangeHighlight,
+        side: BorderSide(
+          color: AppColors.orange.withValues(alpha: 0.45),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 28),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
             ),
-          ],
-          if (websiteHost != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              websiteHost,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.orangeHighlight,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: onOpenWebsite,
-                  icon: const Icon(Icons.language, size: 17),
-                  label: const Text('店舗サイト'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onOpenGoogleMaps,
-                  icon: const Icon(Icons.map_outlined, size: 17),
-                  label: const Text('地図'),
-                ),
-              ),
-            ],
           ),
         ],
       ),
     );
-  }
-
-  String? _hostLabel(String? raw) {
-    final uri = Uri.tryParse((raw ?? '').trim());
-    final host = uri?.host;
-    if (host == null || host.isEmpty) return null;
-    return host.startsWith('www.') ? host.substring(4) : host;
   }
 }
 

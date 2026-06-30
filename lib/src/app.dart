@@ -120,6 +120,7 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
         searchUsersByCodeUseCase: SearchUsersByCodeUseCase(repository),
         softDeletePostUseCase: SoftDeletePostUseCase(repository),
         updatePostCaptionUseCase: UpdatePostCaptionUseCase(repository),
+        updatePostDetailsUseCase: UpdatePostDetailsUseCase(repository),
         getPostsForDayUseCase: GetPostsForDayUseCase(repository),
         getFeedPostByIdUseCase: GetFeedPostByIdUseCase(repository),
         getUserPublicProfileUseCase: GetUserPublicProfileUseCase(repository),
@@ -139,6 +140,9 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
           repository,
         ),
         createPostDraftUseCase: CreatePostDraftUseCase(repository),
+        getCityChoroplethMetricsUseCase: GetCityChoroplethMetricsUseCase(
+          repository,
+        ),
         getPlaceDetailUseCase: GetPlaceDetailUseCase(repository),
         searchMapPinsUseCase: SearchMapPinsUseCase(repository),
         searchMapPinsAroundUseCase: SearchMapPinsAroundUseCase(repository),

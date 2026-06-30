@@ -54,16 +54,28 @@ Future<void> saveWhoEatsProfileFields({
             : null,
       },
     );
-    if (result is! Map) {
+    final parsed = _parseRpcProfileRow(result);
+    if (parsed == null) {
+      if (kDebugMode) {
+        debugPrint(
+          'saveWhoEatsProfileFields: unexpected RPC result type '
+          '${result.runtimeType}: $result',
+        );
+      }
       throw Exception('プロフィールを保存できませんでした');
     }
-    row = result;
+    row = parsed;
   } on PostgrestException catch (e) {
+    if (kDebugMode) {
+      debugPrint(
+        'saveWhoEatsProfileFields RPC failed: code=${e.code} message=${e.message}',
+      );
+    }
     throw Exception(_rpcFailureMessage(e, 'save_whoeats_profile'));
   }
 
-  final savedName = row['name'] as String?;
-  final savedCode = row['user_code'] as String?;
+  final savedName = row['name']?.toString();
+  final savedCode = row['user_code']?.toString();
   if (ProfileOnboardingStore.needsProfileSetup(
     name: savedName,
     userCode: savedCode,
@@ -72,8 +84,22 @@ Future<void> saveWhoEatsProfileFields({
   }
 }
 
+Map<dynamic, dynamic>? _parseRpcProfileRow(dynamic result) {
+  if (result is Map) return result;
+  if (result is List && result.isNotEmpty) {
+    final first = result.first;
+    if (first is Map) return first;
+  }
+  return null;
+}
+
 String _rpcFailureMessage(PostgrestException e, String functionName) {
   final msg = e.message.trim();
+  if (e.code == '23505' &&
+      (msg.contains('users_email_key') || msg.contains('email'))) {
+    return 'このメールアドレスは別のプロフィールに紐づいています。'
+        'しばらくしてから再度お試しください';
+  }
   if (msg.contains(functionName) ||
       msg.contains('Could not find the function') ||
       e.code == '42883') {

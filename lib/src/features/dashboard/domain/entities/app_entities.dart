@@ -58,6 +58,7 @@ class FeedPost {
     this.isPinnedOnMyProfile = false,
     this.likedByMe = false,
     this.rating,
+    this.priceYen,
     this.createdAt,
     this.postType = 'restaurant',
     this.companionAvatars = const [],
@@ -79,6 +80,7 @@ class FeedPost {
   final bool isPinnedOnMyProfile;
   final bool likedByMe;
   final int? rating;
+  final int? priceYen;
   final DateTime? createdAt;
   final String postType;
   final List<String> companionAvatars;
@@ -94,6 +96,8 @@ class FeedPost {
     int? likes,
     int? comments,
     int? rating,
+    int? priceYen,
+    bool setPriceYen = false,
     DateTime? createdAt,
     String? postType,
     List<String>? companionAvatars,
@@ -117,6 +121,7 @@ class FeedPost {
       isPinnedOnMyProfile: isPinnedOnMyProfile ?? this.isPinnedOnMyProfile,
       likedByMe: likedByMe ?? this.likedByMe,
       rating: rating ?? this.rating,
+      priceYen: setPriceYen ? priceYen : (priceYen ?? this.priceYen),
       createdAt: createdAt ?? this.createdAt,
       postType: postType ?? this.postType,
       companionAvatars: companionAvatars ?? this.companionAvatars,
@@ -155,6 +160,7 @@ class RecordDayEntry {
     required this.postType,
     this.companionNames = const [],
     this.rating,
+    this.priceYen,
     this.caption = '',
     this.userName = '',
     this.userIconUrl,
@@ -168,6 +174,7 @@ class RecordDayEntry {
   final String postType;
   final List<String> companionNames;
   final int? rating;
+  final int? priceYen;
   final String caption;
   final String userName;
   final String? userIconUrl;
@@ -350,6 +357,9 @@ class RecordSummary {
     required this.proteinAvg,
     required this.aiSuggestion,
     required this.monthlyShots,
+    this.todaySpendingYen = 0,
+    this.weekSpendingYen = 0,
+    this.monthSpendingYen = 0,
   });
 
   final int streakDays;
@@ -357,6 +367,9 @@ class RecordSummary {
   final int proteinAvg;
   final String aiSuggestion;
   final List<String> monthlyShots;
+  final int todaySpendingYen;
+  final int weekSpendingYen;
+  final int monthSpendingYen;
 }
 
 class ProfileOverview {
@@ -442,6 +455,7 @@ class PostDraft {
     required this.note,
     required this.withWho,
     this.rating,
+    this.priceYen,
     this.companionUserIds = const [],
     this.mealGroupId,
     this.postType = 'restaurant',
@@ -459,6 +473,7 @@ class PostDraft {
   final String note;
   final String withWho;
   final int? rating;
+  final int? priceYen;
   final List<String> companionUserIds;
   final String? mealGroupId;
   final String postType;
@@ -474,6 +489,7 @@ class PostDraft {
     String? note,
     String? withWho,
     int? rating,
+    int? priceYen,
     List<String>? companionUserIds,
     String? mealGroupId,
     String? postType,
@@ -489,6 +505,7 @@ class PostDraft {
       note: note ?? this.note,
       withWho: withWho ?? this.withWho,
       rating: rating ?? this.rating,
+      priceYen: priceYen ?? this.priceYen,
       companionUserIds: companionUserIds ?? this.companionUserIds,
       mealGroupId: mealGroupId ?? this.mealGroupId,
       postType: postType ?? this.postType,
@@ -552,4 +569,21 @@ class PlaceSuggestion {
 
   final String placeId;
   final String description;
+}
+
+/// 都道府県内の市ごと投稿カバレッジ（マップコロプレス用）。
+class CityChoroplethMetric {
+  const CityChoroplethMetric({
+    required this.cityCode,
+    required this.cityName,
+    required this.hasMine,
+    required this.hasFriend,
+    required this.hasOther,
+  });
+
+  final String cityCode;
+  final String cityName;
+  final bool hasMine;
+  final bool hasFriend;
+  final bool hasOther;
 }

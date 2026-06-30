@@ -198,7 +198,7 @@ class SupabaseSocialDataSource {
       var query = _client
           .from(SupabaseTables.posts)
           .select('''
-            id,caption,created_at,post_type,rating,user_id,visibility,
+            id,caption,created_at,post_type,rating,price_yen,user_id,visibility,
             $tAuthor(name,icon_path,email),
             $tPlaces(name,google_place_id),
             $tImages(storage_path,display_order)
@@ -285,6 +285,25 @@ class SupabaseSocialDataSource {
     await _client
         .from(SupabaseTables.posts)
         .update({'caption': caption.trim()})
+        .eq('id', postId)
+        .eq('user_id', uid);
+  }
+
+  Future<void> updatePostDetails(
+    String postId, {
+    required String caption,
+    required int rating,
+    int? priceYen,
+  }) async {
+    final uid = _uid;
+    if (uid == null || postId.isEmpty) return;
+    await _client
+        .from(SupabaseTables.posts)
+        .update({
+          'caption': caption.trim(),
+          'rating': rating.clamp(1, 5),
+          'price_yen': priceYen,
+        })
         .eq('id', postId)
         .eq('user_id', uid);
   }
@@ -646,7 +665,7 @@ class SupabaseSocialDataSource {
       final rows = await _client
           .from(SupabaseTables.posts)
           .select('''
-            id, caption, created_at, post_type, rating,
+            id, caption, created_at, post_type, rating, price_yen,
             $tPlaces(name, google_place_id),
             $tImages(storage_path, display_order)
           ''')
@@ -691,6 +710,7 @@ class SupabaseSocialDataSource {
             postType: postType,
             companionNames: companions[postId] ?? const [],
             rating: (row['rating'] as num?)?.toInt(),
+            priceYen: (row['price_yen'] as num?)?.toInt(),
             caption: (row['caption'] ?? '').toString(),
             placeGoogleId: (place?['google_place_id'] ?? '').toString().isEmpty
                 ? null
@@ -755,7 +775,7 @@ class SupabaseSocialDataSource {
       final row = await _client
           .from(SupabaseTables.posts)
           .select('''
-            id,caption,created_at,post_type,rating,user_id,visibility,
+            id,caption,created_at,post_type,rating,price_yen,user_id,visibility,
             $tAuthor(name,icon_path,email),
             $tPlaces(name,google_place_id),
             $tImages(storage_path,display_order)
@@ -1075,6 +1095,7 @@ class SupabaseSocialDataSource {
         ? (place['name'] ?? '不明な店舗').toString()
         : (postType == 'home' ? '自炊' : '不明な店舗');
     final rating = (row['rating'] as num?)?.toInt();
+    final priceYen = (row['price_yen'] as num?)?.toInt();
     final createdAt = DateTime.tryParse((row['created_at'] ?? '').toString());
 
     final postUserId = (row['user_id'] ?? '').toString();
@@ -1104,6 +1125,7 @@ class SupabaseSocialDataSource {
       isPinnedOnMyProfile: isPinnedOnMyProfile,
       likedByMe: likedByMe,
       rating: rating,
+      priceYen: priceYen,
       createdAt: createdAt,
       postType: postType,
       companionAvatars: companionAvatars,
@@ -1317,22 +1339,39 @@ class SupabaseSocialDataSource {
           .maybeSingle();
       final streak = (userRow?['streak_days'] as num?)?.toInt() ?? 0;
 
-      final now = DateTime.now().toUtc();
-      final monthStart = DateTime.utc(now.year, now.month, 1);
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+      final monthStart = DateTime(now.year, now.month, 1);
+
       final rows = await _client
           .from(SupabaseTables.posts)
-          .select('created_at')
+          .select('created_at, price_yen')
           .eq('user_id', uid)
           .isFilter('deleted_at', null)
-          .gte('created_at', monthStart.toIso8601String())
+          .gte('created_at', monthStart.toUtc().toIso8601String())
           .order('created_at', ascending: false);
 
       final days = <String>{};
+      var todaySpendingYen = 0;
+      var weekSpendingYen = 0;
+      var monthSpendingYen = 0;
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final created = DateTime.tryParse((row['created_at'] ?? '').toString());
-        if (created == null) continue;
-        days.add('${created.toLocal().day}');
+        if (created != null) {
+          days.add('${created.toLocal().day}');
+        }
+        final price = (row['price_yen'] as num?)?.toInt();
+        if (price == null || created == null) continue;
+        final local = created.toLocal();
+        monthSpendingYen += price;
+        if (!local.isBefore(weekStart)) {
+          weekSpendingYen += price;
+        }
+        if (!local.isBefore(todayStart)) {
+          todaySpendingYen += price;
+        }
       }
 
       final postCount = (rows as List).length;
@@ -1347,6 +1386,9 @@ class SupabaseSocialDataSource {
         aiSuggestion: suggestion,
         monthlyShots: days.toList()
           ..sort((a, b) => int.parse(a).compareTo(int.parse(b))),
+        todaySpendingYen: todaySpendingYen,
+        weekSpendingYen: weekSpendingYen,
+        monthSpendingYen: monthSpendingYen,
       );
     } catch (e, st) {
       if (kDebugMode) {

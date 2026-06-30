@@ -15,6 +15,9 @@ abstract final class MapDisplayConfig {
   /// 広域数字クラスター tier。
   static const int tierBroadClusters = 0;
 
+  /// 市境界コロプレスはズームに関係なく常時表示。
+  static bool showsChoropleth(double zoom) => true;
+
   static int tierForZoom(double zoom) {
     if (zoom >= individualPinMinZoom) return tierIndividualPins;
     if (zoom >= mediumClusterMinZoom) return tierMediumClusters;

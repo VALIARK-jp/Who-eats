@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/location/device_location.dart';
+import '../../../../core/supabase/place_municipality_backfill.dart';
 import '../../domain/entities/app_entities.dart';
 import '../../domain/usecases/dashboard_usecases.dart';
 
@@ -25,6 +26,7 @@ class AppShellController extends ChangeNotifier {
     required SearchUsersByCodeUseCase searchUsersByCodeUseCase,
     required SoftDeletePostUseCase softDeletePostUseCase,
     required UpdatePostCaptionUseCase updatePostCaptionUseCase,
+    required UpdatePostDetailsUseCase updatePostDetailsUseCase,
     required GetPostsForDayUseCase getPostsForDayUseCase,
     required GetFeedPostByIdUseCase getFeedPostByIdUseCase,
     required GetUserPublicProfileUseCase getUserPublicProfileUseCase,
@@ -42,6 +44,7 @@ class AppShellController extends ChangeNotifier {
     required GetNotificationsUseCase getNotificationsUseCase,
     required MarkAllNotificationsReadUseCase markAllNotificationsReadUseCase,
     required CreatePostDraftUseCase createPostDraftUseCase,
+    required GetCityChoroplethMetricsUseCase getCityChoroplethMetricsUseCase,
     required GetPlaceDetailUseCase getPlaceDetailUseCase,
     required SearchMapPinsUseCase searchMapPinsUseCase,
     required SearchMapPinsAroundUseCase searchMapPinsAroundUseCase,
@@ -62,6 +65,7 @@ class AppShellController extends ChangeNotifier {
        _searchUsersByCodeUseCase = searchUsersByCodeUseCase,
        _softDeletePostUseCase = softDeletePostUseCase,
        _updatePostCaptionUseCase = updatePostCaptionUseCase,
+       _updatePostDetailsUseCase = updatePostDetailsUseCase,
        _getPostsForDayUseCase = getPostsForDayUseCase,
        _getFeedPostByIdUseCase = getFeedPostByIdUseCase,
        _getUserPublicProfileUseCase = getUserPublicProfileUseCase,
@@ -79,6 +83,7 @@ class AppShellController extends ChangeNotifier {
        _getNotificationsUseCase = getNotificationsUseCase,
        _markAllNotificationsReadUseCase = markAllNotificationsReadUseCase,
        _createPostDraftUseCase = createPostDraftUseCase,
+       _getCityChoroplethMetricsUseCase = getCityChoroplethMetricsUseCase,
        _getPlaceDetailUseCase = getPlaceDetailUseCase,
        _searchMapPinsUseCase = searchMapPinsUseCase,
        _searchMapPinsAroundUseCase = searchMapPinsAroundUseCase,
@@ -100,6 +105,7 @@ class AppShellController extends ChangeNotifier {
   final SearchUsersByCodeUseCase _searchUsersByCodeUseCase;
   final SoftDeletePostUseCase _softDeletePostUseCase;
   final UpdatePostCaptionUseCase _updatePostCaptionUseCase;
+  final UpdatePostDetailsUseCase _updatePostDetailsUseCase;
   final GetPostsForDayUseCase _getPostsForDayUseCase;
   final GetFeedPostByIdUseCase _getFeedPostByIdUseCase;
   final GetUserPublicProfileUseCase _getUserPublicProfileUseCase;
@@ -117,6 +123,7 @@ class AppShellController extends ChangeNotifier {
   final GetNotificationsUseCase _getNotificationsUseCase;
   final MarkAllNotificationsReadUseCase _markAllNotificationsReadUseCase;
   final CreatePostDraftUseCase _createPostDraftUseCase;
+  final GetCityChoroplethMetricsUseCase _getCityChoroplethMetricsUseCase;
   final GetPlaceDetailUseCase _getPlaceDetailUseCase;
   final SearchMapPinsUseCase _searchMapPinsUseCase;
   final SearchMapPinsAroundUseCase _searchMapPinsAroundUseCase;
@@ -281,6 +288,31 @@ class AppShellController extends ChangeNotifier {
     final normalized = caption.trim();
     await _updatePostCaptionUseCase(post.id, normalized);
     final updated = post.copyWith(caption: normalized);
+    _replacePostInFeed(updated);
+    notifyListeners();
+    return updated;
+  }
+
+  Future<FeedPost> updatePostDetails(
+    FeedPost post, {
+    required String caption,
+    required int rating,
+    int? priceYen,
+  }) async {
+    final normalized = caption.trim();
+    final clampedRating = rating.clamp(1, 5);
+    await _updatePostDetailsUseCase(
+      post.id,
+      caption: normalized,
+      rating: clampedRating,
+      priceYen: priceYen,
+    );
+    final updated = post.copyWith(
+      caption: normalized,
+      rating: clampedRating,
+      setPriceYen: true,
+      priceYen: priceYen,
+    );
     _replacePostInFeed(updated);
     notifyListeners();
     return updated;
@@ -457,6 +489,42 @@ class AppShellController extends ChangeNotifier {
   Future<PlaceDetail> getPlaceDetail(String placeId) {
     _log('getPlaceDetail placeId=$placeId');
     return _getPlaceDetailUseCase(placeId);
+  }
+
+  Future<Map<String, CityChoroplethMetric>> loadCityChoroplethMetrics(
+    List<String> prefectureCodes,
+  ) async {
+    if (prefectureCodes.isEmpty) return const {};
+
+    final List<CityChoroplethMetric> metrics;
+    if (prefectureCodes.length >= 2) {
+      metrics = await _getCityChoroplethMetricsUseCase.nationwide();
+    } else {
+      metrics = await _getCityChoroplethMetricsUseCase(prefectureCodes.single);
+    }
+
+    return {
+      for (final metric in metrics)
+        _normalizeCityCode(metric.cityCode): metric,
+    };
+  }
+
+  static String _normalizeCityCode(String code) {
+    final trimmed = code.trim();
+    if (trimmed.length >= 5) return trimmed;
+    return trimmed.padLeft(5, '0');
+  }
+
+  bool _municipalityBackfillStarted = false;
+
+  /// 自分の過去投稿先で city_code 未設定の店舗を補完（マップ表示前に1回）。
+  Future<void> backfillMyPlaceMunicipalitiesIfNeeded() async {
+    if (_municipalityBackfillStarted || !AppConfig.hasSupabase) return;
+    _municipalityBackfillStarted = true;
+    final updated = await PlaceMunicipalityBackfill().backfillForCurrentUser();
+    if (updated > 0) {
+      _log('backfillMyPlaceMunicipalities updated=$updated');
+    }
   }
 
   Future<void> invalidateMapPins() async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/entities/app_entities.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/format/yen_format.dart';
 import 'friend_avatar_stack.dart';
 import 'post_comment_preview.dart';
 import 'friend_avatar.dart';
@@ -73,6 +74,17 @@ class FoodPostCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (post.priceYen != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  formatYen(post.priceYen),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: AppColors.orangeAccent,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               if (!post.isHomePost && (post.placeGoogleId ?? '').isNotEmpty)
                 Align(
@@ -352,6 +364,17 @@ class _PhotoBlock extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                ],
+                if (post.priceYen != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    formatYen(post.priceYen),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: Colors.white,
+                    ),
                   ),
                 ],
               ],

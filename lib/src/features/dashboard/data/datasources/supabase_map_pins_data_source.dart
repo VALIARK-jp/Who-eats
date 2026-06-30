@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -353,6 +355,120 @@ class SupabaseMapPinsDataSource {
       return raw.first as Map<String, dynamic>;
     }
     return null;
+  }
+
+  Future<List<CityChoroplethMetric>> fetchCityChoroplethMetricsNationwide() async {
+    if (_client.auth.currentUser == null) return const [];
+    try {
+      final raw = await _client.rpc('whoeats_map_choropleth_nationwide');
+      final rows = _parseChoroplethRpcRows(raw);
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseMapPinsDataSource] choropleth nationwide rows=${rows.length}',
+        );
+      }
+      return _rowsToChoroplethMetrics(rows);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseMapPinsDataSource] fetchCityChoroplethMetricsNationwide: $e\n$st',
+        );
+      }
+      return const [];
+    }
+  }
+
+  Future<List<CityChoroplethMetric>> fetchCityChoroplethMetrics(
+    String prefectureCode,
+  ) async {
+    if (_client.auth.currentUser == null) return const [];
+    final code = prefectureCode.padLeft(2, '0');
+    try {
+      final raw = await _client.rpc(
+        'whoeats_map_choropleth_prefecture',
+        params: {'p_prefecture_code': code},
+      );
+      final rows = _parseChoroplethRpcRows(raw);
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseMapPinsDataSource] choropleth pref=$code rows=${rows.length}',
+        );
+      }
+      return _rowsToChoroplethMetrics(rows);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint(
+          '[SupabaseMapPinsDataSource] fetchCityChoroplethMetrics: $e\n$st',
+        );
+      }
+      return const [];
+    }
+  }
+
+  List<CityChoroplethMetric> _rowsToChoroplethMetrics(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows
+        .map((city) {
+          return CityChoroplethMetric(
+            cityCode: city['city_code'].toString(),
+            cityName: (city['city_name'] ?? '').toString(),
+            hasMine: _readBool(city['has_mine']),
+            hasFriend: _readBool(city['has_friend']),
+            hasOther: _readBool(city['has_other']),
+          );
+        })
+        .toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _parseChoroplethRpcRows(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+    }
+    if (raw is String) {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList(growable: false);
+      }
+      if (decoded is Map) {
+        final map = Map<String, dynamic>.from(decoded);
+        final legacy = map['cities'];
+        if (legacy is List) {
+          return legacy
+              .map((row) => Map<String, dynamic>.from(row as Map))
+              .toList(growable: false);
+        }
+      }
+    }
+    if (raw is Map) {
+      final map = Map<String, dynamic>.from(raw);
+      final legacy = map['cities'];
+      if (legacy is List) {
+        return legacy
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList(growable: false);
+      }
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[SupabaseMapPinsDataSource] choropleth unexpected type: '
+        '${raw.runtimeType}',
+      );
+    }
+    return const [];
+  }
+
+  bool _readBool(dynamic value) {
+    if (value == true) return true;
+    if (value is String) {
+      final normalized = value.trim().toLowerCase();
+      return normalized == 'true' || normalized == 't' || normalized == '1';
+    }
+    return value == 1;
   }
 }
 

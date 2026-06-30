@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -151,9 +152,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
 
       String? iconPath;
       if (_pickedIcon != null) {
-        iconPath = await ProfileIconService().uploadAndSaveProfileIcon(
-          _pickedIcon!,
-        );
+        iconPath = await ProfileIconService().uploadProfileIcon(_pickedIcon!);
       }
 
       await saveWhoEatsProfileFields(
@@ -165,13 +164,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         iconPath: iconPath,
       );
 
-      final verified = await ProfileOnboardingStore.resolveSetupComplete(
-        userId: user.id,
-        email: user.email,
-      );
-      if (!verified) {
-        throw Exception('プロフィールを保存できませんでした');
-      }
+      await ProfileOnboardingStore.setCompleted(user.id);
 
       if (mounted) {
         try {
@@ -179,7 +172,10 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         } catch (_) {}
         await widget.onComplete();
       }
-    } on PostgrestException catch (e) {
+    } on PostgrestException catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[ProfileSetupPage] PostgrestException: ${e.code} ${e.message}\n$st');
+      }
       if (!mounted) return;
       if (e.code == '23505') {
         setState(() {
@@ -192,7 +188,10 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
         _submitting = false;
         _error = _profileSaveErrorMessage(e);
       });
-    } catch (e) {
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[ProfileSetupPage] save failed: $e\n$st');
+      }
       if (mounted) {
         setState(() {
           _submitting = false;

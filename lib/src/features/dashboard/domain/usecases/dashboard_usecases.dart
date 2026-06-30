@@ -163,6 +163,23 @@ class UpdatePostCaptionUseCase {
       _repository.updatePostCaption(postId, caption);
 }
 
+class UpdatePostDetailsUseCase {
+  const UpdatePostDetailsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(
+    String postId, {
+    required String caption,
+    required int rating,
+    int? priceYen,
+  }) =>
+      _repository.updatePostDetails(
+        postId,
+        caption: caption,
+        rating: rating,
+        priceYen: priceYen,
+      );
+}
+
 class GetPostsForDayUseCase {
   const GetPostsForDayUseCase(this._repository);
   final DashboardRepository _repository;
@@ -269,4 +286,14 @@ class CreatePostDraftUseCase {
   const CreatePostDraftUseCase(this._repository);
   final DashboardRepository _repository;
   Future<PostDraft> call() => _repository.createPostDraft();
+}
+
+class GetCityChoroplethMetricsUseCase {
+  const GetCityChoroplethMetricsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<CityChoroplethMetric>> call(String prefectureCode) =>
+      _repository.getCityChoroplethMetrics(prefectureCode);
+
+  Future<List<CityChoroplethMetric>> nationwide() =>
+      _repository.getCityChoroplethMetricsNationwide();
 }

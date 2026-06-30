@@ -2,14 +2,17 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../map/municipality_resolver.dart';
 import 'supabase_tables.dart';
 
 /// Creates a post row, uploads one image to `post-images`, and links `post_images`.
 class PostSubmitService {
-  PostSubmitService({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  PostSubmitService({SupabaseClient? client, MunicipalityResolver? municipalityResolver})
+    : _client = client ?? Supabase.instance.client,
+      _municipalityResolver = municipalityResolver ?? MunicipalityResolver();
 
   final SupabaseClient _client;
+  final MunicipalityResolver _municipalityResolver;
 
   static const _bucket = 'post-images';
 
@@ -24,6 +27,7 @@ class PostSubmitService {
     double? restaurantPlaceLongitude,
     String? caption,
     int? rating,
+    int? priceYen,
     String? mealGroupId,
     List<String> companionUserIds = const [],
   }) async {
@@ -73,6 +77,9 @@ class PostSubmitService {
       };
       if (rating != null && rating >= 1 && rating <= 5) {
         insertPayload['rating'] = rating;
+      }
+      if (priceYen != null && priceYen >= 0) {
+        insertPayload['price_yen'] = priceYen;
       }
       if (resolvedMealGroupId != null && resolvedMealGroupId.isNotEmpty) {
         insertPayload['meal_group_id'] = resolvedMealGroupId;
@@ -154,8 +161,18 @@ class PostSubmitService {
         .eq('google_place_id', googlePlaceId)
         .maybeSingle();
     if (existing != null && existing['id'] != null) {
+      await _syncPlaceMunicipalityIfNeeded(
+        placeId: existing['id'] as String,
+        latitude: latitude,
+        longitude: longitude,
+      );
       return existing['id'] as String;
     }
+
+    final municipality = await _municipalityResolver.resolve(
+      latitude: latitude,
+      longitude: longitude,
+    );
 
     try {
       final inserted = await _client
@@ -166,6 +183,11 @@ class PostSubmitService {
             'latitude': latitude,
             'longitude': longitude,
             'source': 'google',
+            if (municipality != null) ...{
+              'prefecture_code': municipality.prefectureCode,
+              'city_code': municipality.cityCode,
+              'city_name': municipality.cityName,
+            },
           })
           .select('id')
           .single();
@@ -176,7 +198,42 @@ class PostSubmitService {
           .select('id')
           .eq('google_place_id', googlePlaceId)
           .single();
+      await _syncPlaceMunicipalityIfNeeded(
+        placeId: raced['id'] as String,
+        latitude: latitude,
+        longitude: longitude,
+      );
       return raced['id'] as String;
     }
+  }
+
+  Future<void> _syncPlaceMunicipalityIfNeeded({
+    required String placeId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final existing = await _client
+        .from(SupabaseTables.places)
+        .select('city_code')
+        .eq('id', placeId)
+        .maybeSingle();
+    final currentCode = existing?['city_code'] as String?;
+    if (currentCode != null && currentCode.isNotEmpty) return;
+
+    final municipality = await _municipalityResolver.resolve(
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (municipality == null) return;
+
+    await _client.rpc(
+      'whoeats_sync_place_municipality',
+      params: {
+        'p_place_id': placeId,
+        'p_prefecture_code': municipality.prefectureCode,
+        'p_city_code': municipality.cityCode,
+        'p_city_name': municipality.cityName,
+      },
+    );
   }
 }

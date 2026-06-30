@@ -14,6 +14,7 @@ class MockDashboardDataSource {
       likes: 42,
       comments: 8,
       friendAvatars: ['H', 'R', 'M'],
+      priceYen: 1280,
     ),
     FeedPost(
       id: 'p2',
@@ -116,6 +117,9 @@ class MockDashboardDataSource {
     proteinAvg: 84,
     aiSuggestion: '夜ごはんの脂質が少し高め。明日は魚中心でバランス調整がおすすめ。',
     monthlyShots: ['1', '4', '5', '8', '12', '16', '20', '24', '26'],
+    todaySpendingYen: 1280,
+    weekSpendingYen: 8420,
+    monthSpendingYen: 32400,
   );
 
   Future<ProfileOverview> getProfileOverview() async => ProfileOverview(

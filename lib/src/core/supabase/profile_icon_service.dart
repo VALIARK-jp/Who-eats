@@ -12,7 +12,8 @@ class ProfileIconService {
 
   static const _bucket = 'post-images';
 
-  Future<String> uploadAndSaveProfileIcon(File file) async {
+  /// Storage のみアップロード（初回プロフィール保存前は DB 更新しない）。
+  Future<String> uploadProfileIcon(File file) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) {
       throw StateError('Not signed in');
@@ -31,6 +32,16 @@ class ProfileIconService {
       file,
       fileOptions: FileOptions(contentType: contentType, upsert: true),
     );
+    return path;
+  }
+
+  /// 既存プロフィール行がある前提で icon_path を更新する。
+  Future<String> uploadAndSaveProfileIcon(File file) async {
+    final path = await uploadProfileIcon(file);
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
 
     await _client
         .from(SupabaseTables.profiles)

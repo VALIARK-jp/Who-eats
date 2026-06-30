@@ -111,6 +111,9 @@ class AuthService {
         data: {'displayName': displayName, 'name': displayName},
         emailRedirectTo: AppConfig.authRedirectUrl,
       );
+      if (response.session != null) {
+        await _ensureWhoEatsProfileRowBestEffort();
+      }
       return response;
     } on http.ClientException catch (e) {
       debugPrint('signUpWithEmail network: $e');
