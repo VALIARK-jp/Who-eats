@@ -119,6 +119,22 @@ class DashboardRepositoryImpl implements DashboardRepository {
   }
 
   @override
+  Future<void> updatePostDetails(
+    String postId, {
+    required String caption,
+    required int rating,
+    int? priceYen,
+  }) async {
+    if (!_useSupabase) return;
+    await _social.updatePostDetails(
+      postId,
+      caption: caption,
+      rating: rating,
+      priceYen: priceYen,
+    );
+  }
+
+  @override
   Future<List<RecordDayEntry>> getPostsForDay(DateTime dayLocal) async {
     if (!_useSupabase) return const [];
     return _social.fetchPostsForDay(dayLocal);
@@ -651,6 +667,20 @@ class DashboardRepositoryImpl implements DashboardRepository {
       return pinnedOnly ? profile.pinnedPosts : profile.recentPosts;
     }
     return _social.fetchProfilePostThumbs(pinnedOnly: pinnedOnly);
+  }
+
+  @override
+  Future<List<CityChoroplethMetric>> getCityChoroplethMetrics(
+    String prefectureCode,
+  ) async {
+    if (!_useSupabase) return const [];
+    return _supabaseMapPins.fetchCityChoroplethMetrics(prefectureCode);
+  }
+
+  @override
+  Future<List<CityChoroplethMetric>> getCityChoroplethMetricsNationwide() async {
+    if (!_useSupabase) return const [];
+    return _supabaseMapPins.fetchCityChoroplethMetricsNationwide();
   }
 
   void _log(String message) {

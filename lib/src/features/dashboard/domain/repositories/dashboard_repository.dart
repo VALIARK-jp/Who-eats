@@ -45,6 +45,12 @@ abstract interface class DashboardRepository {
   Future<List<FriendCandidate>> searchUsersByCode(String query);
   Future<void> softDeletePost(String postId);
   Future<void> updatePostCaption(String postId, String caption);
+  Future<void> updatePostDetails(
+    String postId, {
+    required String caption,
+    required int rating,
+    int? priceYen,
+  });
   Future<List<RecordDayEntry>> getPostsForDay(DateTime dayLocal);
   Future<FeedPost?> getFeedPostById(String postId);
   Future<UserPublicProfile?> getUserPublicProfile(String userId);
@@ -65,4 +71,8 @@ abstract interface class DashboardRepository {
   Future<List<AppNotification>> getNotifications();
   Future<void> markAllNotificationsRead();
   Future<PostDraft> createPostDraft();
+  Future<List<CityChoroplethMetric>> getCityChoroplethMetrics(
+    String prefectureCode,
+  );
+  Future<List<CityChoroplethMetric>> getCityChoroplethMetricsNationwide();
 }

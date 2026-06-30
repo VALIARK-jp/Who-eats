@@ -14,6 +14,7 @@ class MockDashboardDataSource {
       likes: 42,
       comments: 8,
       friendAvatars: ['H', 'R', 'M'],
+      priceYen: 1280,
     ),
     FeedPost(
       id: 'p2',
@@ -116,6 +117,9 @@ class MockDashboardDataSource {
     proteinAvg: 84,
     aiSuggestion: '夜ごはんの脂質が少し高め。明日は魚中心でバランス調整がおすすめ。',
     monthlyShots: ['1', '4', '5', '8', '12', '16', '20', '24', '26'],
+    todaySpendingYen: 1280,
+    weekSpendingYen: 8420,
+    monthSpendingYen: 32400,
   );
 
   Future<ProfileOverview> getProfileOverview() async => ProfileOverview(
@@ -202,16 +206,22 @@ class MockDashboardDataSource {
       id: 'n1',
       title: 'コメントが届きました',
       body: 'haruka さんがあなたの投稿にコメントしました',
+      eventType: 'comment',
+      actorUserId: 'haruka-id',
     ),
     AppNotification(
       id: 'n2',
       title: 'いいねが届きました',
       body: 'yuma_21 さんがあなたの投稿にいいねしました',
+      eventType: 'like',
+      actorUserId: 'yuma-id',
     ),
     AppNotification(
       id: 'n3',
       title: '友達申請が届きました',
       body: 'saya_27 さんから友達申請が届きました',
+      eventType: 'friend_request',
+      actorUserId: 'saya-id',
     ),
   ];
 
