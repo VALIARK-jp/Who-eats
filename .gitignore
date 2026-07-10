@@ -50,3 +50,16 @@ app.*.map.json
 !.env.example
 !.env.prod.example
 scripts/valiark-project-refs.env
+
+# Internal / non-public docs (keep local only)
+doc/pm-only/
+docs/marketing_strategy_v1.md
+docs/creator_program_and_attribution.md
+docs/influencer_brief.md
+docs/outreach_playbook.md
+docs/whoeats_consultant_brief.md
+docs/whoeats_consultant_brief.html
+docs/whoeats_consultant_brief.pdf
+docs/kling_cm_15s_*.md
+docs/build_consultant_brief_pdf.sh
+docs/templates/
