@@ -1771,15 +1771,20 @@ class _RecordPage extends StatelessWidget {
   }
 }
 
-class _ProfilePage extends StatelessWidget {
+class _ProfilePage extends StatefulWidget {
   const _ProfilePage({required this.profile, required this.controller});
   final ProfileOverview profile;
   final AppShellController controller;
 
   @override
+  State<_ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<_ProfilePage> {
+  @override
   Widget build(BuildContext context) {
-    final initial = profile.name.isNotEmpty
-        ? profile.name.characters.first.toUpperCase()
+    final initial = widget.profile.name.isNotEmpty
+        ? widget.profile.name.characters.first.toUpperCase()
         : '?';
 
     return SafeArea(
@@ -1803,7 +1808,7 @@ class _ProfilePage extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => ProfileSettingsPage(controller: controller),
+                      builder: (context) => ProfileSettingsPage(controller: widget.controller),
                     ),
                   );
                 },
@@ -1815,10 +1820,10 @@ class _ProfilePage extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 26,
-                backgroundImage: profile.avatarUrl.isNotEmpty
-                    ? NetworkImage(profile.avatarUrl)
+                backgroundImage: widget.profile.avatarUrl.isNotEmpty
+                    ? NetworkImage(widget.profile.avatarUrl)
                     : null,
-                child: profile.avatarUrl.isEmpty ? Text(initial) : null,
+                child: widget.profile.avatarUrl.isEmpty ? Text(initial) : null,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1826,14 +1831,14 @@ class _ProfilePage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      profile.name,
+                      widget.profile.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    if (profile.userCode.isNotEmpty)
+                    if (widget.profile.userCode.isNotEmpty)
                       Text(
-                        profile.userCode,
+                        widget.profile.userCode,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: AppColors.textSubtle),
@@ -1843,10 +1848,10 @@ class _ProfilePage extends StatelessWidget {
               ),
             ],
           ),
-          if (profile.bio.isNotEmpty) ...[
+          if (widget.profile.bio.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
-              profile.bio,
+              widget.profile.bio,
               style: const TextStyle(color: AppColors.textSubtle, height: 1.4),
             ),
           ],
@@ -1854,17 +1859,100 @@ class _ProfilePage extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _StatTile(label: '友達', value: profile.friends),
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (context) => _ProfileFriendsPage(
+                          friends: widget.controller.friendCandidates
+                              .where((c) => c.isFollowing)
+                              .toList(),
+                        ),
+                      ),
+                    );
+                  },
+                  child: _StatTile(label: '友達', value: widget.profile.friends),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           const Text('ピン留めしたご飯', style: TextStyle(fontWeight: FontWeight.w900)),
-          ProfileFoodGrid(urls: profile.pinnedShots),
+          ProfileFoodGrid(urls: widget.profile.pinnedShots),
           const SizedBox(height: 12),
           const Text('投稿一覧', style: TextStyle(fontWeight: FontWeight.w900)),
-          ProfileFoodGrid(urls: profile.recentShots),
+          ProfileFoodGrid(urls: widget.profile.recentShots),
         ],
+      ),
+    );
+  }
+}
+
+class _ProfileFriendsPage extends StatelessWidget {
+  const _ProfileFriendsPage({required this.friends});
+  final List<FriendCandidate> friends;
+
+  @override
+  Widget build(BuildContext context) {
+    if (friends.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppColors.black,
+        appBar: AppBar(
+          title: const Text('友達'),
+          centerTitle: false,
+        ),
+        body: AppStateView(
+          type: AppStateType.empty,
+          title: '友達がいません',
+          message: 'まずはつながって、おすすめを広げよう。',
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.black,
+      appBar: AppBar(
+        title: const Text('友達'),
+        centerTitle: false,
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        itemCount: friends.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 0.9,
+        ),
+        itemBuilder: (context, index) {
+          final friend = friends[index];
+          return InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${friend.name} のプロフィールは未実装（MVP）')),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FriendAvatar(
+                  displayName: friend.name,
+                  radius: 22,
+                  showStatusDot: friend.mutualCount > 0,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  friend.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
