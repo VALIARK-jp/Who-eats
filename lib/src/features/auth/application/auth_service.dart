@@ -530,6 +530,11 @@ class AuthService {
     if (message.contains('email not confirmed')) {
       return 'メールアドレスが確認されていません。受信トレイを確認してください。';
     }
+    if (message.contains('email rate limit') ||
+        message.contains('over_email_send_rate_limit') ||
+        error.code == 'over_email_send_rate_limit') {
+      return '確認メールの送信上限に達しました。1時間ほど待ってから再度お試しください。';
+    }
     return error.message;
   }
 

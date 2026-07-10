@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../map/municipality_resolver.dart';
+import '../push/push_notification_service.dart';
 import 'supabase_tables.dart';
 
 /// Creates a post row, uploads one image to `post-images`, and links `post_images`.
@@ -106,6 +108,12 @@ class PostSubmitService {
             'post_id': postId,
             'user_id': companionId,
           });
+          unawaited(
+            _notifyCompanionTagged(
+              companionUserId: companionId,
+              postId: postId,
+            ),
+          );
         } on PostgrestException catch (e) {
           if (e.code != '23505') rethrow;
         }
@@ -205,6 +213,19 @@ class PostSubmitService {
       );
       return raced['id'] as String;
     }
+  }
+
+  Future<void> _notifyCompanionTagged({
+    required String companionUserId,
+    required String postId,
+  }) async {
+    try {
+      await PushNotificationService.instance.sendEvent(
+        targetUserId: companionUserId,
+        eventType: 'meal_tag',
+        postId: postId,
+      );
+    } catch (_) {}
   }
 
   Future<void> _syncPlaceMunicipalityIfNeeded({

@@ -343,6 +343,14 @@ class AppShellController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void openMealTag(PendingMealTag tag) {
+    setPostDraft(
+      tag.toPostDraft(
+        defaultVisibility: profileOverview?.defaultVisibility ?? 'friends',
+      ),
+    );
+  }
+
   void setPendingPostDraft(PostDraft? draft) {
     pendingPostDraft = draft;
     notifyListeners();
@@ -375,26 +383,14 @@ class AppShellController extends ChangeNotifier {
     postedPlaceGoogleIds = <String>{};
     postedPlaceUserIcons = <String, String>{};
     notifyListeners();
-    final deviceLocFuture = resolveDeviceLocationAccess(requestIfNeeded: false);
-    final access = await deviceLocFuture;
-    mapLocationAccessStatus = access.status;
-    final loc = access.location;
-    if (loc != null) {
-      deviceLatitude = loc.lat;
-      deviceLongitude = loc.lng;
-    }
+
+    // 位置情報の取得・地図ピンの読み込みは起動時には行わない。
+    // GPS は地図タブを開いた時に初めて解決する（_MapTab 側）。フィードは位置に依存しない。
     feed = await _getHomeFeedUseCase(scope: feedTimelineScope);
     loading = false;
     _log('initialize done feed=${feed.length}');
     notifyListeners();
 
-    if (deviceLatitude != null && deviceLongitude != null) {
-      _log('device location lat=$deviceLatitude lng=$deviceLongitude');
-    } else {
-      _log('device location unavailable');
-    }
-
-    unawaited(ensureMapPinsLoaded());
     unawaited(_loadSecondaryData());
   }
 
