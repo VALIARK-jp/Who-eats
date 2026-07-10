@@ -85,9 +85,19 @@ class _WhoEatsAppState extends State<WhoEatsApp> {
       create: (_) => AppShellController(
         getHomeFeedUseCase: GetHomeFeedUseCase(repository),
         getMapPinsUseCase: GetMapPinsUseCase(repository),
-        getFriendCandidatesUseCase: GetFriendCandidatesUseCase(repository),
+        getFriendsUseCase: GetFriendsUseCase(repository),
+        getFriendRecommendationsUseCase:
+            GetFriendRecommendationsUseCase(repository),
+        getIncomingFriendRequestsUseCase:
+            GetIncomingFriendRequestsUseCase(repository),
+        getOutgoingPendingFollowsUseCase:
+            GetOutgoingPendingFollowsUseCase(repository),
+        followUserUseCase: FollowUserUseCase(repository),
         getRecordSummaryUseCase: GetRecordSummaryUseCase(repository),
         getProfileOverviewUseCase: GetProfileOverviewUseCase(repository),
+        getFavoritePostsUseCase: GetFavoritePostsUseCase(repository),
+        setProfilePostPinnedUseCase: SetProfilePostPinnedUseCase(repository),
+        togglePostFavoriteUseCase: TogglePostFavoriteUseCase(repository),
         getNotificationsUseCase: GetNotificationsUseCase(repository),
         createPostDraftUseCase: CreatePostDraftUseCase(repository),
         getPlaceDetailUseCase: GetPlaceDetailUseCase(repository),

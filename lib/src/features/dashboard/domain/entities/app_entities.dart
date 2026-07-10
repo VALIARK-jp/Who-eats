@@ -1,6 +1,7 @@
 class FeedPost {
   const FeedPost({
     required this.id,
+    required this.userId,
     required this.userName,
     this.userIconUrl,
     required this.placeName,
@@ -10,9 +11,12 @@ class FeedPost {
     required this.likes,
     required this.comments,
     required this.friendAvatars,
+    this.isFavoritedByMe = false,
+    this.isPinnedOnMyProfile = false,
   });
 
   final String id;
+  final String userId;
   final String userName;
   final String? userIconUrl;
   final String placeName;
@@ -22,6 +26,39 @@ class FeedPost {
   final int likes;
   final int comments;
   final List<String> friendAvatars;
+  final bool isFavoritedByMe;
+  final bool isPinnedOnMyProfile;
+
+  FeedPost copyWith({
+    bool? isFavoritedByMe,
+    bool? isPinnedOnMyProfile,
+  }) {
+    return FeedPost(
+      id: id,
+      userId: userId,
+      userName: userName,
+      userIconUrl: userIconUrl,
+      placeName: placeName,
+      placeGoogleId: placeGoogleId,
+      caption: caption,
+      imageUrl: imageUrl,
+      likes: likes,
+      comments: comments,
+      friendAvatars: friendAvatars,
+      isFavoritedByMe: isFavoritedByMe ?? this.isFavoritedByMe,
+      isPinnedOnMyProfile: isPinnedOnMyProfile ?? this.isPinnedOnMyProfile,
+    );
+  }
+}
+
+class ProfilePostThumb {
+  const ProfilePostThumb({
+    required this.postId,
+    required this.imageUrl,
+  });
+
+  final String postId;
+  final String imageUrl;
 }
 
 class MapPin {
@@ -78,14 +115,36 @@ class FriendCandidate {
     required this.name,
     required this.avatarUrl,
     required this.mutualCount,
-    required this.isFollowing,
+    required this.isFriend,
+    this.theyFollowMe = false,
+    this.iFollowThem = false,
   });
 
   final String id;
   final String name;
   final String avatarUrl;
+
+  /// 共通の友達（相互フォロー）の人数。おすすめ候補用。
   final int mutualCount;
-  final bool isFollowing;
+
+  /// 相互フォロー済み（友達）なら true。
+  final bool isFriend;
+
+  /// 相手が自分をフォロー済み（フォロー返しで友達になれる）。
+  final bool theyFollowMe;
+
+  /// 自分が相手をフォロー済みだが、まだ相互ではない（承認待ち）。
+  final bool iFollowThem;
+
+  /// 「友達になる」ボタンのラベル。
+  String get actionLabel {
+    if (isFriend) return '友達';
+    if (theyFollowMe && !iFollowThem) return '友達になる';
+    if (iFollowThem) return '承認待ち';
+    return '友達になる';
+  }
+
+  bool get canFollow => !isFriend && !iFollowThem;
 }
 
 class RecordSummary {
@@ -113,8 +172,8 @@ class ProfileOverview {
     required this.followers,
     required this.following,
     required this.friends,
-    required this.pinnedShots,
-    required this.recentShots,
+    required this.pinnedPosts,
+    required this.recentPosts,
   });
 
   final String name;
@@ -124,8 +183,14 @@ class ProfileOverview {
   final int followers;
   final int following;
   final int friends;
-  final List<String> pinnedShots;
-  final List<String> recentShots;
+  final List<ProfilePostThumb> pinnedPosts;
+  final List<ProfilePostThumb> recentPosts;
+
+  List<String> get pinnedShots =>
+      pinnedPosts.map((p) => p.imageUrl).where((u) => u.isNotEmpty).toList();
+
+  List<String> get recentShots =>
+      recentPosts.map((p) => p.imageUrl).where((u) => u.isNotEmpty).toList();
 }
 
 class AppNotification {

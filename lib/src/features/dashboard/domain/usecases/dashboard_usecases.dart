@@ -10,7 +10,8 @@ class GetHomeFeedUseCase {
 class GetMapPinsUseCase {
   const GetMapPinsUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<MapPin>> call() => _repository.getMapPins();
+  Future<List<MapPin>> call({double? centerLat, double? centerLng}) =>
+      _repository.getMapPins(centerLat: centerLat, centerLng: centerLng);
 }
 
 class SearchMapPinsUseCase {
@@ -63,10 +64,38 @@ class AutocompletePlacesUseCase {
   );
 }
 
-class GetFriendCandidatesUseCase {
-  const GetFriendCandidatesUseCase(this._repository);
+class GetFriendsUseCase {
+  const GetFriendsUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<FriendCandidate>> call() => _repository.getFriendCandidates();
+  Future<List<FriendCandidate>> call() => _repository.getFriends();
+}
+
+class GetFriendRecommendationsUseCase {
+  const GetFriendRecommendationsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getFriendRecommendations();
+}
+
+class GetIncomingFriendRequestsUseCase {
+  const GetIncomingFriendRequestsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getIncomingFriendRequests();
+}
+
+class GetOutgoingPendingFollowsUseCase {
+  const GetOutgoingPendingFollowsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FriendCandidate>> call() =>
+      _repository.getOutgoingPendingFollows();
+}
+
+class FollowUserUseCase {
+  const FollowUserUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<bool> call(String targetUserId) =>
+      _repository.followUser(targetUserId);
 }
 
 class GetRecordSummaryUseCase {
@@ -79,6 +108,25 @@ class GetProfileOverviewUseCase {
   const GetProfileOverviewUseCase(this._repository);
   final DashboardRepository _repository;
   Future<ProfileOverview> call() => _repository.getProfileOverview();
+}
+
+class GetFavoritePostsUseCase {
+  const GetFavoritePostsUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<List<FeedPost>> call() => _repository.getFavoritePosts();
+}
+
+class SetProfilePostPinnedUseCase {
+  const SetProfilePostPinnedUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<void> call(String postId, bool pin) =>
+      _repository.setProfilePostPinned(postId, pin);
+}
+
+class TogglePostFavoriteUseCase {
+  const TogglePostFavoriteUseCase(this._repository);
+  final DashboardRepository _repository;
+  Future<bool> call(String postId) => _repository.togglePostFavorite(postId);
 }
 
 class GetNotificationsUseCase {

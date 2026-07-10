@@ -4,6 +4,7 @@ class MockDashboardDataSource {
   Future<List<FeedPost>> getHomeFeed() async => const [
     FeedPost(
       id: 'p1',
+      userId: 'u-haruka',
       userName: 'haruka',
       userIconUrl: null,
       placeName: 'and people udagawa',
@@ -16,6 +17,7 @@ class MockDashboardDataSource {
     ),
     FeedPost(
       id: 'p2',
+      userId: 'u-ryota',
       userName: 'ryota',
       userIconUrl: null,
       placeName: '恵比寿焼肉',
@@ -108,28 +110,28 @@ class MockDashboardDataSource {
       name: 'yuma_21',
       avatarUrl: '',
       mutualCount: 2,
-      isFollowing: false,
+      isFriend: false,
     ),
     FriendCandidate(
       id: 'f2',
       name: 'saya_27',
       avatarUrl: '',
       mutualCount: 4,
-      isFollowing: false,
+      isFriend: false,
     ),
     FriendCandidate(
       id: 'f3',
       name: 'mana_03',
       avatarUrl: '',
       mutualCount: 1,
-      isFollowing: true,
+      isFriend: true,
     ),
     FriendCandidate(
       id: 'f4',
       name: 'takumi_99',
       avatarUrl: '',
       mutualCount: 3,
-      isFollowing: false,
+      isFriend: false,
     ),
   ];
 
@@ -141,26 +143,62 @@ class MockDashboardDataSource {
     monthlyShots: ['1', '4', '5', '8', '12', '16', '20', '24', '26'],
   );
 
-  Future<ProfileOverview> getProfileOverview() async => const ProfileOverview(
+  Future<ProfileOverview> getProfileOverview() async => ProfileOverview(
     name: 'ryota',
     userCode: '@ryota',
     bio: '',
     avatarUrl: '',
-    followers: 498,
-    following: 342,
-    friends: 120,
-    pinnedShots: [
-      'https://images.unsplash.com/photo-1604908177225-06b39e6d7f4a',
-      'https://images.unsplash.com/photo-1598214886806-c87b84b7078b',
-      'https://images.unsplash.com/photo-1498654896293-37aacf113fd9',
+    followers: 24,
+    following: 18,
+    friends: 12,
+    pinnedPosts: [
+      const ProfilePostThumb(
+        postId: 'pin-1',
+        imageUrl:
+            'https://images.unsplash.com/photo-1604908177225-06b39e6d7f4a',
+      ),
+      const ProfilePostThumb(
+        postId: 'pin-2',
+        imageUrl:
+            'https://images.unsplash.com/photo-1598214886806-c87b84b7078b',
+      ),
+      const ProfilePostThumb(
+        postId: 'pin-3',
+        imageUrl:
+            'https://images.unsplash.com/photo-1498654896293-37aacf113fd9',
+      ),
     ],
-    recentShots: [
-      'https://images.unsplash.com/photo-1504674900247-0877df9cc836',
-      'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17',
-      'https://images.unsplash.com/photo-1473093295043-cdd812d0e601',
-      'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd',
-      'https://images.unsplash.com/photo-1515003197210-e0cd71810b5f',
-      'https://images.unsplash.com/photo-1526318896980-cf78c088247c',
+    recentPosts: [
+      const ProfilePostThumb(
+        postId: 'recent-1',
+        imageUrl:
+            'https://images.unsplash.com/photo-1504674900247-0877df9cc836',
+      ),
+      const ProfilePostThumb(
+        postId: 'recent-2',
+        imageUrl:
+            'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17',
+      ),
+      const ProfilePostThumb(
+        postId: 'recent-3',
+        imageUrl:
+            'https://images.unsplash.com/photo-1473093295043-cdd812d0e601',
+      ),
+      const ProfilePostThumb(
+        postId: 'recent-4',
+        imageUrl:
+            'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd',
+      ),
+      const ProfilePostThumb(
+        postId: 'recent-5',
+        imageUrl:
+            'https://images.unsplash.com/photo-1515003197210-e0cd71810b5f',
+      ),
+      const ProfilePostThumb(
+        postId: 'recent-6',
+        imageUrl:
+            'https://images.unsplash.com/photo-1526318896980-cf78c088247c',
+      ),
     ],
   );
 
