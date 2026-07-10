@@ -56,6 +56,23 @@ Future<DeviceLocationAccessResult> resolveDeviceLocationAccess({
       );
     }
 
+    // まず端末キャッシュ（最後の既知位置）を即座に返し、地図表示の待ちを消す。
+    // 実測は呼び出し側が必要に応じて別途行う。
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        return DeviceLocationAccessResult(
+          status: DeviceLocationAccessStatus.granted,
+          location: DeviceLatLng(
+            lat: lastKnown.latitude,
+            lng: lastKnown.longitude,
+          ),
+        );
+      }
+    } catch (_) {
+      // 取得できない環境（初回・iOS の一部）では実測にフォールバックする。
+    }
+
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,

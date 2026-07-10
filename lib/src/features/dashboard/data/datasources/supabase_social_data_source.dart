@@ -926,18 +926,36 @@ class SupabaseSocialDataSource {
         params: {'p_limit': 10},
       );
       final list = <PendingMealTag>[];
+      final sourcePostIds = <String>[];
+      final rawRows = <Map<String, dynamic>>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
+        rawRows.add(row);
+        final sourcePostId = (row['source_post_id'] ?? '').toString();
+        if (sourcePostId.isNotEmpty) sourcePostIds.add(sourcePostId);
+      }
+
+      final postMetaById = await _fetchMealTagPostMeta(sourcePostIds);
+
+      for (final row in rawRows) {
+        final sourcePostId = (row['source_post_id'] ?? '').toString();
         final iconPath = (row['inviter_icon_path'] ?? '').toString();
         final iconUrl =
-            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
+            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ??
+            '';
+        final meta = postMetaById[sourcePostId];
         list.add(
           PendingMealTag(
-            sourcePostId: (row['source_post_id'] ?? '').toString(),
+            sourcePostId: sourcePostId,
             mealGroupId: (row['meal_group_id'] ?? '').toString(),
             inviterName: (row['inviter_name'] ?? '').toString(),
             inviterIconUrl: iconUrl,
             placeName: (row['place_name'] ?? '').toString(),
+            inviterUserId: meta?.inviterUserId ?? '',
+            placeGoogleId: meta?.placeGoogleId,
+            placeLatitude: meta?.placeLatitude,
+            placeLongitude: meta?.placeLongitude,
+            postType: meta?.postType ?? 'restaurant',
           ),
         );
       }
@@ -947,6 +965,37 @@ class SupabaseSocialDataSource {
         debugPrint('[SupabaseSocialDataSource] listPendingMealTags: $e\n$st');
       }
       return const [];
+    }
+  }
+
+  Future<Map<String, _MealTagPostMeta>> _fetchMealTagPostMeta(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return const {};
+    try {
+      final tPlaces = SupabaseTables.places;
+      final rows = await _client
+          .from(SupabaseTables.posts)
+          .select('id, user_id, post_type, $tPlaces(google_place_id, latitude, longitude)')
+          .inFilter('id', postIds);
+      final map = <String, _MealTagPostMeta>{};
+      for (final raw in (rows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        final postId = row['id'].toString();
+        final place = _extractEmbedded(row[tPlaces]);
+        map[postId] = _MealTagPostMeta(
+          inviterUserId: (row['user_id'] ?? '').toString(),
+          placeGoogleId: (place?['google_place_id'] ?? '').toString().isEmpty
+              ? null
+              : (place?['google_place_id'] ?? '').toString(),
+          placeLatitude: (place?['latitude'] as num?)?.toDouble(),
+          placeLongitude: (place?['longitude'] as num?)?.toDouble(),
+          postType: (row['post_type'] ?? 'restaurant').toString(),
+        );
+      }
+      return map;
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -1409,13 +1458,18 @@ class SupabaseSocialDataSource {
     try {
       final rows = await _client
           .from(SupabaseTables.notifications)
-          .select('id,title,body,event_type,actor_user_id,created_at,is_read')
+          .select(
+            'id,title,body,event_type,actor_user_id,post_id,comment_id,friend_id,created_at,is_read',
+          )
           .eq('recipient_user_id', _uid!)
           .order('created_at', ascending: false)
           .limit(50);
       final list = <AppNotification>[];
+      final actorIds = <String>{};
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
+        final actorId = (row['actor_user_id'] ?? '').toString();
+        if (actorId.isNotEmpty) actorIds.add(actorId);
         list.add(
           AppNotification(
             id: (row['id'] ?? '').toString(),
@@ -1424,9 +1478,16 @@ class SupabaseSocialDataSource {
             eventType: (row['event_type'] ?? '').toString().isEmpty
                 ? null
                 : (row['event_type'] ?? '').toString(),
-            actorUserId: (row['actor_user_id'] ?? '').toString().isEmpty
+            actorUserId: actorId.isEmpty ? null : actorId,
+            postId: (row['post_id'] ?? '').toString().isEmpty
                 ? null
-                : (row['actor_user_id'] ?? '').toString(),
+                : (row['post_id'] ?? '').toString(),
+            commentId: (row['comment_id'] ?? '').toString().isEmpty
+                ? null
+                : (row['comment_id'] ?? '').toString(),
+            friendId: (row['friend_id'] ?? '').toString().isEmpty
+                ? null
+                : (row['friend_id'] ?? '').toString(),
             createdAt: row['created_at'] == null
                 ? null
                 : DateTime.tryParse(row['created_at'].toString()),
@@ -1434,12 +1495,49 @@ class SupabaseSocialDataSource {
           ),
         );
       }
-      return list;
+
+      final actorMeta = await _fetchActorMeta(actorIds);
+      return [
+        for (final notification in list)
+          notification.copyWith(
+            actorName: actorMeta[notification.actorUserId]?.name,
+            actorIconUrl: actorMeta[notification.actorUserId]?.iconUrl,
+          ),
+      ];
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[SupabaseSocialDataSource] fetchNotifications: $e\n$st');
       }
       return const [];
+    }
+  }
+
+  Future<Map<String, _ActorMeta>> _fetchActorMeta(Set<String> actorIds) async {
+    if (actorIds.isEmpty) return const {};
+    try {
+      final rows = await _client
+          .from(SupabaseTables.profiles)
+          .select('id, name, user_code, icon_path')
+          .inFilter('id', actorIds.toList());
+      final map = <String, _ActorMeta>{};
+      for (final raw in (rows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        final id = row['id'].toString();
+        final name = (row['name'] ?? '').toString().trim();
+        final code = (row['user_code'] ?? '').toString().trim();
+        final iconPath = (row['icon_path'] ?? '').toString();
+        final iconUrl = await SupabaseStorageUrls.resolveProfileIconUrl(
+          _client,
+          iconPath,
+        );
+        map[id] = _ActorMeta(
+          name: name.isNotEmpty ? name : (code.isNotEmpty ? code : 'ユーザー'),
+          iconUrl: iconUrl,
+        );
+      }
+      return map;
+    } catch (_) {
+      return const {};
     }
   }
 
@@ -1502,4 +1600,27 @@ class SupabaseSocialDataSource {
     if (runes.isEmpty) return '?';
     return String.fromCharCode(runes.first).toUpperCase();
   }
+}
+
+class _MealTagPostMeta {
+  const _MealTagPostMeta({
+    required this.inviterUserId,
+    this.placeGoogleId,
+    this.placeLatitude,
+    this.placeLongitude,
+    required this.postType,
+  });
+
+  final String inviterUserId;
+  final String? placeGoogleId;
+  final double? placeLatitude;
+  final double? placeLongitude;
+  final String postType;
+}
+
+class _ActorMeta {
+  const _ActorMeta({required this.name, this.iconUrl});
+
+  final String name;
+  final String? iconUrl;
 }

@@ -61,14 +61,16 @@ class _AuthShellPageState extends State<AuthShellPage> {
       return;
     }
 
-    // ログイン済みは DB で name / user_code を確認するまで AppShell に入れない。
-    if (mounted) {
-      setState(() {
-        _profileSetupDone = false;
-        _prefsLoaded = false;
-      });
-    }
+    // 端末キャッシュで「設定完了」なら、まずシェルを即描画（体感速度優先）。
+    // キャッシュが無い（初回など）場合のみ、従来どおりスピナーで確定を待つ。
+    final cachedDone = await ProfileOnboardingStore.cachedSetupComplete(user.id);
+    if (!mounted || generation != _loadGeneration) return;
+    setState(() {
+      _profileSetupDone = cachedDone;
+      _prefsLoaded = cachedDone;
+    });
 
+    // DB で name / user_code を最終確認（キャッシュが誤っていれば後から補正）。
     final done = await ProfileOnboardingStore.resolveSetupComplete(
       userId: user.id,
       email: user.email,

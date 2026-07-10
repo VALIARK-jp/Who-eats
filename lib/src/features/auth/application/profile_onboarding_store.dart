@@ -27,6 +27,13 @@ class ProfileOnboardingStore {
     await prefs.remove(_key(userId));
   }
 
+  /// 端末キャッシュ上「設定完了」とされているか（起動時の楽観表示用）。
+  /// 正しさは [resolveSetupComplete] が後追いで担保する。
+  static Future<bool> cachedSetupComplete(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_key(userId)) ?? false;
+  }
+
   /// name / user_code が未設定なら初回入力が必要（表示用の「ユーザー」は含めない）。
   static bool needsProfileSetup({String? name, String? userCode}) {
     final normalizedName = name?.trim() ?? '';

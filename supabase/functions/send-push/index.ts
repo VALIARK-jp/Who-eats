@@ -6,6 +6,7 @@ type PushEventType =
   | 'comment'
   | 'friend_request'
   | 'friend_accepted'
+  | 'meal_tag'
   | 'post_reminder'
   | 'test';
 
@@ -132,6 +133,11 @@ function buildNotification(
       return {
         title: '友達になりました',
         body: `${actorName} さんと友達になりました`,
+      };
+    case 'meal_tag':
+      return {
+        title: '一緒の食事の記録',
+        body: `${actorName} さんがあなたを一緒の食事に追加しました`,
       };
     case 'post_reminder':
       return {

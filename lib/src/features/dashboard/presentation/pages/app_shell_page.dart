@@ -377,12 +377,8 @@ class _AppShellPageState extends State<AppShellPage> {
   Widget build(BuildContext context) {
     return Consumer<AppShellController>(
       builder: (context, controller, _) {
-        if (controller.loading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-
+        // 起動時は全画面スピナーで待たせず、シェルを即描画する。
+        // フィード読込中は _FeedTab がスケルトンを表示する。
         final pages = [
           _HomePage(
             controller: controller,
@@ -689,9 +685,10 @@ class _HomePageState extends State<_HomePage> {
                           IconButton(
                             icon: Badge(
                               isLabelVisible:
-                                  controller.unreadNotificationCount > 0,
+                                  controller.unreadNotificationCount > 0 ||
+                                  controller.pendingMealTags.isNotEmpty,
                               label: Text(
-                                '${controller.unreadNotificationCount}',
+                                '${controller.unreadNotificationCount + controller.pendingMealTags.length}',
                               ),
                               child: const Icon(Icons.notifications_none),
                             ),
@@ -700,8 +697,16 @@ class _HomePageState extends State<_HomePage> {
                               if (!context.mounted) return;
                               _showNotificationSheet(
                                 context,
-                                controller.notifications,
-                                widget.onOpenProfile,
+                                controller: controller,
+                                notifications: controller.notifications,
+                                pendingMealTags: controller.pendingMealTags,
+                                onOpenProfile: widget.onOpenProfile,
+                                onOpenPostDetail: widget.onOpenPostDetail,
+                                onOpenMealTag: (tag) {
+                                  Navigator.of(context).pop();
+                                  controller.openMealTag(tag);
+                                  widget.onOpenDraft();
+                                },
                               );
                             },
                             style: IconButton.styleFrom(
@@ -739,43 +744,6 @@ class _HomePageState extends State<_HomePage> {
                       onTap: () {
                         controller.setPostDraft(controller.pendingPostDraft!);
                         controller.clearPendingPostDraft();
-                        widget.onOpenDraft();
-                      },
-                    ),
-                  ),
-                ],
-                if (controller.pendingMealTags.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Material(
-                    color: AppColors.cardElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    child: ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.group_add_outlined),
-                      title: Text(
-                        '${controller.pendingMealTags.first.inviterName}さんと一緒の食事',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      subtitle: Text(
-                        controller.pendingMealTags.first.placeName,
-                      ),
-                      onTap: () {
-                        final tag = controller.pendingMealTags.first;
-                        controller.setPostDraft(
-                          PostDraft(
-                            photoUrl: '',
-                            placeName: tag.placeName,
-                            note: '',
-                            withWho: tag.inviterName,
-                            mealGroupId: tag.mealGroupId,
-                            visibility:
-                                controller.profileOverview?.defaultVisibility ??
-                                'friends',
-                          ),
-                        );
                         widget.onOpenDraft();
                       },
                     ),
@@ -879,6 +847,28 @@ class _FeedTab extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    // 初回読み込み中（まだ1件も無い）はスケルトンを表示する。
+    // 「投稿がまだありません」等の空状態は loading 完了後にのみ出す。
+    if (controller.loading && feed.isEmpty) {
+      return Container(
+        color: AppColors.black,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
+          children: [
+            timelineTabs(),
+            const SizedBox(height: 20),
+            for (var i = 0; i < 3; i++) ...[
+              const _FeedSkeletonCard(),
+              if (i != 2) const SizedBox(height: 18),
+            ],
+          ],
         ),
       );
     }
@@ -1677,6 +1667,89 @@ class _PastPostPreview extends StatelessWidget {
   }
 }
 
+/// フィード読み込み中に表示する、脈打つプレースホルダーカード。
+class _FeedSkeletonCard extends StatefulWidget {
+  const _FeedSkeletonCard();
+
+  @override
+  State<_FeedSkeletonCard> createState() => _FeedSkeletonCardState();
+}
+
+class _FeedSkeletonCardState extends State<_FeedSkeletonCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = AppColors.blackElevated;
+    Widget block({
+      double? width,
+      required double height,
+      double radius = 8,
+    }) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.border,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      );
+    }
+
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1.0).animate(
+        CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: base,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                block(width: 40, height: 40, radius: 999),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    block(width: 120, height: 12),
+                    const SizedBox(height: 8),
+                    block(width: 80, height: 10),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: block(height: 260, radius: 14),
+            ),
+            const SizedBox(height: 12),
+            block(width: double.infinity, height: 12),
+            const SizedBox(height: 8),
+            block(width: 180, height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BerealFeedCard extends StatelessWidget {
   const _BerealFeedCard({
     required this.post,
@@ -2105,9 +2178,26 @@ class _MapTabState extends State<_MapTab> {
     widget.controller.addListener(_onShellControllerUpdate);
     googleMapsLoadFailedNotifier.addListener(_onGoogleMapsLoadFailureChanged);
     _prepareMarkerIcons();
+    // 地図タブを開いた時に初めて位置情報を解決する（起動時には走らせない）。
+    unawaited(_resolveLocationThenBootstrap());
+  }
+
+  /// 地図表示に必要な位置情報を解決する。権限付与済みなら再タップ不要で取得し、
+  /// 未許可の場合は build() が [_MapLocationAccessGate] を表示する。
+  Future<void> _resolveLocationThenBootstrap() async {
     if (widget.controller.hasMapLocationAccess) {
       unawaited(_bootstrapMapData());
+      return;
     }
+    final granted = await widget.controller.ensureMapLocationAccess(
+      requestIfNeeded: false,
+    );
+    if (!mounted) return;
+    setState(() {});
+    if (!granted) return;
+    _didCenterOnDeviceLocation = false;
+    unawaited(_bootstrapMapData());
+    unawaited(_tryCenterOnDeviceLocation());
   }
 
   Future<void> _bootstrapMapData() async {
@@ -6747,10 +6837,14 @@ class _PhotoGrid extends StatelessWidget {
 }
 
 void _showNotificationSheet(
-  BuildContext context,
-  List<AppNotification> notifications,
+  BuildContext context, {
+  required AppShellController controller,
+  required List<AppNotification> notifications,
+  required List<PendingMealTag> pendingMealTags,
   ValueChanged<String>? onOpenProfile,
-) {
+  ValueChanged<FeedPost>? onOpenPostDetail,
+  void Function(PendingMealTag tag)? onOpenMealTag,
+}) {
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: AppColors.blackElevated,
@@ -6758,20 +6852,40 @@ void _showNotificationSheet(
       children: [
         const ListTile(
           title: Text('通知', style: TextStyle(fontWeight: FontWeight.w700)),
-          subtitle: Text('いいね、コメント、友達申請など'),
+          subtitle: Text('いいね、コメント、友達申請、一緒の食事など'),
         ),
-        if (notifications.isEmpty)
+        if (pendingMealTags.isEmpty && notifications.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: Text('まだ通知はありません。'),
           )
-        else
+        else ...[
+          ...pendingMealTags.map(
+            (tag) => ListTile(
+              leading: FriendAvatar(
+                displayName: tag.inviterName,
+                avatarUrl: tag.inviterIconUrl,
+                radius: 22,
+              ),
+              title: const Text(
+                '一緒の食事の記録',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                '${tag.inviterName}さんと${tag.placeName} · タップして投稿',
+                style: const TextStyle(color: AppColors.textSubtle),
+              ),
+              onTap: onOpenMealTag == null
+                  ? null
+                  : () => onOpenMealTag(tag),
+            ),
+          ),
           ...notifications.map(
             (n) => ListTile(
-              leading: Icon(
-                n.isRead
-                    ? Icons.notifications_none_outlined
-                    : Icons.notifications_active_outlined,
+              leading: FriendAvatar(
+                displayName: n.actorLabel,
+                avatarUrl: n.actorIconUrl,
+                radius: 22,
               ),
               title: Text(
                 n.title,
@@ -6779,59 +6893,74 @@ void _showNotificationSheet(
                   fontWeight: n.isRead ? FontWeight.w500 : FontWeight.w700,
                 ),
               ),
-              subtitle: _buildNotificationSubtitle(
-                sheetContext,
-                n,
-                onOpenProfile,
+              subtitle: _buildNotificationSubtitle(n),
+              onTap: () => unawaited(
+                _handleNotificationTap(
+                  sheetContext,
+                  controller: controller,
+                  notification: n,
+                  onOpenProfile: onOpenProfile,
+                  onOpenPostDetail: onOpenPostDetail,
+                ),
               ),
             ),
           ),
+        ],
       ],
     ),
   );
 }
 
-Widget _buildNotificationSubtitle(
-  BuildContext context,
-  AppNotification notification,
+Future<void> _handleNotificationTap(
+  BuildContext context, {
+  required AppShellController controller,
+  required AppNotification notification,
   ValueChanged<String>? onOpenProfile,
-) {
+  ValueChanged<FeedPost>? onOpenPostDetail,
+}) async {
+  Navigator.of(context).pop();
+
+  final eventType = notification.eventType ?? '';
+  switch (eventType) {
+    case 'like':
+    case 'comment':
+      final postId = notification.postId;
+      if (postId != null &&
+          postId.isNotEmpty &&
+          onOpenPostDetail != null) {
+        final post = await controller.loadFeedPostById(postId);
+        if (!context.mounted) return;
+        if (post != null) {
+          onOpenPostDetail(post);
+          return;
+        }
+      }
+      break;
+    case 'friend_request':
+    case 'friend_accepted':
+      final userId = notification.actorUserId ?? notification.friendId;
+      if (userId != null && userId.isNotEmpty && onOpenProfile != null) {
+        onOpenProfile(userId);
+        return;
+      }
+      break;
+  }
+
+  final fallbackUserId = notification.actorUserId ?? notification.friendId;
+  if (fallbackUserId != null &&
+      fallbackUserId.isNotEmpty &&
+      onOpenProfile != null) {
+    onOpenProfile(fallbackUserId);
+  }
+}
+
+Widget _buildNotificationSubtitle(AppNotification notification) {
   final timestamp = notification.createdAt != null
       ? ' ・ ${_formatNotificationTime(notification.createdAt!)}'
       : '';
-
-  if (notification.actorUserId == null || onOpenProfile == null) {
-    return Text('${notification.body}$timestamp');
-  }
-
-  final bodyMatch = RegExp(r'^(.+? さん)(.*)').firstMatch(notification.body);
-  if (bodyMatch == null) {
-    return Text('${notification.body}$timestamp');
-  }
-
-  final actorText = bodyMatch.group(1)!;
-  final restText = bodyMatch.group(2)!;
-  return Text.rich(
-    TextSpan(
-      children: [
-        TextSpan(
-          text: actorText,
-          style: const TextStyle(
-            color: Colors.blueAccent,
-            decoration: TextDecoration.underline,
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () {
-              Navigator.of(context).pop();
-              onOpenProfile(notification.actorUserId!);
-            },
-        ),
-        TextSpan(
-          text: '$restText$timestamp',
-          style: const TextStyle(color: Colors.white),
-        ),
-      ],
-    ),
+  return Text(
+    '${notification.body}$timestamp',
+    style: const TextStyle(color: AppColors.textSubtle),
   );
 }
 

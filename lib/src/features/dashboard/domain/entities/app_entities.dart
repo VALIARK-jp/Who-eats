@@ -217,6 +217,11 @@ class PendingMealTag {
     required this.inviterName,
     required this.inviterIconUrl,
     required this.placeName,
+    this.inviterUserId = '',
+    this.placeGoogleId,
+    this.placeLatitude,
+    this.placeLongitude,
+    this.postType = 'restaurant',
   });
 
   final String sourcePostId;
@@ -224,6 +229,26 @@ class PendingMealTag {
   final String inviterName;
   final String inviterIconUrl;
   final String placeName;
+  final String inviterUserId;
+  final String? placeGoogleId;
+  final double? placeLatitude;
+  final double? placeLongitude;
+  final String postType;
+
+  PostDraft toPostDraft({required String defaultVisibility}) {
+    return PostDraft(
+      photoUrl: '',
+      placeGoogleId: placeGoogleId,
+      placeLatitude: placeLatitude,
+      placeLongitude: placeLongitude,
+      placeName: placeName,
+      note: '',
+      withWho: inviterName,
+      mealGroupId: mealGroupId,
+      postType: postType,
+      visibility: defaultVisibility,
+    );
+  }
 }
 
 class ProfilePostThumb {
@@ -411,6 +436,11 @@ class AppNotification {
     required this.body,
     this.eventType,
     this.actorUserId,
+    this.actorName,
+    this.actorIconUrl,
+    this.postId,
+    this.commentId,
+    this.friendId,
     this.createdAt,
     this.isRead = false,
   });
@@ -420,8 +450,20 @@ class AppNotification {
   final String body;
   final String? eventType;
   final String? actorUserId;
+  final String? actorName;
+  final String? actorIconUrl;
+  final String? postId;
+  final String? commentId;
+  final String? friendId;
   final DateTime? createdAt;
   final bool isRead;
+
+  String get actorLabel {
+    final fromField = actorName?.trim() ?? '';
+    if (fromField.isNotEmpty) return fromField;
+    final match = RegExp(r'^(.+? さん)').firstMatch(body);
+    return match?.group(1) ?? 'ユーザー';
+  }
 
   AppNotification copyWith({
     String? id,
@@ -429,6 +471,11 @@ class AppNotification {
     String? body,
     String? eventType,
     String? actorUserId,
+    String? actorName,
+    String? actorIconUrl,
+    String? postId,
+    String? commentId,
+    String? friendId,
     DateTime? createdAt,
     bool? isRead,
   }) {
@@ -438,6 +485,11 @@ class AppNotification {
       body: body ?? this.body,
       eventType: eventType ?? this.eventType,
       actorUserId: actorUserId ?? this.actorUserId,
+      actorName: actorName ?? this.actorName,
+      actorIconUrl: actorIconUrl ?? this.actorIconUrl,
+      postId: postId ?? this.postId,
+      commentId: commentId ?? this.commentId,
+      friendId: friendId ?? this.friendId,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
     );
