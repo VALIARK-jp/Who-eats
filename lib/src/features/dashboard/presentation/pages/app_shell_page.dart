@@ -685,10 +685,16 @@ class _HomePageState extends State<_HomePage> {
                           IconButton(
                             icon: Badge(
                               isLabelVisible:
-                                  controller.unreadNotificationCount > 0 ||
-                                  controller.pendingMealTags.isNotEmpty,
+                                  calculateNotificationBadgeCount(
+                                        unreadNotificationCount:
+                                            controller.unreadNotificationCount,
+                                      ) >
+                                  0,
                               label: Text(
-                                '${controller.unreadNotificationCount + controller.pendingMealTags.length}',
+                                '${calculateNotificationBadgeCount(
+                                  unreadNotificationCount:
+                                      controller.unreadNotificationCount,
+                                )}',
                               ),
                               child: const Icon(Icons.notifications_none),
                             ),
@@ -6834,6 +6840,12 @@ class _PhotoGrid extends StatelessWidget {
       ),
     );
   }
+}
+
+int calculateNotificationBadgeCount({required int unreadNotificationCount}) {
+  // 通知バッジは未読の通知数だけで決定する。
+  // タグ付け通知も、未読であればバッジ対象とする。
+  return unreadNotificationCount;
 }
 
 void _showNotificationSheet(
