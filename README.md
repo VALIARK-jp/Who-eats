@@ -1,133 +1,75 @@
-# who_eats_app
+# Who eats
 
-Who eats UI prototype built with Flutter (clean architecture + mock-first).
+友達や信頼できる人の食事投稿が、地図とタイムラインで見られるグルメSNSアプリ。  
+「知らない人の星5」ではなく、つながりの中の食体験で店を選ぶ。
 
-## 開発セットアップ
+- **App Store（iOS）:** https://apps.apple.com/jp/app/who-eats/id6775419615
+- **紹介LP:** https://valiark.jp/who-eats/
+- **運営:** [VALIARK合同会社](https://valiark.jp/)
 
-- **秘密・`.env` の運用（Valiark 共通）:** [docs/valiark_client_secrets_playbook.md](docs/valiark_client_secrets_playbook.md)
-- **push 通知の prod 接続:** [docs/push_notification_prod_setup.md](docs/push_notification_prod_setup.md)
-- **valiark-prod / prod 接続と build:** [docs/16_valiark_prod_who_eats_setup.md](docs/16_valiark_prod_who_eats_setup.md)
-- **ブランチ運用ルール:** [docs/branching_policy.md](docs/branching_policy.md)
-- **起動・読み込みの重さ改善メモ:** [docs/performance_startup_loading_plan.md](docs/performance_startup_loading_plan.md)
-- **環境値の優先順位:** `--dart-define=KEY=value` を付けた場合は、ルートの `.env` より優先（`lib/src/core/config/app_config.dart` の `AppConfig`）。
-- **初回:** `cp .env.example .env` で `.env` を作る（`pubspec.yaml` の asset に含まれるため必須）。または [scripts/flutter_run_dev.sh](scripts/flutter_run_dev.sh) が無ければ自動コピーしてから `flutter run`。
-- **prod:** `cp .env.prod.example .env.prod` のうえ、[scripts/flutter_run_prod.sh](scripts/flutter_run_prod.sh) / [scripts/flutter_build_prod.sh](scripts/flutter_build_prod.sh) / [scripts/flutter_build_prod_android.sh](scripts/flutter_build_prod_android.sh) を使う。
+## 自分の役割
 
-## Map API integration (pins + place detail)
+阪大情報科学科の授業プロジェクト（6人班）の **PM**。以下を主導した。
 
-The map screen fetches map pins and place detail from external APIs and
-automatically falls back to mock data when the API is unavailable.
+- PostgreSQL（Supabase）の **テーブル設計・マイグレーション・RLS**
+- **認証**（LINE / Apple / メール）と valiark-prod 共有基盤との接続設計
+- フロント向け **API / RPC 契約** の整理とレビュー（Clean Architecture の data 層インターフェース）
+- スプリント計画・WBS・公開前の PM 専用タスク（DB・認証・Edge Functions）の実装
 
-### Run with map APIs (via `.env` or `--dart-define`)
+UI / 3D マップピン等はメンバー担当。DB・認証・ソーシャル API のオーナーは自分。
+
+## 技術スタック
+
+| 領域 | 技術 |
+|---|---|
+| クライアント | Flutter（iOS / Android） |
+| 状態管理 | Provider |
+| バックエンド | Supabase（PostgreSQL, Auth, Storage, Edge Functions） |
+| 認証 | LINE Login, Sign in with Apple, メール（OTP） |
+| 地図 | Google Maps / Places API |
+| プッシュ | Firebase Cloud Messaging + Edge Function |
+| インフラ | valiark-prod Supabase（PandaTalk 等と共有プロジェクト、`whoeats_*` スキーマ分離） |
+
+## 設計のポイント
+
+### 1. ネットワーク型アプリ向けの可視性設計
+
+投稿の公開範囲を **友達 / 友達の友達 / 全体** の3段階に分け、RLS と RPC でフィード・地図の表示を制御。1人だけ DL しても価値が出にくいため、友達グラフを前提にしたデータモデルにしている。
+
+### 2. マルチアプリ共有 Supabase 上のドメイン分離
+
+VALIARK 自社プロダクト（PandaTalk 等）と **同一 Supabase プロジェクト** を共有しつつ、`whoeats_*` テーブル・RLS ヘルパーで Who eats ドメインを分離。認証 Edge Function・LINE チャネル設計は社内共通基盤を再利用（`docs/AUTH_VALIARK.md` 参照）。
+
+### 3. ソーシャル操作を RPC に集約
+
+フォロー（pending / accepted）、meal tag、ホームフィードスコープ、投稿削除などを **PostgreSQL RPC + RLS** で実装。クライアントは PostgREST 経由で一貫した契約を呼び出す。
+
+## セットアップ
+
+完全なローカル起動には **Supabase プロジェクトへのアクセス** と API キーが必要。リポジトリ単体では本番 DB に接続できない。
 
 ```bash
 cp .env.example .env
-# Edit .env values
+# .env に WHOEATS_SUPABASE_URL, WHOEATS_SUPABASE_ANON_KEY, Maps API キー等を設定
 
+flutter pub get
 flutter run
 ```
 
-CI や一時試行では `.env` を触らずに上書きできる例:
+- 環境変数の優先順位・秘密情報の扱い: [docs/valiark_client_secrets_playbook.md](docs/valiark_client_secrets_playbook.md)
+- マイグレーション: `supabase/migrations/`（`supabase db push` で適用）
+- **アーキテクチャ参照:** `doc/whoeats-product-spec-v1.md`, `doc/db-table-design-final-mvp.md`
 
-```bash
-flutter run \
-  --dart-define=WHOEATS_SUPABASE_URL=https://xxx.supabase.co \
-  --dart-define=WHOEATS_SUPABASE_ANON_KEY=eyJ...
+## リポジトリ構成（抜粋）
+
+```
+lib/                 Flutter アプリ（features / core）
+supabase/migrations/ PostgreSQL スキーマ・RLS・RPC
+supabase/functions/  Edge Functions（push 通知等）
+doc/                 プロダクト仕様・DB 設計
 ```
 
-`WHOEATS_GOOGLE_MAPS_WEB_API_KEY` is used for direct Google API trials:
-- Maps SDK (map rendering in app)
-- Places Nearby Search (map pins)
-- Place Details (address/rating/phone/opening)
-- Places Autocomplete (post editor place suggestions)
-- Directions API (walking minutes in place sheet)
-- Places Photos (detail hero image)
+## ライセンス・公開について
 
-Native Maps SDK keys are also read from `.env`:
-- `WHOEATS_IOS_MAPS_API_KEY` (iOS `GMSServices.provideAPIKey`)
-- `WHOEATS_ANDROID_MAPS_API_KEY` (Android manifest placeholder)
-
-### Pins API format (`GET /map/pins`)
-
-Either of the following is accepted:
-
-```json
-[
-  {
-    "id": "m1",
-    "placeName": "and people udagawa",
-    "rating": 4.6,
-    "friendComment": "Great vibe",
-    "imageUrl": "https://...",
-    "isFriendVisited": true,
-    "friendAvatars": ["H", "R", "M"],
-    "latitude": 35.6595,
-    "longitude": 139.7005
-  }
-]
-```
-
-or:
-
-```json
-{
-  "data": [
-    {
-      "id": "m1",
-      "place_name": "and people udagawa",
-      "rating": 4.6,
-      "friend_comment": "Great vibe",
-      "image_url": "https://...",
-      "is_friend_visited": true,
-      "friend_avatars": ["H", "R", "M"],
-      "lat": 35.6595,
-      "lng": 139.7005
-    }
-  ]
-}
-```
-
-If the API returns an error or unexpected format, map pins are served from mock
-data so the screen remains usable.
-
-### Place detail API format (`GET /places/{placeId}`)
-
-Accepted response:
-
-```json
-{
-  "placeId": "m1",
-  "placeName": "and people udagawa",
-  "rating": 4.6,
-  "friendComment": "Great vibe",
-  "imageUrl": "https://...",
-  "posts": [
-    {
-      "id": "pp1",
-      "userName": "haruka",
-      "comment": "ライト暗めで写真映えした！"
-    }
-  ]
-}
-```
-
-or:
-
-```json
-{
-  "data": {
-    "place_id": "m1",
-    "place_name": "and people udagawa",
-    "rating": 4.6,
-    "friend_comment": "Great vibe",
-    "image_url": "https://...",
-    "posts": [
-      {
-        "id": "pp1",
-        "user_name": "haruka",
-        "comment": "ライト暗めで写真映えした！"
-      }
-    ]
-  }
-}
-```
+授業プロジェクト起源だが、現在は VALIARK 自社プロダクトとして App Store 公開中。  
+GitHub を Public にする場合は、**チームメンバー全員の同意**を事前に取得すること。
