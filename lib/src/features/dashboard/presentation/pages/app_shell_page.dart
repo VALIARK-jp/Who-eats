@@ -1988,7 +1988,7 @@ class _RecordPage extends StatelessWidget {
   }
 }
 
-class _ProfilePage extends StatelessWidget {
+class _ProfilePage extends StatefulWidget {
   const _ProfilePage({
     required this.profile,
     required this.controller,
@@ -1996,6 +1996,7 @@ class _ProfilePage extends StatelessWidget {
   });
   final ProfileOverview profile;
   final AppShellController controller;
+  final Function(FeedPost)? onOpenPostDetail;
 
   @override
   State<_ProfilePage> createState() => _ProfilePageState();
