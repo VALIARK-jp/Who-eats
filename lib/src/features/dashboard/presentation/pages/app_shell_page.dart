@@ -2086,9 +2086,7 @@ class _ProfilePageState extends State<_ProfilePage> {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (context) => _ProfileFriendsPage(
-                          friends: widget.controller.friendCandidates
-                              .where((c) => c.isFollowing)
-                              .toList(),
+                          friends: widget.controller.friends,
                         ),
                       ),
                     );
