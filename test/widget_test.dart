@@ -1,14 +1,15 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter_test/flutter_test.dart';
+import 'package:who_eats_app/src/features/dashboard/presentation/pages/app_shell_page.dart';
 
 void main() {
-  test('Mock data placeholder', () {
-    expect(2 + 3, 5);
+  test('notification badge count reflects unread notifications', () {
+    expect(
+      calculateNotificationBadgeCount(unreadNotificationCount: 3),
+      3,
+    );
+    expect(
+      calculateNotificationBadgeCount(unreadNotificationCount: 0),
+      0,
+    );
   });
 }
