@@ -197,8 +197,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
   @override
   Future<List<FeedPost>> getHomeFeed({
     FeedTimelineScope scope = FeedTimelineScope.all,
+    HomeFeedPartialListener? onPartial,
   }) async {
-    if (_useSupabase) return _social.fetchHomeFeed(scope: scope);
+    if (_useSupabase) {
+      return _social.fetchHomeFeed(scope: scope, onPartial: onPartial);
+    }
     return _dataSource.getHomeFeed();
   }
 
@@ -206,6 +209,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
   Future<List<MapPin>> getMapPins({
     double? centerLat,
     double? centerLng,
+    MapPinsPartialListener? onPartial,
   }) async {
     _log('getMapPins start');
     if (!_useSupabase) return _dataSource.getMapPins();
@@ -213,59 +217,16 @@ class DashboardRepositoryImpl implements DashboardRepository {
     final lat = centerLat ?? _defaultMapLat;
     final lng = centerLng ?? _defaultMapLng;
     final friendIds = await _social.fetchMutualFriendIds();
+
     final dbPins = await _supabaseMapPins.fetchPostedPinsAround(
       lat: lat,
       lng: lng,
       radiusMeters: _initialMapRadiusMeters,
       mutualFriendIds: friendIds,
     );
-    List<MapPin> googlePins = const [];
-
-    if (_googlePlacesDataSource != null) {
-      try {
-        googlePins = (await _googlePlacesDataSource.searchNearbyPlacesAround(
-          lat: lat,
-          lng: lng,
-          radiusMeters: _initialMapRadiusMeters,
-          keyword: 'restaurant',
-        )).map((pin) => pin.toEntity()).toList();
-      } catch (e) {
-        _log('getMapPins google failed: $e');
-      }
-    }
-
-    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
-      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
-      _log(
-        'getMapPins source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
-      );
-      return merged;
-    }
-
-    if (dbPins.isNotEmpty) {
-      _log('getMapPins source=supabase count=${dbPins.length}');
-      return dbPins;
-    }
-
-    if (googlePins.isNotEmpty) {
-      _log('getMapPins source=google count=${googlePins.length}');
-      return googlePins;
-    }
-
-    if (_mapApiDataSource != null) {
-      try {
-        final remotePins = await _mapApiDataSource.getMapPins();
-        if (remotePins.isNotEmpty) {
-          _log('getMapPins source=mapApi count=${remotePins.length}');
-          return remotePins.map((pin) => pin.toEntity()).toList();
-        }
-      } catch (e) {
-        _log('getMapPins mapApi failed: $e');
-      }
-    }
-
-    _log('getMapPins source=empty');
-    return const [];
+    onPartial?.call(dbPins);
+    _log('getMapPins source=supabase count=${dbPins.length}');
+    return dbPins;
   }
 
   @override
@@ -280,38 +241,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
       keyword: keyword,
       mutualFriendIds: friendIds,
     );
-    List<MapPin> googlePins = const [];
-
-    if (_googlePlacesDataSource != null) {
-      try {
-        googlePins = (await _googlePlacesDataSource.searchNearbyPlaces(
-          keyword: keyword,
-        )).map((pin) => pin.toEntity()).toList();
-      } catch (e) {
-        _log('searchMapPins google failed: $e');
-      }
-    }
-
-    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
-      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
-      _log(
-        'searchMapPins source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
-      );
-      return merged;
-    }
-
-    if (dbPins.isNotEmpty) {
-      _log('searchMapPins source=supabase count=${dbPins.length}');
-      return dbPins;
-    }
-
-    if (googlePins.isNotEmpty) {
-      _log('searchMapPins source=google count=${googlePins.length}');
-      return googlePins;
-    }
-
-    _log('searchMapPins source=empty');
-    return const [];
+    _log('searchMapPins source=supabase count=${dbPins.length}');
+    return dbPins;
   }
 
   @override
@@ -325,6 +256,7 @@ class DashboardRepositoryImpl implements DashboardRepository {
     double? boundsMinLng,
     double? boundsMaxLng,
     double zoom = 14,
+    MapPinsPartialListener? onPartial,
   }) async {
     _log(
       'searchMapPinsAround lat=$lat lng=$lng radius=$radiusMeters zoom=$zoom '
@@ -367,44 +299,11 @@ class DashboardRepositoryImpl implements DashboardRepository {
       );
     }
 
-    List<MapPin> googlePins = const [];
-
-    // 広域ズームでは Google 店舗ピンを省略し、オレンジ（投稿）ピン取得を優先。
-    if (_googlePlacesDataSource != null &&
-        zoom >= MapDisplayConfig.individualPinMinZoom - 1) {
-      try {
-        googlePins = (await _googlePlacesDataSource.searchNearbyPlacesAround(
-          lat: lat,
-          lng: lng,
-          radiusMeters: radiusMeters,
-          keyword: keyword,
-        )).map((pin) => pin.toEntity()).toList();
-      } catch (e) {
-        _log('searchMapPinsAround google failed: $e');
-      }
+    onPartial?.call(dbPins);
+    if (!useBoundsFetch) {
+      _log('searchMapPinsAround source=supabase count=${dbPins.length}');
     }
-
-    if (dbPins.isNotEmpty && googlePins.isNotEmpty) {
-      final merged = _mergeMapPins(postedPins: dbPins, generalPins: googlePins);
-      _log(
-        'searchMapPinsAround source=merged posted=${dbPins.length} general=${googlePins.length} count=${merged.length}',
-      );
-      return merged;
-    }
-
-    if (dbPins.isNotEmpty) {
-      if (!useBoundsFetch) {
-        _log('searchMapPinsAround source=supabase count=${dbPins.length}');
-      }
-      return dbPins;
-    }
-
-    if (googlePins.isNotEmpty) {
-      _log('searchMapPinsAround source=google count=${googlePins.length}');
-      return googlePins;
-    }
-
-    return searchMapPins(keyword ?? 'restaurant');
+    return dbPins;
   }
 
   int _bboxLimitForZoom(double zoom) {
@@ -415,22 +314,8 @@ class DashboardRepositoryImpl implements DashboardRepository {
 
   @override
   Future<MapPin?> resolvePlacePinFromCoordinate(double lat, double lng) async {
-    _log('resolveFromCoord lat=$lat lng=$lng');
-    if (_googlePlacesDataSource != null) {
-      try {
-        final pin = await _googlePlacesDataSource.resolveNearestRestaurantPin(
-          lat: lat,
-          lng: lng,
-        );
-        if (pin != null) {
-          _log('resolveFromCoord resolved placeId=${pin.id}');
-          return pin.toEntity();
-        }
-        _log('resolveFromCoord no result');
-      } catch (e) {
-        _log('resolveFromCoord failed: $e');
-      }
-    }
+    // Nearby Search は課金が高いため、地図・投稿フローでは使わない。
+    _log('resolveFromCoord skipped lat=$lat lng=$lng');
     return null;
   }
 
@@ -537,52 +422,6 @@ class DashboardRepositoryImpl implements DashboardRepository {
     }
 
     throw Exception('Place detail not found for placeId: $placeId');
-  }
-
-  List<MapPin> _mergeMapPins({
-    required List<MapPin> postedPins,
-    required List<MapPin> generalPins,
-  }) {
-    final generalById = <String, MapPin>{
-      for (final pin in generalPins) pin.id: pin,
-    };
-    final merged = <MapPin>[];
-
-    for (final postedPin in postedPins) {
-      final generalPin = generalById.remove(postedPin.id);
-      merged.add(
-        generalPin == null
-            ? postedPin
-            : _mergeMapPin(postedPin: postedPin, generalPin: generalPin),
-      );
-    }
-
-    merged.addAll(generalById.values);
-    return merged;
-  }
-
-  MapPin _mergeMapPin({required MapPin postedPin, required MapPin generalPin}) {
-    return postedPin.copyWith(
-      placeName: generalPin.placeName.isNotEmpty
-          ? generalPin.placeName
-          : postedPin.placeName,
-      rating: generalPin.rating > 0 ? generalPin.rating : postedPin.rating,
-      friendComment: generalPin.friendComment.isNotEmpty
-          ? generalPin.friendComment
-          : postedPin.friendComment,
-      imageUrl: generalPin.imageUrl.isNotEmpty
-          ? generalPin.imageUrl
-          : postedPin.imageUrl,
-      isFriendVisited: postedPin.isFriendVisited || generalPin.isFriendVisited,
-      hasPostedActivity:
-          postedPin.hasPostedActivity || generalPin.hasPostedActivity,
-      visitors: postedPin.visitors.isNotEmpty
-          ? postedPin.visitors
-          : generalPin.visitors,
-      mapPinIconUrl: postedPin.mapPinIconUrl ?? generalPin.mapPinIconUrl,
-      latitude: generalPin.latitude ?? postedPin.latitude,
-      longitude: generalPin.longitude ?? postedPin.longitude,
-    );
   }
 
   @override

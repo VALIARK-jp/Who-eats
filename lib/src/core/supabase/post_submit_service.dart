@@ -219,6 +219,39 @@ class PostSubmitService {
     required String companionUserId,
     required String postId,
   }) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    var actorName = 'ユーザー';
+    try {
+      final actorRow = await _client
+          .from(SupabaseTables.profiles)
+          .select('name, user_code')
+          .eq('id', uid)
+          .maybeSingle();
+      final name = (actorRow?['name'] ?? '').toString().trim();
+      final code = (actorRow?['user_code'] ?? '').toString().trim();
+      if (name.isNotEmpty) {
+        actorName = name;
+      } else if (code.isNotEmpty) {
+        actorName = code;
+      }
+    } catch (_) {}
+
+    try {
+      await _client.rpc(
+        'insert_whoeats_notification',
+        params: {
+          'p_recipient_user_id': companionUserId,
+          'p_actor_user_id': uid,
+          'p_event_type': 'meal_tag',
+          'p_title': '一緒の食事の記録',
+          'p_body': '$actorName さんがあなたを一緒の食事に追加しました',
+          'p_post_id': postId,
+        },
+      );
+    } catch (_) {}
+
     try {
       await PushNotificationService.instance.sendEvent(
         targetUserId: companionUserId,

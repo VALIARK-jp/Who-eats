@@ -43,26 +43,12 @@ class SupabaseSocialDataSource {
     if (_uid == null) return const [];
     try {
       final rows = await _client.rpc('get_my_friends');
-      final list = <FriendCandidate>[];
-      for (final raw in (rows as List<dynamic>)) {
-        final row = raw as Map<String, dynamic>;
-        final id = (row['user_id'] ?? '').toString();
-        if (id.isEmpty) continue;
-        final name = (row['name'] ?? '').toString().trim();
-        final iconPath = (row['icon_path'] ?? '').toString();
-        final avatarUrl =
-            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
-        list.add(
-          FriendCandidate(
-            id: id,
-            name: name.isNotEmpty ? name : 'ユーザー',
-            avatarUrl: avatarUrl,
-            mutualCount: 0,
-            isFriend: true,
-          ),
-        );
-      }
-      return list;
+      return _rowsToCandidates(
+        rows,
+        theyFollowMe: false,
+        iFollowThem: false,
+        isFriend: true,
+      );
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[SupabaseSocialDataSource] fetchFriends: $e\n$st');
@@ -161,37 +147,58 @@ class SupabaseSocialDataSource {
     required bool theyFollowMe,
     required bool iFollowThem,
     bool includeMutualCount = false,
+    bool isFriend = false,
   }) async {
-    final list = <FriendCandidate>[];
+    final parsed = <({
+      String id,
+      String name,
+      String iconPath,
+      int mutualCount,
+    })>[];
+    final iconPaths = <String>{};
     for (final raw in (rows as List<dynamic>)) {
       final row = raw as Map<String, dynamic>;
       final id = (row['user_id'] ?? '').toString();
       if (id.isEmpty) continue;
       final name = (row['name'] ?? '').toString().trim();
-      final iconPath = (row['icon_path'] ?? '').toString();
-      final avatarUrl =
-          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
-      list.add(
+      final iconPath = (row['icon_path'] ?? '').toString().trim();
+      if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+      parsed.add((
+        id: id,
+        name: name,
+        iconPath: iconPath,
+        mutualCount: includeMutualCount
+            ? (row['mutual_count'] as num?)?.toInt() ?? 0
+            : 0,
+      ));
+    }
+    final signedUrls = await SupabaseStorageUrls.signedProfileIcons(
+      _client,
+      iconPaths,
+    );
+    return [
+      for (final item in parsed)
         FriendCandidate(
-          id: id,
-          name: name.isNotEmpty ? name : 'ユーザー',
-          avatarUrl: avatarUrl,
-          mutualCount: includeMutualCount
-              ? (row['mutual_count'] as num?)?.toInt() ?? 0
-              : 0,
-          isFriend: false,
+          id: item.id,
+          name: item.name.isNotEmpty ? item.name : 'ユーザー',
+          avatarUrl: item.iconPath.isEmpty
+              ? ''
+              : (signedUrls[item.iconPath] ?? ''),
+          mutualCount: item.mutualCount,
+          isFriend: isFriend,
           theyFollowMe: theyFollowMe,
           iFollowThem: iFollowThem,
         ),
-      );
-    }
-    return list;
+    ];
   }
 
   Future<List<FeedPost>> fetchHomeFeed({
     FeedTimelineScope scope = FeedTimelineScope.all,
+    void Function(List<FeedPost> posts)? onPartial,
   }) async {
     try {
+      const batchSize = 8;
+      const maxPosts = 50;
       final tAuthor = SupabaseTables.postAuthorEmbed;
       final tPlaces = SupabaseTables.places;
       final tImages = SupabaseTables.postImages;
@@ -210,36 +217,43 @@ class SupabaseSocialDataSource {
       }
 
       final rows = await query.order('created_at', ascending: false).limit(80);
-      final postIds = <String>[];
       final rawRows = <Map<String, dynamic>>[];
       for (final raw in (rows as List<dynamic>)) {
-        final row = raw as Map<String, dynamic>;
-        rawRows.add(row);
-        postIds.add(row['id'].toString());
+        rawRows.add(raw as Map<String, dynamic>);
       }
+      final postIds = rawRows.map((row) => row['id'].toString()).toList();
 
-      final reactionCounts = await _countByPostId(
-        SupabaseTables.postReactions,
-        postIds,
-      );
-      final commentCounts = await _countByPostId(
-        SupabaseTables.postComments,
-        postIds,
-        deletedFilter: true,
-      );
+      final nearFuture = scope == FeedTimelineScope.near
+          ? _fetchNearFeedUserIds()
+          : Future<Set<String>>.value(<String>{});
+      final metadata = await Future.wait([
+        _countByPostId(SupabaseTables.postReactions, postIds),
+        _countByPostId(
+          SupabaseTables.postComments,
+          postIds,
+          deletedFilter: true,
+        ),
+        fetchMutualFriendIds(),
+        nearFuture,
+        _fetchMyFavoritePostIds(),
+        _fetchMyPinnedPostIds(),
+        _fetchMyLikedPostIds(postIds),
+        _fetchCompanionAvatarsByPost(postIds),
+        _fetchLatestCommentsByPostIds(postIds),
+      ]);
 
-      final friendIds = await fetchMutualFriendIds();
-      final nearIds = scope == FeedTimelineScope.near
-          ? await _fetchNearFeedUserIds()
-          : <String>{};
-      final favoriteIds = await _fetchMyFavoritePostIds();
-      final pinnedIds = await _fetchMyPinnedPostIds();
-      final likedIds = await _fetchMyLikedPostIds(postIds);
-      final companionsByPost = await _fetchCompanionAvatarsByPost(postIds);
-      final latestComments = await _fetchLatestCommentsByPostIds(postIds);
+      final reactionCounts = metadata[0] as Map<String, int>;
+      final commentCounts = metadata[1] as Map<String, int>;
+      final friendIds = metadata[2] as Set<String>;
+      final nearIds = metadata[3] as Set<String>;
+      final favoriteIds = metadata[4] as Set<String>;
+      final pinnedIds = metadata[5] as Set<String>;
+      final likedIds = metadata[6] as Set<String>;
+      final companionsByPost = metadata[7] as Map<String, List<String>>;
+      final latestComments = metadata[8] as Map<String, PostComment>;
 
       final uid = _uid;
-      final list = <FeedPost>[];
+      final eligibleRows = <Map<String, dynamic>>[];
       for (final row in rawRows) {
         final postUserId = (row['user_id'] ?? '').toString();
         final postVisibility = (row['visibility'] ?? '').toString();
@@ -254,21 +268,57 @@ class SupabaseSocialDataSource {
             )) {
           continue;
         }
+        eligibleRows.add(row);
+        if (eligibleRows.length >= maxPosts) break;
+      }
 
-        final postId = row['id'].toString();
-        final post = await _feedPostFromRow(
-          row,
-          likes: reactionCounts[postId] ?? 0,
-          comments: commentCounts[postId] ?? 0,
-          friendIds: friendIds,
-          isFavoritedByMe: favoriteIds.contains(postId),
-          isPinnedOnMyProfile: pinnedIds.contains(postId),
-          likedByMe: likedIds.contains(postId),
-          companionAvatars: companionsByPost[postId] ?? const [],
-          latestComment: latestComments[postId],
+      final list = <FeedPost>[];
+      for (var start = 0;
+          start < eligibleRows.length && list.length < maxPosts;
+          start += batchSize) {
+        final chunk = eligibleRows
+            .skip(start)
+            .take(batchSize)
+            .toList(growable: false);
+        final imagePaths = <String>{};
+        final iconPaths = <String>{};
+        for (final row in chunk) {
+          final paths = _extractRowStoragePaths(row);
+          if (paths.imagePath != null) imagePaths.add(paths.imagePath!);
+          if (paths.iconPath != null) iconPaths.add(paths.iconPath!);
+        }
+
+        final signedImages = await SupabaseStorageUrls.signedPostImages(
+          _client,
+          imagePaths,
         );
-        if (post != null) list.add(post);
-        if (list.length >= 50) break;
+        final signedIcons = await SupabaseStorageUrls.signedProfileIcons(
+          _client,
+          iconPaths,
+        );
+
+        for (final row in chunk) {
+          final postId = row['id'].toString();
+          final post = _feedPostFromRowPrepared(
+            row,
+            likes: reactionCounts[postId] ?? 0,
+            comments: commentCounts[postId] ?? 0,
+            friendIds: friendIds,
+            isFavoritedByMe: favoriteIds.contains(postId),
+            isPinnedOnMyProfile: pinnedIds.contains(postId),
+            likedByMe: likedIds.contains(postId),
+            companionAvatars: companionsByPost[postId] ?? const [],
+            latestComment: latestComments[postId],
+            signedImages: signedImages,
+            signedIcons: signedIcons,
+          );
+          if (post != null) list.add(post);
+          if (list.length >= maxPosts) break;
+        }
+
+        if (onPartial != null && list.isNotEmpty) {
+          onPartial(List<FeedPost>.unmodifiable(list));
+        }
       }
       return list;
     } catch (e, st) {
@@ -456,6 +506,8 @@ class SupabaseSocialDataSource {
           .isFilter('deleted_at', null)
           .order('created_at', ascending: false);
       final map = <String, PostComment>{};
+      final pending = <({Map<String, dynamic> row, String postId, Map<String, dynamic>? author, String userId, String name})>[];
+      final iconPaths = <String>{};
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = (row['post_id'] ?? '').toString();
@@ -463,17 +515,33 @@ class SupabaseSocialDataSource {
         final author = _extractCommentAuthor(row);
         final userId = (row['user_id'] ?? '').toString();
         final name = (author?['name'] ?? '').toString().trim();
-        final userIconUrl = await _resolveAuthorIconUrl(author);
-        map[postId] = PostComment(
-          id: row['id'].toString(),
+        final iconPath = (author?['icon_path'] ?? '').toString().trim();
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+        pending.add((
+          row: row,
+          postId: postId,
+          author: author,
           userId: userId,
-          userName: name.isNotEmpty ? name : 'ユーザー',
-          body: (row['body'] ?? '').toString(),
+          name: name,
+        ));
+      }
+      final signedIcons = await SupabaseStorageUrls.signedProfileIcons(
+        _client,
+        iconPaths,
+      );
+      for (final item in pending) {
+        final iconPath = (item.author?['icon_path'] ?? '').toString().trim();
+        final userIconUrl = iconPath.isEmpty ? null : signedIcons[iconPath];
+        map[item.postId] = PostComment(
+          id: item.row['id'].toString(),
+          userId: item.userId,
+          userName: item.name.isNotEmpty ? item.name : 'ユーザー',
+          body: (item.row['body'] ?? '').toString(),
           createdAt:
-              DateTime.tryParse((row['created_at'] ?? '').toString()) ??
+              DateTime.tryParse((item.row['created_at'] ?? '').toString()) ??
               DateTime.now(),
           userIconUrl: userIconUrl,
-          isMine: uid != null && userId == uid,
+          isMine: uid != null && item.userId == uid,
         );
       }
       return map;
@@ -675,15 +743,15 @@ class SupabaseSocialDataSource {
           .lt('created_at', end.toUtc().toIso8601String())
           .order('created_at', ascending: false);
       final postIds = <String>[];
-      final list = <RecordDayEntry>[];
-      for (final raw in (rows as List<dynamic>)) {
-        final row = raw as Map<String, dynamic>;
-        postIds.add(row['id'].toString());
-      }
-      final companions = await _fetchCompanionNamesByPost(postIds);
+      final pending = <({
+        String postId,
+        String storagePath,
+        Map<String, dynamic> row,
+      })>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = row['id'].toString();
+        postIds.add(postId);
         final images = (row[tImages] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
         if (images.isEmpty) continue;
@@ -693,10 +761,20 @@ class SupabaseSocialDataSource {
           ),
         );
         final storagePath = (images.first['storage_path'] ?? '').toString();
-        final imageUrl =
-            await SupabaseStorageUrls.signedPostImage(_client, storagePath) ??
-            '';
-        if (imageUrl.isEmpty) continue;
+        if (storagePath.isEmpty) continue;
+        pending.add((postId: postId, storagePath: storagePath, row: row));
+      }
+      final companionsFuture = _fetchCompanionNamesByPost(postIds);
+      final signedImages = await SupabaseStorageUrls.signedPostImages(
+        _client,
+        pending.map((item) => item.storagePath).toSet(),
+      );
+      final companions = await companionsFuture;
+      final list = <RecordDayEntry>[];
+      for (final item in pending) {
+        final imageUrl = signedImages[item.storagePath];
+        if (imageUrl == null || imageUrl.isEmpty) continue;
+        final row = item.row;
         final place = _extractEmbedded(row[tPlaces]);
         final postType = (row['post_type'] ?? 'restaurant').toString();
         final placeName = place != null
@@ -704,11 +782,11 @@ class SupabaseSocialDataSource {
             : (postType == 'home' ? '自宅' : '外食');
         list.add(
           RecordDayEntry(
-            postId: postId,
+            postId: item.postId,
             placeName: placeName,
             imageUrl: imageUrl,
             postType: postType,
-            companionNames: companions[postId] ?? const [],
+            companionNames: companions[item.postId] ?? const [],
             rating: (row['rating'] as num?)?.toInt(),
             priceYen: (row['price_yen'] as num?)?.toInt(),
             caption: (row['caption'] ?? '').toString(),
@@ -784,25 +862,24 @@ class SupabaseSocialDataSource {
           .isFilter('deleted_at', null)
           .maybeSingle();
       if (row == null) return null;
-      final friendIds = await fetchMutualFriendIds();
-      final reactionCounts = await _countByPostId(
-        SupabaseTables.postReactions,
-        [postId],
-      );
-      final commentCounts = await _countByPostId(SupabaseTables.postComments, [
-        postId,
-      ], deletedFilter: true);
-      final likedIds = await _fetchMyLikedPostIds([postId]);
-      final companions = await _fetchCompanionAvatarsByPost([postId]);
-      final latestComments = await _fetchLatestCommentsByPostIds([postId]);
-      return _feedPostFromRow(
+      final results = await Future.wait([
+        fetchMutualFriendIds(),
+        _fetchPostInteractionMeta([postId]),
+        _signFeedRowPaths([row]),
+      ]);
+      final friendIds = results[0] as Set<String>;
+      final meta = results[1] as _PostInteractionMeta;
+      final signed = results[2] as _SignedFeedRowPaths;
+      return _feedPostFromRowPrepared(
         row,
-        likes: reactionCounts[postId] ?? 0,
-        comments: commentCounts[postId] ?? 0,
+        likes: meta.reactionCounts[postId] ?? 0,
+        comments: meta.commentCounts[postId] ?? 0,
         friendIds: friendIds,
-        likedByMe: likedIds.contains(postId),
-        companionAvatars: companions[postId] ?? const [],
-        latestComment: latestComments[postId],
+        likedByMe: meta.likedIds.contains(postId),
+        companionAvatars: meta.companionsByPost[postId] ?? const [],
+        latestComment: meta.latestComments[postId],
+        signedImages: signed.signedImages,
+        signedIcons: signed.signedIcons,
       );
     } catch (_) {
       return null;
@@ -819,37 +896,55 @@ class SupabaseSocialDataSource {
           .eq('id', userId)
           .maybeSingle();
       if (row == null) return null;
-      final friendIds = await fetchMutualFriendIds();
-      final incoming = await fetchIncomingFriendRequests();
-      final outgoing = await fetchOutgoingPendingFollows();
-      final isFriend = friendIds.contains(userId);
-      final theyFollowMe = incoming.any((c) => c.id == userId);
-      final iFollowThem =
-          outgoing.any((c) => c.id == userId) ||
-          (await _client
-                  .from(SupabaseTables.follows)
-                  .select('follower_id')
-                  .eq('follower_id', uid)
-                  .eq('following_id', userId)
-                  .maybeSingle()) !=
-              null;
-      final blocked = await _client
+      final iconPath = (row['icon_path'] ?? '').toString();
+      final pinnedIdsFuture = _fetchPinnedPostIds(userId);
+      final Future<Map<String, dynamic>?> followRowFuture = _client
+          .from(SupabaseTables.follows)
+          .select('follower_id')
+          .eq('follower_id', uid)
+          .eq('following_id', userId)
+          .maybeSingle();
+      final Future<Map<String, dynamic>?> blockedFuture = _client
           .from(SupabaseTables.blocks)
           .select('blocker_id')
           .eq('blocker_id', uid)
           .eq('blocked_id', userId)
           .maybeSingle();
-      final iconPath = (row['icon_path'] ?? '').toString();
-      final avatarUrl =
-          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
-      final recentPosts = await _fetchProfilePostThumbs(
-        userId,
-        pinnedOnly: false,
-      );
-      final pinnedPosts = await _fetchProfilePostThumbs(
-        userId,
-        pinnedOnly: true,
-      );
+      final results = await Future.wait([
+        fetchMutualFriendIds(),
+        fetchIncomingFriendRequests(),
+        fetchOutgoingPendingFollows(),
+        followRowFuture,
+        blockedFuture,
+        SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath),
+        pinnedIdsFuture.then(
+          (pinnedIds) => Future.wait([
+            _fetchProfilePostThumbs(
+              userId,
+              pinnedOnly: true,
+              pinnedIdsOverride: pinnedIds,
+            ),
+            _fetchProfilePostThumbs(
+              userId,
+              pinnedOnly: false,
+              pinnedIdsOverride: pinnedIds,
+            ),
+          ]),
+        ),
+      ]);
+      final friendIds = results[0] as Set<String>;
+      final incoming = results[1] as List<FriendCandidate>;
+      final outgoing = results[2] as List<FriendCandidate>;
+      final followRow = results[3];
+      final blocked = results[4];
+      final avatarUrl = (results[5] as String?) ?? '';
+      final thumbPair = results[6] as List<dynamic>;
+      final pinnedPosts = thumbPair[0] as List<ProfilePostThumb>;
+      final recentPosts = thumbPair[1] as List<ProfilePostThumb>;
+      final isFriend = friendIds.contains(userId);
+      final theyFollowMe = incoming.any((c) => c.id == userId);
+      final iFollowThem =
+          outgoing.any((c) => c.id == userId) || followRow != null;
       return UserPublicProfile(
         userId: userId,
         name: (row['name'] ?? '').toString().trim().isNotEmpty
@@ -937,12 +1032,20 @@ class SupabaseSocialDataSource {
 
       final postMetaById = await _fetchMealTagPostMeta(sourcePostIds);
 
+      final iconPaths = <String>{};
+      for (final row in rawRows) {
+        final iconPath = (row['inviter_icon_path'] ?? '').toString().trim();
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+      }
+      final signedIcons = await SupabaseStorageUrls.signedProfileIcons(
+        _client,
+        iconPaths,
+      );
+
       for (final row in rawRows) {
         final sourcePostId = (row['source_post_id'] ?? '').toString();
-        final iconPath = (row['inviter_icon_path'] ?? '').toString();
-        final iconUrl =
-            await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ??
-            '';
+        final iconPath = (row['inviter_icon_path'] ?? '').toString().trim();
+        final iconUrl = iconPath.isEmpty ? '' : (signedIcons[iconPath] ?? '');
         final meta = postMetaById[sourcePostId];
         list.add(
           PendingMealTag(
@@ -1056,34 +1159,28 @@ class SupabaseSocialDataSource {
       }
 
       final postIds = orderedIds.where(byId.containsKey).toList();
-      final reactionCounts = await _countByPostId(
-        SupabaseTables.postReactions,
-        postIds,
-      );
-      final commentCounts = await _countByPostId(
-        SupabaseTables.postComments,
-        postIds,
-        deletedFilter: true,
-      );
-      final friendIds = await fetchMutualFriendIds();
-      final latestComments = await _fetchLatestCommentsByPostIds(postIds);
+      final results = await Future.wait([
+        fetchMutualFriendIds(),
+        _fetchPostInteractionMeta(postIds),
+        _signFeedRowPaths(byId.values),
+      ]);
+      final friendIds = results[0] as Set<String>;
+      final meta = results[1] as _PostInteractionMeta;
+      final signed = results[2] as _SignedFeedRowPaths;
 
-      final list = <FeedPost>[];
-      for (final id in orderedIds) {
-        final row = byId[id];
-        if (row == null) continue;
-        final post = await _feedPostFromRow(
-          row,
-          likes: reactionCounts[id] ?? 0,
-          comments: commentCounts[id] ?? 0,
-          friendIds: friendIds,
-          isFavoritedByMe: true,
-          isPinnedOnMyProfile: false,
-          latestComment: latestComments[id],
-        );
-        if (post != null) list.add(post);
-      }
-      return list;
+      return _buildFeedPostsFromOrderedRows(
+        orderedIds,
+        byId,
+        reactionCounts: meta.reactionCounts,
+        commentCounts: meta.commentCounts,
+        friendIds: friendIds,
+        likedIds: meta.likedIds,
+        favoriteIds: orderedIds.toSet(),
+        companionsByPost: meta.companionsByPost,
+        latestComments: meta.latestComments,
+        signedImages: signed.signedImages,
+        signedIcons: signed.signedIcons,
+      );
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('[SupabaseSocialDataSource] fetchFavoritePosts: $e\n$st');
@@ -1092,7 +1189,120 @@ class SupabaseSocialDataSource {
     }
   }
 
-  Future<FeedPost?> _feedPostFromRow(
+  Future<_PostInteractionMeta> _fetchPostInteractionMeta(
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) {
+      return (
+        reactionCounts: const <String, int>{},
+        commentCounts: const <String, int>{},
+        likedIds: const <String>{},
+        companionsByPost: const <String, List<String>>{},
+        latestComments: const <String, PostComment>{},
+      );
+    }
+    final results = await Future.wait([
+      _countByPostId(SupabaseTables.postReactions, postIds),
+      _countByPostId(
+        SupabaseTables.postComments,
+        postIds,
+        deletedFilter: true,
+      ),
+      _fetchMyLikedPostIds(postIds),
+      _fetchCompanionAvatarsByPost(postIds),
+      _fetchLatestCommentsByPostIds(postIds),
+    ]);
+    return (
+      reactionCounts: results[0] as Map<String, int>,
+      commentCounts: results[1] as Map<String, int>,
+      likedIds: results[2] as Set<String>,
+      companionsByPost: results[3] as Map<String, List<String>>,
+      latestComments: results[4] as Map<String, PostComment>,
+    );
+  }
+
+  Future<_SignedFeedRowPaths> _signFeedRowPaths(
+    Iterable<Map<String, dynamic>> rows,
+  ) async {
+    final imagePaths = <String>{};
+    final iconPaths = <String>{};
+    for (final row in rows) {
+      final paths = _extractRowStoragePaths(row);
+      if (paths.imagePath != null) imagePaths.add(paths.imagePath!);
+      if (paths.iconPath != null) iconPaths.add(paths.iconPath!);
+    }
+    final results = await Future.wait([
+      SupabaseStorageUrls.signedPostImages(_client, imagePaths),
+      SupabaseStorageUrls.signedProfileIcons(_client, iconPaths),
+    ]);
+    return (
+      signedImages: results[0] as Map<String, String>,
+      signedIcons: results[1] as Map<String, String>,
+    );
+  }
+
+  List<FeedPost> _buildFeedPostsFromOrderedRows(
+    List<String> orderedIds,
+    Map<String, Map<String, dynamic>> byId, {
+    required Map<String, int> reactionCounts,
+    required Map<String, int> commentCounts,
+    required Set<String> friendIds,
+    required Set<String> likedIds,
+    Set<String> favoriteIds = const {},
+    Set<String> pinnedIds = const {},
+    required Map<String, List<String>> companionsByPost,
+    required Map<String, PostComment> latestComments,
+    required Map<String, String> signedImages,
+    required Map<String, String> signedIcons,
+  }) {
+    final list = <FeedPost>[];
+    for (final id in orderedIds) {
+      final row = byId[id];
+      if (row == null) continue;
+      final post = _feedPostFromRowPrepared(
+        row,
+        likes: reactionCounts[id] ?? 0,
+        comments: commentCounts[id] ?? 0,
+        friendIds: friendIds,
+        isFavoritedByMe: favoriteIds.contains(id),
+        isPinnedOnMyProfile: pinnedIds.contains(id),
+        likedByMe: likedIds.contains(id),
+        companionAvatars: companionsByPost[id] ?? const [],
+        latestComment: latestComments[id],
+        signedImages: signedImages,
+        signedIcons: signedIcons,
+      );
+      if (post != null) list.add(post);
+    }
+    return list;
+  }
+
+  ({String? imagePath, String? iconPath}) _extractRowStoragePaths(
+    Map<String, dynamic> row,
+  ) {
+    final tImages = SupabaseTables.postImages;
+    final images = (row[tImages] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (images.isEmpty) {
+      return (imagePath: null, iconPath: null);
+    }
+    images.sort(
+      (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
+        ((b['display_order'] as num?) ?? 0),
+      ),
+    );
+    final imagePath = (images.first['storage_path'] ?? '').toString().trim();
+    final author =
+        _extractEmbedded(row[SupabaseTables.profiles]) ??
+        _extractEmbedded(row['whoeats_users']);
+    final iconPath = (author?['icon_path'] ?? '').toString().trim();
+    return (
+      imagePath: imagePath.isEmpty ? null : imagePath,
+      iconPath: iconPath.isEmpty ? null : iconPath,
+    );
+  }
+
+  FeedPost? _feedPostFromRowPrepared(
     Map<String, dynamic> row, {
     required int likes,
     required int comments,
@@ -1102,21 +1312,13 @@ class SupabaseSocialDataSource {
     bool likedByMe = false,
     List<String> companionAvatars = const [],
     PostComment? latestComment,
-  }) async {
-    final tImages = SupabaseTables.postImages;
-    final images = (row[tImages] as List<dynamic>? ?? [])
-        .cast<Map<String, dynamic>>();
-    if (images.isEmpty) return null;
-    images.sort(
-      (a, b) => ((a['display_order'] as num?) ?? 0).compareTo(
-        ((b['display_order'] as num?) ?? 0),
-      ),
-    );
-    final storagePath = (images.first['storage_path'] ?? '').toString();
-    final imageUrl = await SupabaseStorageUrls.signedPostImage(
-      _client,
-      storagePath,
-    );
+    required Map<String, String> signedImages,
+    required Map<String, String> signedIcons,
+  }) {
+    final paths = _extractRowStoragePaths(row);
+    final storagePath = paths.imagePath;
+    if (storagePath == null) return null;
+    final imageUrl = signedImages[storagePath];
     if (imageUrl == null || imageUrl.isEmpty) return null;
 
     final author =
@@ -1130,11 +1332,8 @@ class SupabaseSocialDataSource {
         ? displayName
         : (email.isNotEmpty ? email.split('@').first : 'user');
 
-    final iconPath = (author?['icon_path'] ?? '').toString();
-    final userIconUrl = await SupabaseStorageUrls.resolveProfileIconUrl(
-      _client,
-      iconPath,
-    );
+    final iconPath = paths.iconPath;
+    final userIconUrl = iconPath == null ? null : signedIcons[iconPath];
 
     final place =
         _extractEmbedded(row[SupabaseTables.places]) ??
@@ -1184,17 +1383,19 @@ class SupabaseSocialDataSource {
 
   Future<({int followers, int following})> _followCounts(String uid) async {
     try {
-      final followersRes = await _client
-          .from(SupabaseTables.follows)
-          .select('follower_id')
-          .eq('following_id', uid);
-      final followingRes = await _client
-          .from(SupabaseTables.follows)
-          .select('following_id')
-          .eq('follower_id', uid);
+      final results = await Future.wait([
+        _client
+            .from(SupabaseTables.follows)
+            .select('follower_id')
+            .eq('following_id', uid),
+        _client
+            .from(SupabaseTables.follows)
+            .select('following_id')
+            .eq('follower_id', uid),
+      ]);
       return (
-        followers: (followersRes as List<dynamic>).length,
-        following: (followingRes as List<dynamic>).length,
+        followers: (results[0] as List<dynamic>).length,
+        following: (results[1] as List<dynamic>).length,
       );
     } catch (_) {
       return (followers: 0, following: 0);
@@ -1218,16 +1419,52 @@ class SupabaseSocialDataSource {
     if (uid == null) return empty;
 
     try {
-      final row = await _client
+      final Future<Map<String, dynamic>?> rowFuture = _client
           .from(SupabaseTables.profiles)
           .select('name, user_code, bio, icon_path, default_visibility')
           .eq('id', uid)
           .maybeSingle();
+      final friendsFuture = fetchFriends();
+      final countsFuture = _followCounts(uid);
+      final pinnedIdsFuture = _fetchPinnedPostIds(uid);
+      final pinnedPostsFuture = pinnedIdsFuture.then(
+        (pinnedIds) => _fetchProfilePostThumbs(
+          uid,
+          pinnedOnly: true,
+          pinnedIdsOverride: pinnedIds,
+        ),
+      );
+      final recentPostsFuture = pinnedIdsFuture.then(
+        (pinnedIds) => _fetchProfilePostThumbs(
+          uid,
+          pinnedOnly: false,
+          pinnedIdsOverride: pinnedIds,
+        ),
+      );
+      final avatarFuture = rowFuture.then((row) async {
+        if (row == null) return '';
+        final iconPath = (row['icon_path'] ?? '').toString();
+        return await SupabaseStorageUrls.resolveProfileIconUrl(
+              _client,
+              iconPath,
+            ) ??
+            '';
+      });
 
-      final friends = await fetchFriends();
-      final counts = await _followCounts(uid);
-      final pinnedPosts = await _fetchProfilePostThumbs(uid, pinnedOnly: true);
-      final recentPosts = await _fetchProfilePostThumbs(uid, pinnedOnly: false);
+      final results = await Future.wait([
+        rowFuture,
+        friendsFuture,
+        countsFuture,
+        pinnedPostsFuture,
+        recentPostsFuture,
+        avatarFuture,
+      ]);
+      final row = results[0] as Map<String, dynamic>?;
+      final friends = results[1] as List<FriendCandidate>;
+      final counts = results[2] as ({int followers, int following});
+      final pinnedPosts = results[3] as List<ProfilePostThumb>;
+      final recentPosts = results[4] as List<ProfilePostThumb>;
+      final avatarUrl = results[5] as String;
 
       if (row == null) {
         return ProfileOverview(
@@ -1250,12 +1487,9 @@ class SupabaseSocialDataSource {
         (row['user_code'] ?? '').toString().trim(),
       );
       final bio = (row['bio'] ?? '').toString().trim();
-      final iconPath = (row['icon_path'] ?? '').toString();
       final defaultVisibility = _normalizeVisibility(
         (row['default_visibility'] ?? '').toString(),
       );
-      final avatarUrl =
-          await SupabaseStorageUrls.resolveProfileIconUrl(_client, iconPath) ?? '';
 
       return ProfileOverview(
         name: name,
@@ -1309,33 +1543,41 @@ class SupabaseSocialDataSource {
     return _fetchProfilePostThumbs(uid, pinnedOnly: pinnedOnly, limit: 2000);
   }
 
-  Future<List<ProfilePostThumb>> _fetchProfilePostThumbs(
-    String uid, {
-    required bool pinnedOnly,
-    int limit = 24,
-  }) async {
+  Future<Set<String>> _fetchPinnedPostIds(String uid) async {
     try {
       final pinRows = await _client
           .from(SupabaseTables.profilePins)
           .select('post_id')
           .eq('user_id', uid);
-      final pinnedIds = (pinRows as List<dynamic>)
+      return (pinRows as List<dynamic>)
           .map((r) => (r['post_id'] ?? '').toString())
           .where((id) => id.isNotEmpty)
           .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<List<ProfilePostThumb>> _fetchProfilePostThumbs(
+    String uid, {
+    required bool pinnedOnly,
+    int limit = 24,
+    Set<String>? pinnedIdsOverride,
+  }) async {
+    try {
+      final pinnedIds = pinnedIdsOverride ?? await _fetchPinnedPostIds(uid);
 
       final tImages = SupabaseTables.postImages;
-      var query = _client
+      final rows = await _client
           .from(SupabaseTables.posts)
           .select('id, created_at, $tImages(storage_path, display_order)')
           .eq('user_id', uid)
-          .isFilter('deleted_at', null);
-
-      final rows = await query
+          .isFilter('deleted_at', null)
           .order('created_at', ascending: false)
           .limit(limit * 2);
 
-      final thumbs = <ProfilePostThumb>[];
+      final cap = pinnedOnly ? 3 : limit;
+      final eligible = <({String postId, String path})>[];
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
         final postId = row['id'].toString();
@@ -1351,13 +1593,23 @@ class SupabaseSocialDataSource {
           ),
         );
         final path = (images.first['storage_path'] ?? '').toString();
-        final url = await SupabaseStorageUrls.signedPostImage(_client, path);
-        if (url == null || url.isEmpty) continue;
-        thumbs.add(ProfilePostThumb(postId: postId, imageUrl: url));
-        final cap = pinnedOnly ? 3 : limit;
-        if (thumbs.length >= cap) break;
+        if (path.isEmpty) continue;
+        eligible.add((postId: postId, path: path));
+        if (eligible.length >= cap) break;
       }
-      return thumbs;
+
+      final signedImages = await SupabaseStorageUrls.signedPostImages(
+        _client,
+        eligible.map((item) => item.path).toSet(),
+      );
+      return [
+        for (final item in eligible)
+          if (signedImages[item.path]?.isNotEmpty == true)
+            ProfilePostThumb(
+              postId: item.postId,
+              imageUrl: signedImages[item.path]!,
+            ),
+      ];
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint(
@@ -1519,6 +1771,16 @@ class SupabaseSocialDataSource {
           .from(SupabaseTables.profiles)
           .select('id, name, user_code, icon_path')
           .inFilter('id', actorIds.toList());
+      final iconPaths = <String>{};
+      for (final raw in (rows as List<dynamic>)) {
+        final row = raw as Map<String, dynamic>;
+        final iconPath = (row['icon_path'] ?? '').toString();
+        if (iconPath.isNotEmpty) iconPaths.add(iconPath);
+      }
+      final signedUrls = await SupabaseStorageUrls.signedProfileIcons(
+        _client,
+        iconPaths,
+      );
       final map = <String, _ActorMeta>{};
       for (final raw in (rows as List<dynamic>)) {
         final row = raw as Map<String, dynamic>;
@@ -1526,13 +1788,9 @@ class SupabaseSocialDataSource {
         final name = (row['name'] ?? '').toString().trim();
         final code = (row['user_code'] ?? '').toString().trim();
         final iconPath = (row['icon_path'] ?? '').toString();
-        final iconUrl = await SupabaseStorageUrls.resolveProfileIconUrl(
-          _client,
-          iconPath,
-        );
         map[id] = _ActorMeta(
           name: name.isNotEmpty ? name : (code.isNotEmpty ? code : 'ユーザー'),
-          iconUrl: iconUrl,
+          iconUrl: iconPath.isEmpty ? null : signedUrls[iconPath],
         );
       }
       return map;
@@ -1577,20 +1835,7 @@ class SupabaseSocialDataSource {
   }
 
   Future<Map<String, String>> _signIconPaths(Set<String> iconPaths) async {
-    if (iconPaths.isEmpty) return const {};
-    final signed = <String, String>{};
-    await Future.wait(
-      iconPaths.map((path) async {
-        final url = await SupabaseStorageUrls.resolveProfileIconUrl(
-          _client,
-          path,
-        );
-        if (url != null && url.isNotEmpty) {
-          signed[path] = url;
-        }
-      }),
-    );
-    return signed;
+    return SupabaseStorageUrls.signedProfileIcons(_client, iconPaths);
   }
 
   String _avatarToken(String name) {
@@ -1624,3 +1869,16 @@ class _ActorMeta {
   final String name;
   final String? iconUrl;
 }
+
+typedef _PostInteractionMeta = ({
+  Map<String, int> reactionCounts,
+  Map<String, int> commentCounts,
+  Set<String> likedIds,
+  Map<String, List<String>> companionsByPost,
+  Map<String, PostComment> latestComments,
+});
+
+typedef _SignedFeedRowPaths = ({
+  Map<String, String> signedImages,
+  Map<String, String> signedIcons,
+});

@@ -159,17 +159,7 @@ class SupabaseMapPinsDataSource {
   }
 
   Future<Map<String, String>> _signIconPaths(Set<String> iconPaths) async {
-    if (iconPaths.isEmpty) return const {};
-    final signed = <String, String>{};
-    await Future.wait(
-      iconPaths.map((path) async {
-        final url = await SupabaseStorageUrls.resolveProfileIconUrl(_client, path);
-        if (url != null && url.isNotEmpty) {
-          signed[path] = url;
-        }
-      }),
-    );
-    return signed;
+    return SupabaseStorageUrls.signedProfileIcons(_client, iconPaths);
   }
 
   Future<List<PlaceVisitor>> fetchPlaceVisitors({
