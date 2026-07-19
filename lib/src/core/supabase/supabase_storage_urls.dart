@@ -21,6 +21,48 @@ abstract final class SupabaseStorageUrls {
     }
   }
 
+  static Future<Map<String, String>> signedPostImages(
+    SupabaseClient client,
+    Iterable<String> storagePaths,
+  ) async {
+    final unique = storagePaths
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toSet();
+    if (unique.isEmpty) return const {};
+    final signed = <String, String>{};
+    await Future.wait(
+      unique.map((path) async {
+        final url = await signedPostImage(client, path);
+        if (url != null && url.isNotEmpty) {
+          signed[path] = url;
+        }
+      }),
+    );
+    return signed;
+  }
+
+  static Future<Map<String, String>> signedProfileIcons(
+    SupabaseClient client,
+    Iterable<String> iconPaths,
+  ) async {
+    final unique = iconPaths
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toSet();
+    if (unique.isEmpty) return const {};
+    final signed = <String, String>{};
+    await Future.wait(
+      unique.map((path) async {
+        final url = await resolveProfileIconUrl(client, path);
+        if (url != null && url.isNotEmpty) {
+          signed[path] = url;
+        }
+      }),
+    );
+    return signed;
+  }
+
   /// プロフィール `icon_path`（storage path または旧 signed URL）を表示用 URL に。
   static Future<String?> resolveProfileIconUrl(
     SupabaseClient client,

@@ -133,6 +133,9 @@ class AppShellController extends ChangeNotifier {
   int bottomIndex = 0;
   int homeTabIndex = 0;
   bool loading = true;
+  bool feedRefreshing = false;
+  int _feedRefreshGeneration = 0;
+  int _mapPinsViewportGeneration = 0;
   FeedTimelineScope feedTimelineScope = FeedTimelineScope.friends;
 
   List<FeedPost> feed = [];
@@ -365,17 +368,40 @@ class AppShellController extends ChangeNotifier {
   Future<void> setFeedTimelineScope(FeedTimelineScope scope) async {
     if (feedTimelineScope == scope) return;
     feedTimelineScope = scope;
+    feed = [];
+    loading = true;
+    feedRefreshing = true;
+    notifyListeners();
     await refreshFeed();
   }
 
   Future<void> refreshFeed() async {
-    feed = await _getHomeFeedUseCase(scope: feedTimelineScope);
+    final generation = ++_feedRefreshGeneration;
+    feedRefreshing = true;
+    if (feed.isEmpty) loading = true;
+    notifyListeners();
+
+    final loaded = await _getHomeFeedUseCase(
+      scope: feedTimelineScope,
+      onPartial: (partial) {
+        if (generation != _feedRefreshGeneration) return;
+        feed = partial;
+        loading = false;
+        feedRefreshing = true;
+        notifyListeners();
+      },
+    );
+    if (generation != _feedRefreshGeneration) return;
+    feed = loaded;
+    loading = false;
+    feedRefreshing = false;
     notifyListeners();
   }
 
   Future<void> initialize() async {
     _log('initialize start');
-    loading = true;
+    loading = feed.isEmpty;
+    feedRefreshing = feed.isNotEmpty;
     mapPins = [];
     mapPinsLoaded = false;
     mapPinsLoading = false;
@@ -386,10 +412,8 @@ class AppShellController extends ChangeNotifier {
 
     // 位置情報の取得・地図ピンの読み込みは起動時には行わない。
     // GPS は地図タブを開いた時に初めて解決する（_MapTab 側）。フィードは位置に依存しない。
-    feed = await _getHomeFeedUseCase(scope: feedTimelineScope);
-    loading = false;
+    await refreshFeed();
     _log('initialize done feed=${feed.length}');
-    notifyListeners();
 
     unawaited(_loadSecondaryData());
   }
@@ -552,37 +576,59 @@ class AppShellController extends ChangeNotifier {
     double? boundsMinLng,
     double? boundsMaxLng,
   }) async {
+    final generation = ++_mapPinsViewportGeneration;
     _log(
       'refreshMapPinsForViewport lat=$lat lng=$lng radius=$radiusMeters '
       'zoom=$zoom keyword=${keyword ?? ''}',
     );
-    mapPins = await _searchMapPinsAroundUseCase(
-      lat: lat,
-      lng: lng,
-      radiusMeters: radiusMeters,
-      keyword: keyword,
-      boundsMinLat: boundsMinLat,
-      boundsMaxLat: boundsMaxLat,
-      boundsMinLng: boundsMinLng,
-      boundsMaxLng: boundsMaxLng,
-      zoom: zoom,
-    );
-    mapPinsLoaded = true;
-    mapPinsLoadError = null;
-    final previousPostedIds = postedPlaceGoogleIds;
+    try {
+      final merged = await _searchMapPinsAroundUseCase(
+        lat: lat,
+        lng: lng,
+        radiusMeters: radiusMeters,
+        keyword: keyword,
+        boundsMinLat: boundsMinLat,
+        boundsMaxLat: boundsMaxLat,
+        boundsMinLng: boundsMinLng,
+        boundsMaxLng: boundsMaxLng,
+        zoom: zoom,
+        onPartial: (partial) {
+          if (generation != _mapPinsViewportGeneration) return;
+          _applyMapPins(partial, preservePostedIds: true);
+          mapPinsLoaded = true;
+          mapPinsLoadError = null;
+          notifyListeners();
+        },
+      );
+      if (generation != _mapPinsViewportGeneration) return;
+      _applyMapPins(merged, preservePostedIds: true);
+      mapPinsLoaded = true;
+      mapPinsLoadError = null;
+      _log('refreshMapPinsForViewport result=${mapPins.length}');
+      notifyListeners();
+    } catch (e, st) {
+      if (generation != _mapPinsViewportGeneration) return;
+      mapPinsLoadError = '$e';
+      debugPrint('AppShellController.refreshMapPinsForViewport failed: $e\n$st');
+      notifyListeners();
+    }
+  }
+
+  void _applyMapPins(List<MapPin> pins, {required bool preservePostedIds}) {
+    mapPins = pins;
+    final previousPostedIds =
+        preservePostedIds ? postedPlaceGoogleIds : const <String>{};
     postedPlaceGoogleIds = {
-      for (final pin in mapPins)
+      for (final pin in pins)
         if (pin.hasPostedActivity || previousPostedIds.contains(pin.id))
           pin.id,
     };
     postedPlaceUserIcons = {
-      ...postedPlaceUserIcons,
-      for (final pin in mapPins)
+      if (preservePostedIds) ...postedPlaceUserIcons,
+      for (final pin in pins)
         if (pin.mapPinIconUrl != null && pin.mapPinIconUrl!.isNotEmpty)
           pin.id: pin.mapPinIconUrl!,
     };
-    _log('refreshMapPinsForViewport result=${mapPins.length}');
-    notifyListeners();
   }
 
   Future<void> ensureMapPinsLoaded() async {
@@ -591,18 +637,17 @@ class AppShellController extends ChangeNotifier {
     mapPinsLoadError = null;
     notifyListeners();
     try {
-      mapPins = await _getMapPinsUseCase(
+      final merged = await _getMapPinsUseCase(
         centerLat: deviceLatitude,
         centerLng: deviceLongitude,
+        onPartial: (partial) {
+          _applyMapPins(partial, preservePostedIds: false);
+          mapPinsLoaded = true;
+          mapPinsLoading = false;
+          notifyListeners();
+        },
       );
-      postedPlaceGoogleIds = {
-        ...mapPins.where((p) => p.hasPostedActivity).map((p) => p.id),
-      };
-      postedPlaceUserIcons = {
-        for (final pin in mapPins)
-          if (pin.mapPinIconUrl != null && pin.mapPinIconUrl!.isNotEmpty)
-            pin.id: pin.mapPinIconUrl!,
-      };
+      _applyMapPins(merged, preservePostedIds: false);
       mapPinsLoaded = true;
       _log('ensureMapPinsLoaded result=${mapPins.length}');
     } catch (e, st) {
@@ -637,10 +682,16 @@ class AppShellController extends ChangeNotifier {
   }
 
   Future<void> refreshFriendLists() async {
-    friends = await _getFriendsUseCase();
-    incomingFriendRequests = await _getIncomingFriendRequestsUseCase();
-    outgoingPendingFollows = await _getOutgoingPendingFollowsUseCase();
-    final recommendations = await _getFriendRecommendationsUseCase();
+    final results = await Future.wait([
+      _getFriendsUseCase(),
+      _getIncomingFriendRequestsUseCase(),
+      _getOutgoingPendingFollowsUseCase(),
+      _getFriendRecommendationsUseCase(),
+    ]);
+    friends = results[0] as List<FriendCandidate>;
+    incomingFriendRequests = results[1] as List<FriendCandidate>;
+    outgoingPendingFollows = results[2] as List<FriendCandidate>;
+    final recommendations = results[3] as List<FriendCandidate>;
     friendRecommendations = recommendations
         .where((candidate) =>
             !incomingFriendRequests.any((incoming) => incoming.id == candidate.id))
@@ -650,18 +701,25 @@ class AppShellController extends ChangeNotifier {
 
   Future<void> _loadSecondaryData() async {
     try {
-      final results = await Future.wait([
+      await Future.wait([
         refreshFriendLists(),
-        _getRecordSummaryUseCase(),
-        _getProfileOverviewUseCase(),
-        _getNotificationsUseCase(),
-        _getPendingMealTagsUseCase(),
+        _getRecordSummaryUseCase().then((summary) {
+          recordSummary = summary;
+          notifyListeners();
+        }),
+        _getProfileOverviewUseCase().then((overview) {
+          profileOverview = overview;
+          notifyListeners();
+        }),
+        _getNotificationsUseCase().then((items) {
+          notifications = items;
+          notifyListeners();
+        }),
+        _getPendingMealTagsUseCase().then((tags) {
+          pendingMealTags = tags;
+          notifyListeners();
+        }),
       ]);
-      recordSummary = results[1] as RecordSummary;
-      profileOverview = results[2] as ProfileOverview;
-      notifications = results[3] as List<AppNotification>;
-      pendingMealTags = results[4] as List<PendingMealTag>;
-      notifyListeners();
     } catch (e, st) {
       debugPrint('AppShellController._loadSecondaryData failed: $e\n$st');
     }

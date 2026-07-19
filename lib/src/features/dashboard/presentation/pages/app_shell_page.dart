@@ -56,6 +56,7 @@ class _AppShellPageState extends State<AppShellPage> {
   StreamSubscription<AuthState>? _authSub;
   AppShellController? _controller;
   int? _lastAuthUserHash;
+  bool _isPostEditorOpen = false;
 
   @override
   void initState() {
@@ -133,11 +134,14 @@ class _AppShellPageState extends State<AppShellPage> {
 
   Future<void> _showPostEditorSheet(AppShellController controller) async {
     final draft = controller.postDraft;
-    if (draft == null) return;
+    if (draft == null || _isPostEditorOpen) return;
+    setState(() => _isPostEditorOpen = true);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.58),
       builder: (sheetContext) {
@@ -170,6 +174,7 @@ class _AppShellPageState extends State<AppShellPage> {
         );
       },
     );
+    if (mounted) setState(() => _isPostEditorOpen = false);
   }
 
   void _closePostDetail() {
@@ -232,6 +237,15 @@ class _AppShellPageState extends State<AppShellPage> {
     AppShellController controller,
     int index,
   ) async {
+    if (_isPostEditorOpen) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('投稿を完了するか、閉じてから移動してください'),
+        ),
+      );
+      return;
+    }
     if (index == 1) {
       final granted = await controller.ensureMapLocationAccess();
       if (!mounted) return;
@@ -349,23 +363,21 @@ class _AppShellPageState extends State<AppShellPage> {
     );
   }
 
-  void _openFriendListPage(
-    AppShellController controller,
-    List<FriendCandidate> friends,
-    List<FriendCandidate> incoming,
-  ) {
+  void _openFriendListPage(AppShellController controller) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (friendsContext) => Scaffold(
           backgroundColor: AppColors.black,
           body: SafeArea(
-            child: _FriendListPage(
-              friends: friends,
-              incoming: incoming,
-              onFollow: controller.followUser,
-              onUnfollow: controller.unfollowUser,
-              onOpenProfile: (userId) =>
-                  _pushUserProfileRoute(friendsContext, controller, userId),
+            child: Consumer<AppShellController>(
+              builder: (_, ctrl, __) => _FriendListPage(
+                friends: ctrl.friends,
+                incoming: ctrl.incomingFriendRequests,
+                onFollow: ctrl.followUser,
+                onUnfollow: ctrl.unfollowUser,
+                onOpenProfile: (userId) =>
+                    _pushUserProfileRoute(friendsContext, ctrl, userId),
+              ),
             ),
           ),
         ),
@@ -442,11 +454,7 @@ class _AppShellPageState extends State<AppShellPage> {
             controller: controller,
             onOpenPostDetail: _openPostDetail,
             onOpenProfile: _openUserProfile,
-            onOpenFriendList: () => _openFriendListPage(
-              controller,
-              controller.friends,
-              controller.incomingFriendRequests,
-            ),
+            onOpenFriendList: () => _openFriendListPage(controller),
           ),
         ];
 
@@ -554,6 +562,7 @@ class _AppShellPageState extends State<AppShellPage> {
           ),
           bottomNavigationBar: FloatingBottomNav(
             selectedIndex: controller.bottomIndex,
+            enabled: !_isPostEditorOpen,
             onTabSelected: (index) {
               unawaited(_onBottomTabSelected(controller, index));
             },
@@ -580,22 +589,15 @@ class _AppShellPageState extends State<AppShellPage> {
     if (file == null) return;
 
     final loc = await controller.ensureDeviceLocation();
-    MapPin? nearest;
-    if (loc != null) {
-      nearest = await controller.resolvePlacePinFromCoordinate(
-        loc.lat,
-        loc.lng,
-      );
-    }
 
     controller.setPostDraft(
       PostDraft(
         photoUrl: '',
         localImagePath: file.path,
-        placeGoogleId: nearest?.id,
-        placeLatitude: nearest?.latitude,
-        placeLongitude: nearest?.longitude,
-        placeName: nearest?.placeName ?? '',
+        placeGoogleId: null,
+        placeLatitude: loc?.lat,
+        placeLongitude: loc?.lng,
+        placeName: '',
         note: '',
         withWho: '',
         visibility: controller.profileOverview?.defaultVisibility ?? 'friends',
@@ -688,18 +690,23 @@ class _HomePageState extends State<_HomePage> {
                                   calculateNotificationBadgeCount(
                                         unreadNotificationCount:
                                             controller.unreadNotificationCount,
+                                        pendingMealTagCount:
+                                            controller.pendingMealTags.length,
                                       ) >
                                   0,
                               label: Text(
                                 '${calculateNotificationBadgeCount(
                                   unreadNotificationCount:
                                       controller.unreadNotificationCount,
+                                  pendingMealTagCount:
+                                      controller.pendingMealTags.length,
                                 )}',
                               ),
                               child: const Icon(Icons.notifications_none),
                             ),
                             onPressed: () async {
                               await controller.markAllNotificationsRead();
+                              await controller.refreshPendingMealTags();
                               if (!context.mounted) return;
                               _showNotificationSheet(
                                 context,
@@ -905,7 +912,7 @@ class _FeedTab extends StatelessWidget {
         ? remainingOtherPosts
         : const <FeedPost>[];
 
-    if (feed.isEmpty) {
+    if (feed.isEmpty && !controller.loading) {
       return emptyTimelineState(
         title: '投稿がまだありません',
         message: '撮影して、みんなの「おすすめ」を広げよう。',
@@ -924,6 +931,14 @@ class _FeedTab extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 126, 16, 120),
           children: [
             timelineTabs(),
+            if (controller.feedRefreshing) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(
+                minHeight: 2,
+                color: AppColors.orange,
+                backgroundColor: AppColors.border,
+              ),
+            ],
             const SizedBox(height: 20),
             if (hasTodayMyPosts) ...[
               _BerealFeaturedPanel(
@@ -2346,7 +2361,7 @@ class _MapTabState extends State<_MapTab> {
       return const AppStateView(
         type: AppStateType.loading,
         title: '地図を準備しています',
-        message: '周辺の店舗情報を読み込んでいます。',
+        message: '投稿ピンを読み込んでいます。',
       );
     }
 
@@ -2359,13 +2374,6 @@ class _MapTabState extends State<_MapTab> {
       );
     }
 
-    final showEmptyPinsNotice =
-        widget.controller.mapPinsLoaded &&
-        widget.controller.mapPinsLoadError == null &&
-        pins.isEmpty;
-    final hasLocation =
-        widget.controller.deviceLatitude != null &&
-        widget.controller.deviceLongitude != null;
     return Stack(
       children: [
         Positioned.fill(
@@ -2437,56 +2445,6 @@ class _MapTabState extends State<_MapTab> {
             polygons: _choroplethPolygons,
           ),
         ),
-        if (showEmptyPinsNotice)
-          Positioned(
-            left: 16,
-            right: 16,
-            top: topBarY + 74,
-            child: IgnorePointer(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.blackElevated.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        hasLocation
-                            ? Icons.search_off_outlined
-                            : Icons.location_off_outlined,
-                        size: 18,
-                        color: Colors.white70,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          hasLocation
-                              ? '近くの店舗が見つかりません'
-                              : '位置情報を使うと周辺の店舗を表示できます',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         if (!_searchExpanded)
           Positioned(
             top: topBarY,
@@ -3684,6 +3642,8 @@ class FriendGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       itemCount: candidates.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -3716,6 +3676,7 @@ class FriendGrid extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -3917,6 +3878,7 @@ class _FriendListPage extends StatelessWidget {
                   fontSize: 28,
                   fontWeight: FontWeight.w900,
                   height: 1.1,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -3927,16 +3889,23 @@ class _FriendListPage extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
             child: Text(
               'あなたへの申請',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
           const SizedBox(height: 10),
           ...incoming.map(
-            (c) => _FriendCandidateRow(
-              candidate: c,
-              onFriendTap: (item) => onOpenProfile(item.id),
-              onFollow: onFollow,
-              onUnfollow: onUnfollow,
+            (c) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _FriendCandidateRow(
+                candidate: c,
+                onFriendTap: (item) => onOpenProfile(item.id),
+                onFollow: onFollow,
+                onUnfollow: onUnfollow,
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -3946,7 +3915,11 @@ class _FriendListPage extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
             child: Text(
               '友達',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -4569,7 +4542,7 @@ class _ProfilePage extends StatelessWidget {
                 child: _StatTile(
                   label: '友達',
                   value: profile.friends,
-                  onTap: profile.friends > 0 ? onOpenFriendList : null,
+                  onTap: onOpenFriendList,
                 ),
               ),
             ],
@@ -5038,6 +5011,98 @@ class _BottomStat extends StatelessWidget {
   }
 }
 
+class _CompanionPickerSheet extends StatefulWidget {
+  const _CompanionPickerSheet({
+    required this.friends,
+    required this.initialSelection,
+  });
+
+  final List<FriendCandidate> friends;
+  final Set<String> initialSelection;
+
+  @override
+  State<_CompanionPickerSheet> createState() => _CompanionPickerSheetState();
+}
+
+class _CompanionPickerSheetState extends State<_CompanionPickerSheet> {
+  late final Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set<String>.from(widget.initialSelection);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.55;
+    return SafeArea(
+      child: SizedBox(
+        height: maxHeight,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 12 + bottomInset),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '一緒に食べた友達',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(_selected),
+                    child: const Text('完了'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: widget.friends.length,
+                  separatorBuilder: (_, _) => Divider(
+                    height: 1,
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                  itemBuilder: (context, index) {
+                    final friend = widget.friends[index];
+                    final checked = _selected.contains(friend.id);
+                    return CheckboxListTile(
+                      value: checked,
+                      onChanged: (value) {
+                        setState(() {
+                          if (value == true) {
+                            _selected.add(friend.id);
+                          } else {
+                            _selected.remove(friend.id);
+                          }
+                        });
+                      },
+                      secondary: FriendAvatar(
+                        displayName: friend.name,
+                        avatarUrl: friend.avatarUrl,
+                        radius: 20,
+                      ),
+                      title: Text(friend.name),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PostCreationPage extends StatefulWidget {
   const PostCreationPage({
     super.key,
@@ -5320,6 +5385,37 @@ class _PostCreationPageState extends State<PostCreationPage> {
     }
   }
 
+  Future<void> _openCompanionPicker() async {
+    final friends = widget.controller.friends;
+    if (friends.isEmpty) return;
+    final selected = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.blackElevated,
+      builder: (sheetContext) {
+        return _CompanionPickerSheet(
+          friends: friends,
+          initialSelection: Set<String>.from(_companionIds),
+        );
+      },
+    );
+    if (!mounted || selected == null) return;
+    setState(() {
+      _companionIds
+        ..clear()
+        ..addAll(selected);
+    });
+  }
+
+  String _selectedCompanionNames() {
+    final byId = {
+      for (final friend in widget.controller.friends) friend.id: friend.name,
+    };
+    return _companionIds
+        .map((id) => byId[id] ?? 'ユーザー')
+        .join('、');
+  }
+
   Future<void> _replaceImage(ImageSource source) async {
     final file = await ImagePicker().pickImage(
       source: source,
@@ -5384,6 +5480,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
         if (!context.mounted) return;
         widget.controller.clearPostDraft();
         widget.controller.clearPendingPostDraft();
+        await widget.controller.refreshPendingMealTags();
         await widget.controller.initialize();
         if (!context.mounted) return;
         widget.onClose();
@@ -5433,8 +5530,10 @@ class _PostCreationPageState extends State<PostCreationPage> {
       }),
       side: WidgetStateProperty.all(BorderSide(color: orangeBorder)),
     );
-    return Theme(
-      data: Theme.of(context).copyWith(
+    return PopScope(
+      canPop: !_submitting,
+      child: Theme(
+        data: Theme.of(context).copyWith(
         sliderTheme: SliderTheme.of(context).copyWith(
           activeTrackColor: AppColors.orange,
           inactiveTrackColor: AppColors.orange.withValues(alpha: 0.22),
@@ -5461,7 +5560,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
           ),
         ),
       ),
-      child: Container(
+        child: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -5491,7 +5590,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                                 alpha: 0.9,
                               ),
                             ),
-                            onPressed: widget.onClose,
+                            onPressed: _submitting ? null : widget.onClose,
                           ),
                           const SizedBox(width: 4),
                           const Text(
@@ -5735,26 +5834,40 @@ class _PostCreationPageState extends State<PostCreationPage> {
                         onChanged: (v) => setState(() => _rating = v.round()),
                       ),
                       if (widget.controller.friends.isNotEmpty) ...[
-                        Text('一緒に食べた友達', style: labelStyle),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final f in widget.controller.friends)
-                              FilterChip(
-                                label: Text(f.name),
-                                selected: _companionIds.contains(f.id),
-                                onSelected: (selected) {
-                                  setState(() {
-                                    if (selected) {
-                                      _companionIds.add(f.id);
-                                    } else {
-                                      _companionIds.remove(f.id);
-                                    }
-                                  });
-                                },
+                        OutlinedButton.icon(
+                          onPressed: _openCompanionPicker,
+                          icon: const Icon(Icons.person_add_alt_1_outlined),
+                          label: Text(
+                            _companionIds.isEmpty
+                                ? 'タグづけ'
+                                : 'タグづけ (${_companionIds.length})',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.orangeHighlight,
+                            side: BorderSide(color: orangeBorder),
+                          ),
+                        ),
+                        if (_companionIds.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '選択: ${_selectedCompanionNames()}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.orangeAccent.withValues(
+                                alpha: 0.75,
                               ),
-                          ],
+                            ),
+                          ),
+                        ],
+                      ] else ...[
+                        Text(
+                          '友達を追加すると、一緒に食べた人をタグできます',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.orangeAccent.withValues(
+                              alpha: 0.75,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -5805,6 +5918,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -6842,10 +6956,11 @@ class _PhotoGrid extends StatelessWidget {
   }
 }
 
-int calculateNotificationBadgeCount({required int unreadNotificationCount}) {
-  // 通知バッジは未読の通知数だけで決定する。
-  // タグ付け通知も、未読であればバッジ対象とする。
-  return unreadNotificationCount;
+int calculateNotificationBadgeCount({
+  required int unreadNotificationCount,
+  int pendingMealTagCount = 0,
+}) {
+  return unreadNotificationCount + pendingMealTagCount;
 }
 
 void _showNotificationSheet(
@@ -6913,6 +7028,7 @@ void _showNotificationSheet(
                   notification: n,
                   onOpenProfile: onOpenProfile,
                   onOpenPostDetail: onOpenPostDetail,
+                  onOpenMealTag: onOpenMealTag,
                 ),
               ),
             ),
@@ -6929,11 +7045,30 @@ Future<void> _handleNotificationTap(
   required AppNotification notification,
   ValueChanged<String>? onOpenProfile,
   ValueChanged<FeedPost>? onOpenPostDetail,
+  void Function(PendingMealTag tag)? onOpenMealTag,
 }) async {
   Navigator.of(context).pop();
 
   final eventType = notification.eventType ?? '';
   switch (eventType) {
+    case 'meal_tag':
+      final postId = notification.postId;
+      if (postId != null && postId.isNotEmpty && onOpenMealTag != null) {
+        await controller.refreshPendingMealTags();
+        PendingMealTag? tag;
+        for (final pending in controller.pendingMealTags) {
+          if (pending.sourcePostId == postId) {
+            tag = pending;
+            break;
+          }
+        }
+        if (!context.mounted) return;
+        if (tag != null) {
+          onOpenMealTag(tag);
+          return;
+        }
+      }
+      break;
     case 'like':
     case 'comment':
       final postId = notification.postId;

@@ -9,17 +9,19 @@ class FloatingBottomNav extends StatelessWidget {
     required this.selectedIndex,
     required this.onTabSelected,
     required this.onCameraPressed,
+    this.enabled = true,
   });
 
   /// 0: Home, 1: Map, 2: Camera (CTA only), 3: Record, 4: Profile
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
   final VoidCallback onCameraPressed;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     // Keep tap targets large and leave side padding like the spec reference.
-    return SafeArea(
+    final nav = SafeArea(
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -86,6 +88,11 @@ class FloatingBottomNav extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    if (enabled) return nav;
+    return IgnorePointer(
+      child: Opacity(opacity: 0.45, child: nav),
     );
   }
 }

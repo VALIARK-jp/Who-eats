@@ -1,8 +1,18 @@
 import '../entities/app_entities.dart';
 
+typedef HomeFeedPartialListener = void Function(List<FeedPost> posts);
+typedef MapPinsPartialListener = void Function(List<MapPin> pins);
+
 abstract interface class DashboardRepository {
-  Future<List<FeedPost>> getHomeFeed({FeedTimelineScope scope = FeedTimelineScope.all});
-  Future<List<MapPin>> getMapPins({double? centerLat, double? centerLng});
+  Future<List<FeedPost>> getHomeFeed({
+    FeedTimelineScope scope = FeedTimelineScope.all,
+    HomeFeedPartialListener? onPartial,
+  });
+  Future<List<MapPin>> getMapPins({
+    double? centerLat,
+    double? centerLng,
+    MapPinsPartialListener? onPartial,
+  });
   Future<List<MapPin>> searchMapPins(String keyword);
   Future<List<MapPin>> searchMapPinsAround({
     required double lat,
@@ -14,6 +24,7 @@ abstract interface class DashboardRepository {
     double? boundsMinLng,
     double? boundsMaxLng,
     double zoom = 14,
+    MapPinsPartialListener? onPartial,
   });
   Future<MapPin?> resolvePlacePinFromCoordinate(double lat, double lng);
   Future<PlaceDetail> getPlaceDetail(String placeId);

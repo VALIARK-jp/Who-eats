@@ -4,15 +4,26 @@ import '../repositories/dashboard_repository.dart';
 class GetHomeFeedUseCase {
   const GetHomeFeedUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<FeedPost>> call({FeedTimelineScope scope = FeedTimelineScope.all}) =>
-      _repository.getHomeFeed(scope: scope);
+  Future<List<FeedPost>> call({
+    FeedTimelineScope scope = FeedTimelineScope.all,
+    HomeFeedPartialListener? onPartial,
+  }) =>
+      _repository.getHomeFeed(scope: scope, onPartial: onPartial);
 }
 
 class GetMapPinsUseCase {
   const GetMapPinsUseCase(this._repository);
   final DashboardRepository _repository;
-  Future<List<MapPin>> call({double? centerLat, double? centerLng}) =>
-      _repository.getMapPins(centerLat: centerLat, centerLng: centerLng);
+  Future<List<MapPin>> call({
+    double? centerLat,
+    double? centerLng,
+    MapPinsPartialListener? onPartial,
+  }) =>
+      _repository.getMapPins(
+        centerLat: centerLat,
+        centerLng: centerLng,
+        onPartial: onPartial,
+      );
 }
 
 class SearchMapPinsUseCase {
@@ -34,6 +45,7 @@ class SearchMapPinsAroundUseCase {
     double? boundsMinLng,
     double? boundsMaxLng,
     double zoom = 14,
+    MapPinsPartialListener? onPartial,
   }) => _repository.searchMapPinsAround(
     lat: lat,
     lng: lng,
@@ -44,6 +56,7 @@ class SearchMapPinsAroundUseCase {
     boundsMinLng: boundsMinLng,
     boundsMaxLng: boundsMaxLng,
     zoom: zoom,
+    onPartial: onPartial,
   );
 }
 
