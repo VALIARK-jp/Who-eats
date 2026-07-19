@@ -617,10 +617,17 @@ class PlaceDetail {
 }
 
 class PlaceSuggestion {
-  const PlaceSuggestion({required this.placeId, required this.description});
+  const PlaceSuggestion({
+    required this.placeId,
+    required this.description,
+    this.displayLabel,
+  });
 
   final String placeId;
   final String description;
+  final String? displayLabel;
+
+  String get label => displayLabel ?? description;
 }
 
 /// 都道府県内の市ごと投稿カバレッジ（マップコロプレス用）。

@@ -2165,9 +2165,9 @@ class _MapTabState extends State<_MapTab> {
   final Map<String, BitmapDescriptor> _clusterIconCache = {};
   final Set<String> _clusterIconLoading = {};
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _mapSearchFocusNode = FocusNode();
   Timer? _searchDebounce;
   Timer? _viewportRefreshDebounce;
-  String? _activeKeyword;
   LatLng _lastCameraTarget = _defaultCenter;
   double _lastZoom = 14;
   int _displayTier = 2;
@@ -2306,6 +2306,7 @@ class _MapTabState extends State<_MapTab> {
     _searchDebounce?.cancel();
     _viewportRefreshDebounce?.cancel();
     _projectionDebounce?.cancel();
+    _mapSearchFocusNode.dispose();
     _searchController.dispose();
     widget.onSearchExpansionChanged(false);
     super.dispose();
@@ -2460,11 +2461,29 @@ class _MapTabState extends State<_MapTab> {
               ),
             ),
           ),
+        Positioned(
+          right: 18,
+          bottom: 150,
+          child: Column(
+            children: [
+              _ZoomButton(icon: Icons.add, onTap: _zoomInSmoothly),
+              const SizedBox(height: 10),
+              _ZoomButton(icon: Icons.remove, onTap: _zoomOutSmoothly),
+            ],
+          ),
+        ),
+        ..._build3dPinOverlays(pins),
+        if (_showsMapSearchSuggestions)
+          Positioned.fill(
+            child: AbsorbPointer(
+              child: Container(color: Colors.transparent),
+            ),
+          ),
         if (_searchExpanded)
           Positioned(
             top: topBarY,
             left: 24,
-            right: 92,
+            right: 24,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2479,11 +2498,12 @@ class _MapTabState extends State<_MapTab> {
                   ),
                   child: TextField(
                     controller: _searchController,
+                    focusNode: _mapSearchFocusNode,
                     onChanged: (value) {
                       setState(() {});
                       _onSearchChanged(value);
                     },
-                    onSubmitted: (_) => _runSearchAndJump(),
+                    onSubmitted: (_) => _onSearchSubmitted(),
                     textInputAction: TextInputAction.search,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
@@ -2506,7 +2526,6 @@ class _MapTabState extends State<_MapTab> {
                                 _searchController.clear();
                                 widget.controller.clearPlaceSuggestions();
                                 setState(() {});
-                                _applyKeywordFilter(null);
                               },
                             )
                           : IconButton(
@@ -2525,59 +2544,52 @@ class _MapTabState extends State<_MapTab> {
                 ),
                 if (_searchController.text.trim().isNotEmpty &&
                     widget.controller.placeSuggestions.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    decoration: BoxDecoration(
-                      color: AppColors.blackElevated.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12),
+                  Material(
+                    color: Colors.transparent,
+                    elevation: 12,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      decoration: BoxDecoration(
+                        color: AppColors.blackElevated.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                        ),
                       ),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: widget.controller.placeSuggestions.length,
-                      separatorBuilder: (_, _) => Divider(
-                        height: 1,
-                        color: Colors.white.withValues(alpha: 0.08),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: widget.controller.placeSuggestions.length,
+                        separatorBuilder: (_, _) => Divider(
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.08),
+                        ),
+                        itemBuilder: (context, index) {
+                          final suggestion =
+                              widget.controller.placeSuggestions[index];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.location_on_outlined,
+                              size: 18,
+                              color: Colors.white70,
+                            ),
+                            title: Text(
+                              suggestion.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            onTap: () => _selectSuggestion(suggestion),
+                          );
+                        },
                       ),
-                      itemBuilder: (context, index) {
-                        final suggestion =
-                            widget.controller.placeSuggestions[index];
-                        return ListTile(
-                          dense: true,
-                          leading: const Icon(
-                            Icons.location_on_outlined,
-                            size: 18,
-                            color: Colors.white70,
-                          ),
-                          title: Text(
-                            suggestion.description,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          onTap: () => _selectSuggestion(suggestion),
-                        );
-                      },
                     ),
                   ),
               ],
             ),
           ),
-        Positioned(
-          right: 18,
-          bottom: 150,
-          child: Column(
-            children: [
-              _ZoomButton(icon: Icons.add, onTap: _zoomInSmoothly),
-              const SizedBox(height: 10),
-              _ZoomButton(icon: Icons.remove, onTap: _zoomOutSmoothly),
-            ],
-          ),
-        ),
-        ..._build3dPinOverlays(pins),
         Positioned(
           top: 0,
           bottom: 0,
@@ -2611,6 +2623,11 @@ class _MapTabState extends State<_MapTab> {
     );
   }
 
+  bool get _showsMapSearchSuggestions =>
+      _searchExpanded &&
+      _searchController.text.trim().isNotEmpty &&
+      widget.controller.placeSuggestions.isNotEmpty;
+
   LatLng _latLngFor(MapPin pin, int index) {
     if (pin.latitude != null && pin.longitude != null) {
       return LatLng(pin.latitude!, pin.longitude!);
@@ -2636,23 +2653,13 @@ class _MapTabState extends State<_MapTab> {
     widget.onPlaceTap(pin);
   }
 
-  Future<void> _applyKeywordFilter(String? keyword) async {
-    _activeKeyword = keyword;
-    await _refreshViewportPins();
-  }
-
-  MapPin? _searchResultPinForKeyword(String keyword) {
-    final trimmed = keyword.trim().toLowerCase();
-    final pins = widget.controller.mapPins;
-    if (pins.isEmpty) return null;
-    if (trimmed.isEmpty) return pins.first;
-
-    for (final pin in pins) {
-      if (pin.placeName.toLowerCase().contains(trimmed)) {
-        return pin;
-      }
-    }
-    return pins.first;
+  void _onSearchSubmitted() {
+    final keyword = _searchController.text.trim();
+    if (keyword.isEmpty) return;
+    _searchDebounce?.cancel();
+    widget.controller.searchPlaceSuggestions(keyword);
+    setState(() {});
+    _mapSearchFocusNode.unfocus();
   }
 
   MapPin _pinFromPlaceDetail(
@@ -2679,37 +2686,6 @@ class _MapTabState extends State<_MapTab> {
     await _animateToPin(pin);
     if (!mounted) return;
     _openMapBottomSheet(context, pin);
-  }
-
-  Future<void> _runSearchAndJump() async {
-    final keyword = _searchController.text.trim();
-    widget.controller.clearPlaceSuggestions();
-    await _applyKeywordFilter(keyword.isEmpty ? null : keyword);
-    if (!mounted) return;
-    if (widget.controller.mapPins.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('該当する店舗が見つかりませんでした')));
-      return;
-    }
-
-    final target = _searchResultPinForKeyword(keyword);
-    if (target != null) {
-      await _animateAndOpenPlaceSheet(target);
-      return;
-    }
-
-    await _jumpToFirstSearchResult();
-  }
-
-  Future<void> _jumpToFirstSearchResult() async {
-    final pins = widget.controller.mapPins;
-    if (pins.isEmpty) return;
-    final target = pins.firstWhere(
-      (p) => p.latitude != null && p.longitude != null,
-      orElse: () => pins.first,
-    );
-    await _animateToPin(target);
   }
 
   Future<void> _animateToPin(MapPin pin) async {
@@ -2808,10 +2784,9 @@ class _MapTabState extends State<_MapTab> {
 
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
-    if (value.trim().isEmpty && _activeKeyword != null) {
-      // Clear should immediately restore all pins, not just after debounce.
+    if (value.trim().isEmpty) {
       widget.controller.clearPlaceSuggestions();
-      unawaited(_applyKeywordFilter(null));
+      setState(() {});
       return;
     }
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
@@ -2821,6 +2796,7 @@ class _MapTabState extends State<_MapTab> {
       } else {
         widget.controller.searchPlaceSuggestions(keyword);
       }
+      if (mounted) setState(() {});
     });
   }
 
@@ -2830,13 +2806,18 @@ class _MapTabState extends State<_MapTab> {
       _searchExpanded = expanded;
     });
     widget.onSearchExpansionChanged(expanded);
-    if (!expanded) {
+    if (expanded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mapSearchFocusNode.requestFocus();
+      });
+    } else {
+      _mapSearchFocusNode.unfocus();
       widget.controller.clearPlaceSuggestions();
     }
   }
 
   Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
-    _searchController.text = suggestion.description;
+    _searchController.text = suggestion.label;
     _searchController.selection = TextSelection.collapsed(
       offset: _searchController.text.length,
     );
@@ -2846,18 +2827,11 @@ class _MapTabState extends State<_MapTab> {
       (p) => p.id == detail.placeId,
       orElse: () => _pinFromPlaceDetail(
         detail,
-        fallbackPlaceName: suggestion.description,
+        fallbackPlaceName: suggestion.label,
       ),
     );
-    _activeKeyword = null;
     _scheduleViewportRefresh();
     await _animateAndOpenPlaceSheet(pin);
-    if (!mounted) return;
-    if (widget.controller.mapPins.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('候補に一致する店舗が見つかりませんでした')));
-    }
   }
 
   Future<void> _refreshViewportPins() async {
@@ -2890,7 +2864,6 @@ class _MapTabState extends State<_MapTab> {
         lng: _lastCameraTarget.longitude,
         radiusMeters: _radiusMetersForZoom(_lastZoom),
         zoom: _lastZoom,
-        keyword: _activeKeyword,
         boundsMinLat: boundsMinLat,
         boundsMaxLat: boundsMaxLat,
         boundsMinLng: boundsMinLng,
@@ -5233,7 +5206,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
       if (!mounted) return;
       final resolvedName = detail.placeName.isNotEmpty
           ? detail.placeName
-          : suggestion.description;
+          : suggestion.label;
       _suppressPlaceChange = true;
       _placeController.text = resolvedName;
       _selectedPlaceGoogleId = detail.placeId;
@@ -5249,11 +5222,11 @@ class _PostCreationPageState extends State<PostCreationPage> {
     } catch (_) {
       if (!mounted) return;
       _suppressPlaceChange = true;
-      _placeController.text = suggestion.description;
+      _placeController.text = suggestion.label;
       _selectedPlaceGoogleId = suggestion.placeId;
       _selectedPlaceLat = null;
       _selectedPlaceLng = null;
-      _selectedPlaceName = suggestion.description;
+      _selectedPlaceName = suggestion.label;
       setState(() {});
       unawaited(
         Future<void>.delayed(Duration.zero, () {
@@ -5788,7 +5761,7 @@ class _PostCreationPageState extends State<PostCreationPage> {
                               return ListTile(
                                 dense: true,
                                 title: Text(
-                                  suggestion.description,
+                                  suggestion.label,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),

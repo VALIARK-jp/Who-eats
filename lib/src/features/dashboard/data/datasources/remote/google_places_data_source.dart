@@ -214,12 +214,74 @@ class GooglePlacesDataSource {
     _log('Autocomplete results=${items.length}');
     return items
         .map(
-          (e) => PlaceSuggestion(
-            placeId: (e['place_id'] ?? '').toString(),
-            description: (e['description'] ?? '').toString(),
-          ),
+          (e) {
+            final description = (e['description'] ?? '').toString();
+            final structured = e['structured_formatting'];
+            final mainText = structured is Map
+                ? (structured['main_text'] ?? '').toString()
+                : '';
+            final secondaryText = structured is Map
+                ? (structured['secondary_text'] ?? '').toString()
+                : '';
+            return PlaceSuggestion(
+              placeId: (e['place_id'] ?? '').toString(),
+              description: description,
+              displayLabel: _compactPlaceSuggestionLabel(
+                mainText: mainText,
+                secondaryText: secondaryText,
+                fallback: description,
+              ),
+            );
+          },
         )
         .toList();
+  }
+
+  String _compactPlaceSuggestionLabel({
+    required String mainText,
+    required String secondaryText,
+    required String fallback,
+  }) {
+    final placeName = mainText.trim();
+    final locality = _extractLocalityFromSecondaryText(secondaryText);
+    if (placeName.isEmpty) return fallback;
+    if (locality.isEmpty) return placeName;
+    return '$placeName · $locality';
+  }
+
+  String _extractLocalityFromSecondaryText(String secondaryText) {
+    final parts = secondaryText
+        .split(RegExp(r'[,、]'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+
+    parts.removeWhere(
+      (part) =>
+          part == '日本' ||
+          part.toLowerCase() == 'japan' ||
+          _isPrefectureName(part),
+    );
+    if (parts.isEmpty) return '';
+
+    for (final part in parts) {
+      if (part.endsWith('市')) return part;
+    }
+    for (final part in parts) {
+      if (part.endsWith('区')) return part;
+    }
+    for (final part in parts) {
+      if (part.endsWith('町') || part.endsWith('村')) return part;
+    }
+    return parts.first;
+  }
+
+  bool _isPrefectureName(String value) {
+    return value.endsWith('都') ||
+        value.endsWith('道') ||
+        value.endsWith('府') ||
+        value.endsWith('県');
   }
 
   String buildPhotoUrl({
